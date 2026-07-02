@@ -1,5 +1,7 @@
 # Agentic Git Workflow
 
+Copyright 2026 IntelIP. Licensed under Apache-2.0.
+
 Evidence-backed pull request workflow for agentic development.
 
 Agentic Git Workflow is not a coding agent. It is a Git governance layer around coding agents, human developers, and CI. It makes agent-assisted changes easier to review by requiring structured evidence, deterministic checks, default-deny external action gates, and merge-queue-compatible pull request discipline.
@@ -136,6 +138,6 @@ See `docs/research-grounding.md`.
 
 ## Status
 
-Current state: v0 extraction draft.
+Current state: v0.1.0 public initial release.
 
-Use `docs/oss-readiness.md` for cut-line and sanitization plan before publishing a standalone repository.
+This package is intentionally small: schemas, scripts, workflow templates, docs, and examples. Product-specific app code and provider workflows are outside the core.

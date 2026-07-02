@@ -4,6 +4,15 @@
   "description": "Evidence-backed pull request workflow for agentic development.",
   "type": "module",
   "license": "Apache-2.0",
+  "author": "IntelIP",
+  "homepage": "https://github.com/IntelIP/agentic-git-workflow#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IntelIP/agentic-git-workflow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/IntelIP/agentic-git-workflow/issues"
+  },
   "private": false,
   "scripts": {
     "agentic:evidence:example:check": "node scripts/check-agentic-evidence-envelope.mjs --evidence examples/agentic-evidence/minimal-evidence.json",
