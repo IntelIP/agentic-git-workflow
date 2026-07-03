@@ -1,5 +1,7 @@
 # Agentic Git Workflow
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/IntelIP/agentic-git-workflow/badge)](https://scorecard.dev/viewer/?uri=github.com/IntelIP/agentic-git-workflow)
+
 Copyright 2026 IntelIP. Licensed under Apache-2.0.
 
 Evidence-backed pull request workflow for agentic development.
