@@ -22,17 +22,17 @@ npm run check
 Generate and validate a fresh evidence packet:
 
 ```bash
-node scripts/write-agentic-evidence-envelope.mjs --out /tmp/agentic-pr-evidence.json
-node scripts/check-agentic-evidence-envelope.mjs --evidence /tmp/agentic-pr-evidence.json
-node scripts/check-agentic-external-actions.mjs --evidence /tmp/agentic-pr-evidence.json
+node scripts/write-evident-evidence-envelope.mjs --out /tmp/evident-pr-evidence.json
+node scripts/check-evident-evidence-envelope.mjs --evidence /tmp/evident-pr-evidence.json
+node scripts/check-evident-external-actions.mjs --evidence /tmp/evident-pr-evidence.json
 ```
 
 Check script syntax:
 
 ```bash
-node --check scripts/check-agentic-evidence-envelope.mjs
-node --check scripts/check-agentic-external-actions.mjs
-node --check scripts/write-agentic-evidence-envelope.mjs
+node --check scripts/check-evident-evidence-envelope.mjs
+node --check scripts/check-evident-external-actions.mjs
+node --check scripts/write-evident-evidence-envelope.mjs
 ```
 
 ## Pull Requests

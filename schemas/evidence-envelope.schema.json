@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agentic-git.dev/schemas/evidence-envelope.schema.json",
-  "title": "Agentic Git Evidence Envelope",
+  "$id": "https://github.com/IntelIP/agentic-git-workflow/schemas/evidence-envelope.schema.json",
+  "title": "Evident Evidence Envelope",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -23,7 +23,7 @@
   "properties": {
     "schemaVersion": {
       "type": "string",
-      "const": "agentic-git-evidence/v0.1"
+      "const": "evident-evidence/v0.1"
     },
     "runId": {
       "type": "string",

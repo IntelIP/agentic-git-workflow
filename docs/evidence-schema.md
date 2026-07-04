@@ -11,7 +11,7 @@ Schema files:
 
 | Field | Purpose |
 | --- | --- |
-| `schemaVersion` | Contract version. Current value: `agentic-git-evidence/v0.1` |
+| `schemaVersion` | Contract version. Current value: `evident-evidence/v0.1` |
 | `runId` | Unique evidence run id |
 | `repo` | Repository name |
 | `git` | Base ref, head ref, SHA, optional PR metadata |
@@ -30,12 +30,12 @@ Schema files:
 
 ```json
 {
-  "schemaVersion": "agentic-git-evidence/v0.1",
+  "schemaVersion": "evident-evidence/v0.1",
   "runId": "local-example-001",
   "repo": "example/agentic-git-workflow",
   "git": {
     "baseRef": "main",
-    "headRef": "agentic/example-evidence",
+    "headRef": "evident/example-evidence",
     "sha": "0000000000000000000000000000000000000000"
   },
   "actor": {
@@ -103,16 +103,16 @@ The checker fails when `attempted: true` and `approved !== true`.
 ## Validation Commands
 
 ```bash
-node scripts/check-agentic-evidence-envelope.mjs --evidence agentic-pr-evidence.json
-node scripts/check-agentic-external-actions.mjs --evidence agentic-pr-evidence.json
+node scripts/check-evident-evidence-envelope.mjs --evidence evident-pr-evidence.json
+node scripts/check-evident-external-actions.mjs --evidence evident-pr-evidence.json
 ```
 
 Generate and validate:
 
 ```bash
-node scripts/write-agentic-evidence-envelope.mjs --out agentic-pr-evidence.json
-node scripts/check-agentic-evidence-envelope.mjs --evidence agentic-pr-evidence.json
-node scripts/check-agentic-external-actions.mjs --evidence agentic-pr-evidence.json
+node scripts/write-evident-evidence-envelope.mjs --out evident-pr-evidence.json
+node scripts/check-evident-evidence-envelope.mjs --evidence evident-pr-evidence.json
+node scripts/check-evident-external-actions.mjs --evidence evident-pr-evidence.json
 ```
 
 ## Boundary

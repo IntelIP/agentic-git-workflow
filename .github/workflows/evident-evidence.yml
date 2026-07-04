@@ -8,7 +8,7 @@ on:
       evidence_path:
         description: Path to the evidence envelope.
         required: false
-        default: agentic-pr-evidence.json
+        default: evident-pr-evidence.json
         type: string
       validation_command:
         description: Command to run before writing evidence.
@@ -21,18 +21,18 @@ permissions:
 
 jobs:
   evidence:
-    name: Agentic evidence
+    name: Evident evidence
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "20"
 
       - name: Optional validation command
         id: validation
@@ -41,27 +41,27 @@ jobs:
 
       - name: Write evidence envelope
         if: always()
-        run: node scripts/write-agentic-evidence-envelope.mjs --out "${EVIDENCE_PATH}"
+        run: node scripts/write-evident-evidence-envelope.mjs --out "${EVIDENCE_PATH}"
         env:
-          EVIDENCE_PATH: ${{ inputs.evidence_path || 'agentic-pr-evidence.json' }}
-          AGENTIC_VALIDATION_COMMAND: ${{ inputs.validation_command || '' }}
-          AGENTIC_VALIDATION_STATUS: ${{ steps.validation.outcome || 'skipped' }}
+          EVIDENCE_PATH: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
+          EVIDENT_VALIDATION_COMMAND: ${{ inputs.validation_command || '' }}
+          EVIDENT_VALIDATION_STATUS: ${{ steps.validation.outcome || 'skipped' }}
 
       - name: Validate evidence envelope
         if: always()
-        run: node scripts/check-agentic-evidence-envelope.mjs --evidence "${EVIDENCE_PATH}"
+        run: node scripts/check-evident-evidence-envelope.mjs --evidence "${EVIDENCE_PATH}"
         env:
-          EVIDENCE_PATH: ${{ inputs.evidence_path || 'agentic-pr-evidence.json' }}
+          EVIDENCE_PATH: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
 
       - name: Check external action policy
         if: always()
-        run: node scripts/check-agentic-external-actions.mjs --evidence "${EVIDENCE_PATH}"
+        run: node scripts/check-evident-external-actions.mjs --evidence "${EVIDENCE_PATH}"
         env:
-          EVIDENCE_PATH: ${{ inputs.evidence_path || 'agentic-pr-evidence.json' }}
+          EVIDENCE_PATH: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
 
       - name: Upload evidence artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: agentic-pr-evidence
-          path: ${{ inputs.evidence_path || 'agentic-pr-evidence.json' }}
+          name: evident-pr-evidence
+          path: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}

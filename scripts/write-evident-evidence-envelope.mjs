@@ -4,11 +4,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 const args = parseArgs(process.argv.slice(2));
-const outPath = args.out ?? "agentic-pr-evidence.json";
+const outPath = args.out ?? "evident-pr-evidence.json";
 const now = new Date().toISOString();
 const changedFiles = getChangedFiles();
-const validationCommand = process.env.AGENTIC_VALIDATION_COMMAND ?? "";
-const validationStatus = normalizeStatus(process.env.AGENTIC_VALIDATION_STATUS ?? "skipped");
+const validationCommand = env("EVIDENT_VALIDATION_COMMAND");
+const validationStatus = normalizeStatus(env("EVIDENT_VALIDATION_STATUS") || "skipped");
 const sha = env("GITHUB_SHA") || git(["rev-parse", "HEAD"]) || "unknown";
 const baseRef = env("GITHUB_BASE_REF") || git(["rev-parse", "--abbrev-ref", "HEAD"]) || "main";
 const headRef = env("GITHUB_HEAD_REF") || git(["rev-parse", "--abbrev-ref", "HEAD"]) || "HEAD";
@@ -16,7 +16,7 @@ const repo = env("GITHUB_REPOSITORY") || basename(git(["rev-parse", "--show-topl
 const runId = env("GITHUB_RUN_ID") || `local-${sha.slice(0, 12)}-${Date.now()}`;
 
 const evidence = {
-  schemaVersion: "agentic-git-evidence/v0.1",
+  schemaVersion: "evident-evidence/v0.1",
   runId,
   repo,
   git: {
@@ -31,14 +31,14 @@ const evidence = {
     id: env("GITHUB_ACTOR") || env("USER") || "local-agent",
   },
   agentRuntime: {
-    name: env("AGENTIC_RUNTIME_NAME") || "unspecified",
-    model: env("AGENTIC_RUNTIME_MODEL") || "",
-    tooling: splitCsv(env("AGENTIC_RUNTIME_TOOLING") || "git,github-actions,node"),
+    name: env("EVIDENT_RUNTIME_NAME") || "unspecified",
+    model: env("EVIDENT_RUNTIME_MODEL") || "",
+    tooling: splitCsv(env("EVIDENT_RUNTIME_TOOLING") || "git,github-actions,node"),
   },
   taskSource: {
-    type: env("AGENTIC_TASK_SOURCE_TYPE") || "manual",
-    summary: env("AGENTIC_TASK_SUMMARY") || "Agentic Git evidence envelope generated from repository state.",
-    url: env("AGENTIC_TASK_URL") || "",
+    type: env("EVIDENT_TASK_SOURCE_TYPE") || "manual",
+    summary: env("EVIDENT_TASK_SUMMARY") || "Evident evidence envelope generated from repository state.",
+    url: env("EVIDENT_TASK_URL") || "",
   },
   changedFiles,
   commandsRun: validationCommand
@@ -52,7 +52,7 @@ const evidence = {
       ]
     : [
         {
-          command: "node scripts/write-agentic-evidence-envelope.mjs",
+          command: "node scripts/write-evident-evidence-envelope.mjs",
           status: "passed",
           exitCode: 0,
           completedAt: now,
@@ -83,7 +83,7 @@ const evidence = {
   },
   artifacts: [
     {
-      name: "agentic evidence envelope",
+      name: "Evident evidence envelope",
       path: outPath,
     },
   ],
@@ -97,7 +97,7 @@ writeFileSync(outPath, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(JSON.stringify(evidence, null, 2));
 
 function getChangedFiles() {
-  const explicit = env("AGENTIC_CHANGED_FILES");
+  const explicit = env("EVIDENT_CHANGED_FILES");
   if (explicit) return splitCsv(explicit);
 
   const base = env("GITHUB_BASE_REF");

@@ -62,10 +62,10 @@ Evident gives reviewers a repeatable answer to:
 
 | Module | Path | Role |
 | --- | --- | --- |
-| Evidence writer | `scripts/write-agentic-evidence-envelope.mjs` | Generates `agentic-pr-evidence.json` from Git and CI context |
-| Envelope validator | `scripts/check-agentic-evidence-envelope.mjs` | Validates required evidence fields |
-| External-action guard | `scripts/check-agentic-external-actions.mjs` | Fails unapproved protected side-effect attempts |
-| PR evidence workflow | `.github/workflows/agentic-evidence.yml` | Runs evidence checks on pull requests |
+| Evidence writer | `scripts/write-evident-evidence-envelope.mjs` | Generates `evident-pr-evidence.json` from Git and CI context |
+| Envelope validator | `scripts/check-evident-evidence-envelope.mjs` | Validates required evidence fields |
+| External-action guard | `scripts/check-evident-external-actions.mjs` | Fails unapproved protected side-effect attempts |
+| PR evidence workflow | `.github/workflows/evident-evidence.yml` | Runs evidence checks on pull requests |
 | Scorecard workflow | `.github/workflows/scorecard.yml` | Runs non-gating OpenSSF Scorecard scans |
 | PR template | `.github/pull_request_template.md` | Puts evidence summary in front of reviewers |
 
@@ -74,32 +74,32 @@ Evident gives reviewers a repeatable answer to:
 Validate the bundled fixture:
 
 ```bash
-node scripts/check-agentic-evidence-envelope.mjs --evidence examples/agentic-evidence/minimal-evidence.json
-node scripts/check-agentic-external-actions.mjs --evidence examples/agentic-evidence/minimal-evidence.json
+node scripts/check-evident-evidence-envelope.mjs --evidence examples/evident-evidence/minimal-evidence.json
+node scripts/check-evident-external-actions.mjs --evidence examples/evident-evidence/minimal-evidence.json
 ```
 
 Generate evidence from the current Git state:
 
 ```bash
-node scripts/write-agentic-evidence-envelope.mjs --out agentic-pr-evidence.json
-node scripts/check-agentic-evidence-envelope.mjs --evidence agentic-pr-evidence.json
-node scripts/check-agentic-external-actions.mjs --evidence agentic-pr-evidence.json
+node scripts/write-evident-evidence-envelope.mjs --out evident-pr-evidence.json
+node scripts/check-evident-evidence-envelope.mjs --evidence evident-pr-evidence.json
+node scripts/check-evident-external-actions.mjs --evidence evident-pr-evidence.json
 ```
 
 Package scripts:
 
 ```bash
 npm run check
-npm run agentic:evidence:write
-npm run agentic:evidence:check
-npm run agentic:external-actions:check
+npm run evident:evidence:write
+npm run evident:evidence:check
+npm run evident:external-actions:check
 ```
 
 ## Repository Layout
 
 | Path | Purpose |
 | --- | --- |
-| `.github/workflows/agentic-evidence.yml` | Reusable evidence workflow for PRs |
+| `.github/workflows/evident-evidence.yml` | Reusable evidence workflow for PRs |
 | `.github/workflows/scorecard.yml` | Non-gating OpenSSF Scorecard scan |
 | `schemas/` | Evidence and external-action JSON schemas |
 | `scripts/` | Dependency-free writer and validators |
@@ -134,10 +134,10 @@ on:
 
 jobs:
   evidence:
-    uses: IntelIP/agentic-git-workflow/.github/workflows/agentic-evidence.yml@main
+    uses: IntelIP/agentic-git-workflow/.github/workflows/evident-evidence.yml@main
 ```
 
-The workflow writes `agentic-pr-evidence.json`, validates the envelope, checks the external-action policy, and uploads the evidence artifact.
+The workflow writes `evident-pr-evidence.json`, validates the envelope, checks the external-action policy, and uploads the evidence artifact.
 
 ## Docs
 

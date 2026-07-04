@@ -15,11 +15,11 @@
   },
   "private": false,
   "scripts": {
-    "agentic:evidence:example:check": "node scripts/check-agentic-evidence-envelope.mjs --evidence examples/agentic-evidence/minimal-evidence.json",
-    "agentic:evidence:write": "node scripts/write-agentic-evidence-envelope.mjs --out agentic-pr-evidence.json",
-    "agentic:evidence:check": "node scripts/check-agentic-evidence-envelope.mjs --evidence agentic-pr-evidence.json",
-    "agentic:external-actions:check": "node scripts/check-agentic-external-actions.mjs --evidence agentic-pr-evidence.json",
-    "check": "npm run agentic:evidence:example:check && node scripts/check-agentic-external-actions.mjs --evidence examples/agentic-evidence/minimal-evidence.json"
+    "evident:evidence:example:check": "node scripts/check-evident-evidence-envelope.mjs --evidence examples/evident-evidence/minimal-evidence.json",
+    "evident:evidence:write": "node scripts/write-evident-evidence-envelope.mjs --out evident-pr-evidence.json",
+    "evident:evidence:check": "node scripts/check-evident-evidence-envelope.mjs --evidence evident-pr-evidence.json",
+    "evident:external-actions:check": "node scripts/check-evident-external-actions.mjs --evidence evident-pr-evidence.json",
+    "check": "npm run evident:evidence:example:check && node scripts/check-evident-external-actions.mjs --evidence examples/evident-evidence/minimal-evidence.json"
   },
   "engines": {
     "node": ">=20"
