@@ -1,6 +1,6 @@
 # Contributing
 
-## Development Principles
+## Principles
 
 Keep the workflow:
 
@@ -9,38 +9,41 @@ Keep the workflow:
 - dependency-light
 - deterministic before AI-assisted
 - default-deny for external side effects
-- clear about what is evidence and what is only a claim
+- clear about evidence versus claims
 
 ## Local Checks
 
-Run:
+Run the full local check:
 
 ```bash
-node scripts/check-agentic-evidence-envelope.mjs --evidence examples/agentic-evidence/minimal-evidence.json
-node scripts/check-agentic-external-actions.mjs --evidence examples/agentic-evidence/minimal-evidence.json
-node scripts/write-agentic-evidence-envelope.mjs --out /tmp/agentic-pr-evidence.json
-node scripts/check-agentic-evidence-envelope.mjs --evidence /tmp/agentic-pr-evidence.json
-node scripts/check-agentic-external-actions.mjs --evidence /tmp/agentic-pr-evidence.json
+npm run check
 ```
 
-When package scripts are available:
+Generate and validate a fresh evidence packet:
 
 ```bash
-bun run agentic:evidence:example:check
-bun run agentic:evidence:write
-bun run agentic:evidence:check
-bun run agentic:external-actions:check
+node scripts/write-evident-evidence-envelope.mjs --out /tmp/evident-pr-evidence.json
+node scripts/check-evident-evidence-envelope.mjs --evidence /tmp/evident-pr-evidence.json
+node scripts/check-evident-external-actions.mjs --evidence /tmp/evident-pr-evidence.json
 ```
 
-## Pull Request Expectations
+Check script syntax:
+
+```bash
+node --check scripts/check-evident-evidence-envelope.mjs
+node --check scripts/check-evident-external-actions.mjs
+node --check scripts/write-evident-evidence-envelope.mjs
+```
+
+## Pull Requests
 
 Each PR should include:
 
-- evidence envelope path
+- evidence envelope path or artifact
 - commands run
 - check result summary
 - external-action policy summary
-- explicit note for any skipped checks
+- skipped-check notes, if any
 
 Do not include:
 
@@ -50,25 +53,28 @@ Do not include:
 - provider account data
 - unredacted credentials
 
-## External Action Changes
+## Sensitive Changes
 
-Changes that weaken approval requirements need extra review.
+Ask for extra review when changing:
 
-Examples:
-
-- marking an external action as approved by default
-- removing a required action class
-- allowing attempted action without approval
-- hiding failed checks
-- making evidence optional for agentic PRs
+- required evidence fields
+- required action classes
+- default-deny behavior
+- approval handling
+- CI workflow permissions
+- SARIF or security reporting
 
 ## Documentation Style
 
-Use direct wording. Separate:
+Prefer:
 
-- current behavior
-- planned behavior
-- non-goals
-- security boundary
+- short sections
+- tables for comparisons
+- code blocks for commands
+- direct current-state wording
 
-Avoid compliance claims unless the implementation directly satisfies the referenced standard.
+Avoid:
+
+- compliance claims not implemented by code
+- long roadmap text in the README
+- burying security boundaries in prose

@@ -1,97 +1,93 @@
-# Workflow Model
+# Evident Workflow Model
 
-Agentic Git Workflow turns a coding-agent run into a reviewable pull request packet.
+Evident turns an agentic coding run into a reviewable pull request packet.
 
-## Objects
+## Core Objects
 
-| Object | Meaning |
+| Object | Role |
 | --- | --- |
-| Task source | Issue, chat request, ticket, manual prompt, or other source that explains why work started. |
-| Agent runtime | Tooling that made or coordinated the change. This can be Codex, another coding agent, CI, or a human-operated script. |
-| Evidence envelope | JSON artifact that records changed files, commands, checks, approvals, action policy, and artifacts. |
-| External action policy | Default-deny list of side-effect classes that require explicit approval. |
-| Pull request | Human review unit containing code plus evidence summary. |
-| Stack | Ordered set of dependent PRs for larger work. |
-| Merge queue | Final validation point before main changes. |
+| Task source | Why the work started: issue, chat request, ticket, prompt, or manual request |
+| Runtime | Human, CI process, coding agent, or mixed toolchain that produced the change |
+| Evidence envelope | JSON record of Git state, changed files, commands, checks, approvals, side-effect policy, and artifacts |
+| External action policy | Default-deny policy for deploys, migrations, infra, DNS, billing, secrets, provider reads, and destructive actions |
+| Pull request | Human review surface for the diff plus evidence summary |
+| Stack | Ordered PR chain for larger changes |
+| Merge queue | Optional final validation point before main |
 
-## Flow
+## Standard Flow
 
-1. Receive task.
-2. Create a branch.
-3. Make a small change.
-4. Run deterministic commands.
-5. Write evidence envelope.
-6. Validate evidence envelope.
-7. Check external action policy.
-8. Open pull request with evidence summary.
-9. Review as a human-readable diff plus machine-readable evidence.
-10. Merge through protected queue after checks are current.
+```text
+task
+  -> branch
+  -> small change
+  -> deterministic checks
+  -> evidence envelope
+  -> evidence validation
+  -> external-action check
+  -> pull request
+  -> review
+  -> merge
+```
+
+## Review Packet
+
+Each PR should expose:
+
+- task source
+- changed files
+- commands run
+- checks passed, failed, skipped, or pending
+- required approvals
+- external actions attempted or blocked
+- evidence artifact path
+
+Evidence is not a claim that the work is correct. Evidence is the record reviewers inspect before trusting the work.
 
 ## Stack Discipline
 
-Prefer stacked PRs when a task contains separate concepts:
+Use stacked PRs when a task contains separate concepts:
 
-- substrate or schema
-- validation script
+- schema or substrate
+- validator script
 - workflow wiring
 - UI or docs
 - eval coverage
 
-Each PR should be independently understandable. The evidence envelope should describe that PR, not the whole roadmap.
-
-## Evidence Discipline
-
-Evidence is not a claim that the agent did good work. Evidence is a record that reviewers can inspect:
-
-- files changed
-- commands run
-- check statuses
-- approvals required
-- approvals granted or denied
-- side effects attempted
-- artifacts produced
-
-Failed checks belong in evidence. A failing artifact is better than an omitted failure.
+Each PR should explain only its own change. Avoid one evidence envelope that tries to justify a whole roadmap.
 
 ## External Action Discipline
 
 Default posture: no external side effects without explicit approval.
 
-Protected action classes:
+Protected classes:
 
-- deployment
-- database migration
-- infrastructure change
-- DNS or hosting change
-- billing or live-money action
-- credentialed provider read
-- secret-value read
-- destructive workspace action
+| Class | Examples |
+| --- | --- |
+| deployment | Production deploy, hosting mutation |
+| database migration | Schema or data mutation |
+| infrastructure change | Cloud resource mutation |
+| DNS or hosting change | DNS update, host config update |
+| billing or live-money | Paid resource change, transaction |
+| credentialed provider read | API call using private credentials |
+| secret-value read | Reading or logging secret values |
+| destructive workspace action | File deletion, force push, history rewrite |
 
-The workflow can document proposed side effects before approval, but it should not execute them.
+The workflow can document planned side effects before approval. It should not execute them.
 
-## Review Discipline
-
-Reviewer questions:
+## Reviewer Checklist
 
 - Does the task source match the diff?
 - Are changed files listed?
 - Did required commands run?
 - Are skipped commands explained?
-- Does the external action policy still default to deny?
+- Does the policy still default to deny?
 - Did any protected action happen without approval?
 - Is the PR small enough to review?
-- Is the evidence current after queue-time checks?
-
-## Merge Discipline
-
-Use branch protection or merge queues. The evidence workflow should pass on the final PR state before merge.
-
-Do not treat stale local evidence as final merge evidence.
+- Is evidence current for the final PR state?
 
 ## Extension Points
 
-The v0 workflow stays agent-agnostic. Future integrations can add:
+Future versions can add:
 
 - signed evidence
 - SLSA provenance export

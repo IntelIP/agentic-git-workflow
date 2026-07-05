@@ -1,10 +1,10 @@
 {
-  "schemaVersion": "agentic-git-evidence/v0.1",
+  "schemaVersion": "evident-evidence/v0.1",
   "runId": "local-example-001",
   "repo": "example/agentic-git-workflow",
   "git": {
     "baseRef": "main",
-    "headRef": "agentic/example-evidence",
+    "headRef": "evident/example-evidence",
     "sha": "0000000000000000000000000000000000000000",
     "pullRequest": "1",
     "pullRequestUrl": "https://github.com/example/agentic-git-workflow/pull/1"
@@ -20,23 +20,23 @@
   },
   "taskSource": {
     "type": "chat",
-    "summary": "Create a minimal evidence fixture for the Agentic Git workflow."
+    "summary": "Create a minimal evidence fixture for the Evident workflow."
   },
   "changedFiles": [
     "docs/research-grounding.md",
     "schemas/evidence-envelope.schema.json",
-    "scripts/check-agentic-evidence-envelope.mjs"
+    "scripts/check-evident-evidence-envelope.mjs"
   ],
   "commandsRun": [
     {
-      "command": "node scripts/check-agentic-evidence-envelope.mjs --evidence examples/agentic-evidence/minimal-evidence.json",
+      "command": "node scripts/check-evident-evidence-envelope.mjs --evidence examples/evident-evidence/minimal-evidence.json",
       "status": "passed",
       "exitCode": 0
     }
   ],
   "checks": [
     {
-      "name": "agentic-evidence-envelope",
+      "name": "evident-evidence-envelope",
       "status": "passed",
       "summary": "Minimal fixture validates against v0.1 required fields and default-deny policy."
     }
@@ -127,7 +127,7 @@
   "artifacts": [
     {
       "name": "minimal evidence fixture",
-      "path": "examples/agentic-evidence/minimal-evidence.json"
+      "path": "examples/evident-evidence/minimal-evidence.json"
     }
   ],
   "createdAt": "2026-07-02T00:00:00.000Z"

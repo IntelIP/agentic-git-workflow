@@ -2,9 +2,9 @@
 
 ## Supported Versions
 
-This project is currently pre-release. Security reports should target the latest `main` branch until versioned releases exist.
+Security reports should target the latest `main` branch until versioned maintenance branches exist.
 
-## Reporting a Vulnerability
+## Reporting
 
 Report security issues privately to the project maintainer before public disclosure.
 
@@ -19,37 +19,38 @@ Do not include live secrets, credentials, private keys, tokens, or account data 
 
 ## Security Model
 
-Agentic Git Workflow assumes generated code and agent claims are untrusted until validated by deterministic checks.
+Evident assumes generated code and agent claims are untrusted until deterministic checks validate the evidence packet.
 
-The default security posture:
+Default posture:
 
-- evidence is explicit and machine-readable
-- external action classes are default-deny
-- deployment, migration, infrastructure, DNS, hosting, billing, live-money, credentialed provider reads, secret-value reads, and destructive workspace actions require explicit approval
-- evidence checks should run in CI before review and merge
-- merge queues or branch protection should keep main protected
+| Area | Policy |
+| --- | --- |
+| Evidence | Machine-readable and reviewable |
+| External actions | Default-deny |
+| Secret values | Must not be read or logged |
+| Provider access | Credentialed reads require explicit approval |
+| Dangerous operations | Deploy, migration, infra, DNS, billing, live-money, and destructive actions require explicit approval |
+| CI | Evidence checks run before merge review decisions |
 
-## Out of Scope for v0
+## Out Of Scope
 
-The v0 workflow does not claim:
+v0.1.0 does not claim:
 
 - SLSA compliance
 - in-toto verification
-- cryptographic signing of evidence
+- cryptographic evidence signing
 - complete supply-chain protection
 - autonomous production safety
 
-These can be added later, but v0 should describe itself as SLSA- and in-toto-inspired.
+Current claim: SLSA- and in-toto-inspired evidence for AI-assisted pull requests.
 
 ## Maintainer Checklist
 
-Before publishing a release:
+Before release:
 
 - run private-name scan
 - run secret scan
-- confirm no local absolute paths remain
-- confirm no private session ids remain
-- confirm no provider account context remains
 - validate example evidence
 - validate generated evidence
-- verify external action checker blocks attempted unapproved actions
+- verify unapproved attempted external actions fail
+- verify Scorecard workflow passes

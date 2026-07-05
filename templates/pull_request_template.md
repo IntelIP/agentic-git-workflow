@@ -1,4 +1,4 @@
-## Agentic Git Evidence
+## Evident Evidence
 
 - [ ] Evidence envelope generated
 - [ ] Evidence envelope validated
@@ -11,7 +11,7 @@ Evidence summary:
 
 ```json
 {
-  "schemaVersion": "agentic-git-evidence/v0.1",
+  "schemaVersion": "evident-evidence/v0.1",
   "runId": "",
   "baseRef": "",
   "headRef": "",
