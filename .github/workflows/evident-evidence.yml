@@ -51,7 +51,7 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout Evident toolkit
-        if: ${{ hashFiles('scripts/write-evident-evidence-envelope.mjs') == '' || hashFiles('scripts/check-evident-evidence-envelope.mjs') == '' || hashFiles('scripts/check-evident-external-actions.mjs') == '' }}
+        if: ${{ github.repository != 'IntelIP/agentic-git-workflow' && (hashFiles('scripts/write-evident-evidence-envelope.mjs') == '' || hashFiles('scripts/check-evident-evidence-envelope.mjs') == '' || hashFiles('scripts/check-evident-external-actions.mjs') == '') }}
         uses: actions/checkout@v5
         with:
           repository: IntelIP/agentic-git-workflow
@@ -71,6 +71,8 @@ jobs:
           if [ -f scripts/write-evident-evidence-envelope.mjs ] && \
             [ -f scripts/check-evident-evidence-envelope.mjs ] && \
             [ -f scripts/check-evident-external-actions.mjs ]; then
+            echo "path=." >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_REPOSITORY" = "IntelIP/agentic-git-workflow" ]; then
             echo "path=." >> "$GITHUB_OUTPUT"
           else
             echo "path=.evident/toolkit" >> "$GITHUB_OUTPUT"
