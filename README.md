@@ -111,7 +111,7 @@ jobs:
       toolkit_ref: v0.1.0
 ```
 
-`toolkit_ref` is required for reusable workflow calls. Consumer repositories that do not vendor the Evident scripts use it for fallback toolkit checkout. Pin it to the same release tag or SHA as the reusable workflow. Before the first release tag exists, use `main` instead of `v0.1.0`.
+`toolkit_ref` is required when the consumer repository does not vendor the Evident scripts. Pin it to the same release tag or SHA as the reusable workflow. Before the first release tag exists, use `main` instead of `v0.1.0`.
 
 Validate the bundled fixture:
 
@@ -181,7 +181,7 @@ jobs:
       toolkit_ref: main
 ```
 
-For consumer repositories, pin both the workflow ref and required `toolkit_ref` to the same release tag.
+For consumer repositories that use fallback toolkit checkout, pin both the workflow ref and `toolkit_ref` to the same release tag.
 
 The workflow runs the repository validation command first, then writes `evident-pr-evidence.json`, validates the envelope, checks the external-action policy, and uploads the evidence artifact.
 

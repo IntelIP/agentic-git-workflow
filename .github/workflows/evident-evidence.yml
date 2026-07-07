@@ -16,7 +16,7 @@ on:
         type: string
       toolkit_ref:
         description: Evident toolkit ref for fallback scripts. Pin to the same ref as the reusable workflow.
-        required: true
+        required: false
         type: string
   workflow_call:
     inputs:
@@ -32,7 +32,7 @@ on:
         type: string
       toolkit_ref:
         description: Evident toolkit ref for fallback scripts. Pin to the same ref as the reusable workflow.
-        required: true
+        required: false
         type: string
 
 permissions:
@@ -58,19 +58,12 @@ jobs:
         if: ${{ inputs.validation_command }}
         run: ${{ inputs.validation_command }}
 
-      - name: Checkout Evident toolkit
-        if: ${{ always() && github.repository != 'IntelIP/agentic-git-workflow' && (hashFiles('scripts/write-evident-evidence-envelope.mjs') == '' || hashFiles('scripts/check-evident-evidence-envelope.mjs') == '' || hashFiles('scripts/check-evident-external-actions.mjs') == '') }}
-        uses: actions/checkout@v5
-        with:
-          repository: IntelIP/agentic-git-workflow
-          ref: ${{ inputs.toolkit_ref }}
-          path: .evident/toolkit
-          persist-credentials: false
-
       - name: Resolve Evident toolkit path
         id: toolkit
         if: ${{ always() }}
         shell: bash
+        env:
+          TOOLKIT_REF: ${{ inputs.toolkit_ref || '' }}
         run: |
           if [ -f scripts/write-evident-evidence-envelope.mjs ] && \
             [ -f scripts/check-evident-evidence-envelope.mjs ] && \
@@ -78,12 +71,26 @@ jobs:
             echo "path=." >> "$GITHUB_OUTPUT"
           elif [ "$GITHUB_REPOSITORY" = "IntelIP/agentic-git-workflow" ]; then
             echo "path=." >> "$GITHUB_OUTPUT"
-          else
+          elif [ -n "$TOOLKIT_REF" ]; then
             echo "path=.evident/toolkit" >> "$GITHUB_OUTPUT"
+            echo "ref=$TOOLKIT_REF" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::toolkit_ref is required when Evident scripts are not vendored. Pin it to the same ref as the reusable workflow."
+            echo "path=.evident/toolkit" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
 
+      - name: Checkout Evident toolkit
+        if: ${{ always() && steps.toolkit.outputs.path == '.evident/toolkit' && steps.toolkit.outputs.ref != '' }}
+        uses: actions/checkout@v5
+        with:
+          repository: IntelIP/agentic-git-workflow
+          ref: ${{ steps.toolkit.outputs.ref }}
+          path: .evident/toolkit
+          persist-credentials: false
+
       - name: Write evidence envelope
-        if: always()
+        if: ${{ always() && steps.toolkit.outcome == 'success' }}
         run: node "${TOOLKIT_PATH}/scripts/write-evident-evidence-envelope.mjs" --out "${EVIDENCE_PATH}"
         env:
           TOOLKIT_PATH: ${{ steps.toolkit.outputs.path }}
@@ -92,21 +99,21 @@ jobs:
           EVIDENT_VALIDATION_STATUS: ${{ steps.validation.outcome || 'skipped' }}
 
       - name: Validate evidence envelope
-        if: always()
+        if: ${{ always() && steps.toolkit.outcome == 'success' }}
         run: node "${TOOLKIT_PATH}/scripts/check-evident-evidence-envelope.mjs" --evidence "${EVIDENCE_PATH}"
         env:
           TOOLKIT_PATH: ${{ steps.toolkit.outputs.path }}
           EVIDENCE_PATH: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
 
       - name: Check external action policy
-        if: always()
+        if: ${{ always() && steps.toolkit.outcome == 'success' }}
         run: node "${TOOLKIT_PATH}/scripts/check-evident-external-actions.mjs" --evidence "${EVIDENCE_PATH}"
         env:
           TOOLKIT_PATH: ${{ steps.toolkit.outputs.path }}
           EVIDENCE_PATH: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
 
       - name: Upload evidence artifact
-        if: always()
+        if: ${{ always() && steps.toolkit.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: evident-pr-evidence

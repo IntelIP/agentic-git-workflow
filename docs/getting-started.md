@@ -32,7 +32,7 @@ jobs:
       toolkit_ref: v0.1.0
 ```
 
-`toolkit_ref` is required for reusable workflow calls. Consumer repositories that do not vendor the Evident scripts use it for fallback toolkit checkout. Pin it to the same release tag or SHA as the reusable workflow. Before the first release tag exists, use `main` for both refs.
+`toolkit_ref` is required when the consumer repository does not vendor the Evident scripts. Pin it to the same release tag or SHA as the reusable workflow. Before the first release tag exists, use `main` for both refs.
 
 ## What The Workflow Does
 

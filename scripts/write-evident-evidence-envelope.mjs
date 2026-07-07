@@ -105,17 +105,21 @@ function getChangedFiles() {
     const mergeBase = git(["merge-base", `origin/${base}`, "HEAD"]);
     if (mergeBase) {
       const files = git(["diff", "--name-only", `${mergeBase}...HEAD`]);
-      if (files) return files.split("\n").filter(Boolean).sort();
+      if (files) return filterChangedFiles(files.split("\n").filter(Boolean).sort());
     }
   }
 
   const stagedOrWorking = git(["diff", "--name-only", "HEAD"]);
   const untracked = git(["ls-files", "--others", "--exclude-standard"]);
   const localFiles = [...splitLines(stagedOrWorking), ...splitLines(untracked)];
-  if (localFiles.length > 0) return [...new Set(localFiles)].sort();
+  if (localFiles.length > 0) return filterChangedFiles([...new Set(localFiles)].sort());
 
   const lastCommit = git(["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "HEAD"]);
-  return splitLines(lastCommit).sort();
+  return filterChangedFiles(splitLines(lastCommit).sort());
+}
+
+function filterChangedFiles(files) {
+  return files.filter((file) => file !== ".evident/toolkit" && !file.startsWith(".evident/toolkit/"));
 }
 
 function defaultActionClasses() {
