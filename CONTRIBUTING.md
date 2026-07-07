@@ -35,6 +35,14 @@ node --check scripts/check-evident-external-actions.mjs
 node --check scripts/write-evident-evidence-envelope.mjs
 ```
 
+Check the reusable workflow syntax before release:
+
+```bash
+actionlint
+```
+
+Install `actionlint` from the official `rhysd/actionlint` release or a trusted package manager before running this command.
+
 ## Pull Requests
 
 Each PR should include:
@@ -78,3 +86,14 @@ Avoid:
 - compliance claims not implemented by code
 - long roadmap text in the README
 - burying security boundaries in prose
+
+## Release Prep
+
+Before tagging a release:
+
+- update `CHANGELOG.md`
+- confirm README examples use the intended release tag
+- run local checks
+- run workflow syntax validation
+- confirm the latest `main` Scorecard run passes
+- create the GitHub release from a clean `main` commit

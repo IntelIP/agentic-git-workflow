@@ -71,6 +71,29 @@ Evident gives reviewers a repeatable answer to:
 
 ## Quick Start
 
+Add Evident to another repository:
+
+```yaml
+name: Evident Evidence
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  evidence:
+    uses: IntelIP/agentic-git-workflow/.github/workflows/evident-evidence.yml@v0.1.0
+    with:
+      # Replace with the repository's normal validation command.
+      validation_command: npm test
+      toolkit_ref: v0.1.0
+```
+
+Before the first release tag exists, use `main` instead of `v0.1.0`.
+
 Validate the bundled fixture:
 
 ```bash
@@ -105,7 +128,7 @@ npm run evident:external-actions:check
 | `scripts/` | Dependency-free writer and validators |
 | `examples/` | Minimal valid evidence fixture |
 | `templates/` | PR template for evidence-backed review |
-| `docs/` | Workflow model, schema reference, and research grounding |
+| `docs/` | Getting started, review guidance, workflow model, schema reference, and research grounding |
 
 ## Protected Action Classes
 
@@ -124,7 +147,7 @@ The external-action checker fails when an action is marked `attempted: true` wit
 
 ## GitHub Actions
 
-Run directly on pull requests:
+Run directly on pull requests in this repository:
 
 ```yaml
 name: Evident Evidence
@@ -137,15 +160,20 @@ jobs:
     uses: IntelIP/agentic-git-workflow/.github/workflows/evident-evidence.yml@main
 ```
 
+For consumer repositories, pin both the workflow ref and `toolkit_ref` to the same release tag.
+
 The workflow writes `evident-pr-evidence.json`, validates the envelope, checks the external-action policy, and uploads the evidence artifact.
 
 ## Docs
 
+- [Getting started](docs/getting-started.md)
 - [Workflow model](docs/workflow-model.md)
 - [Evidence schema](docs/evidence-schema.md)
+- [Codex review](docs/codex-review.md)
 - [Research grounding](docs/research-grounding.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 
 ## Non-Goals
 
@@ -157,6 +185,6 @@ The workflow writes `evident-pr-evidence.json`, validates the envelope, checks t
 
 ## Status
 
-Current release: v0.1.0 public initial release.
+Current package version: v0.1.0. GitHub release tag pending.
 
 Evident is intentionally small: schemas, scripts, reusable workflows, examples, templates, and docs.

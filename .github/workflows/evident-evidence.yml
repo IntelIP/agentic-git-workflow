@@ -3,6 +3,22 @@ name: Evident Evidence
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      evidence_path:
+        description: Path to the evidence envelope.
+        required: false
+        default: evident-pr-evidence.json
+        type: string
+      validation_command:
+        description: Command to run before writing evidence.
+        required: false
+        default: ""
+        type: string
+      toolkit_ref:
+        description: Evident toolkit ref to use when scripts are not vendored in the caller repo.
+        required: false
+        default: main
+        type: string
   workflow_call:
     inputs:
       evidence_path:
@@ -14,6 +30,11 @@ on:
         description: Command to run before writing evidence.
         required: false
         default: ""
+        type: string
+      toolkit_ref:
+        description: Evident toolkit ref to use when scripts are not vendored in the caller repo.
+        required: false
+        default: main
         type: string
 
 permissions:
@@ -29,10 +50,29 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout Evident toolkit
+        if: ${{ hashFiles('scripts/write-evident-evidence-envelope.mjs') == '' }}
+        uses: actions/checkout@v5
+        with:
+          repository: IntelIP/agentic-git-workflow
+          ref: ${{ inputs.toolkit_ref || 'main' }}
+          path: .evident/toolkit
+          persist-credentials: false
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      - name: Resolve Evident toolkit path
+        id: toolkit
+        shell: bash
+        run: |
+          if [ -f scripts/write-evident-evidence-envelope.mjs ]; then
+            echo "path=." >> "$GITHUB_OUTPUT"
+          else
+            echo "path=.evident/toolkit" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Optional validation command
         id: validation
@@ -41,22 +81,25 @@ jobs:
 
       - name: Write evidence envelope
         if: always()
-        run: node scripts/write-evident-evidence-envelope.mjs --out "${EVIDENCE_PATH}"
+        run: node "${TOOLKIT_PATH}/scripts/write-evident-evidence-envelope.mjs" --out "${EVIDENCE_PATH}"
         env:
+          TOOLKIT_PATH: ${{ steps.toolkit.outputs.path }}
           EVIDENCE_PATH: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
           EVIDENT_VALIDATION_COMMAND: ${{ inputs.validation_command || '' }}
           EVIDENT_VALIDATION_STATUS: ${{ steps.validation.outcome || 'skipped' }}
 
       - name: Validate evidence envelope
         if: always()
-        run: node scripts/check-evident-evidence-envelope.mjs --evidence "${EVIDENCE_PATH}"
+        run: node "${TOOLKIT_PATH}/scripts/check-evident-evidence-envelope.mjs" --evidence "${EVIDENCE_PATH}"
         env:
+          TOOLKIT_PATH: ${{ steps.toolkit.outputs.path }}
           EVIDENCE_PATH: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
 
       - name: Check external action policy
         if: always()
-        run: node scripts/check-evident-external-actions.mjs --evidence "${EVIDENCE_PATH}"
+        run: node "${TOOLKIT_PATH}/scripts/check-evident-external-actions.mjs" --evidence "${EVIDENCE_PATH}"
         env:
+          TOOLKIT_PATH: ${{ steps.toolkit.outputs.path }}
           EVIDENCE_PATH: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
 
       - name: Upload evidence artifact
