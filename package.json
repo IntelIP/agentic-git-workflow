@@ -36,6 +36,11 @@
     "json-schema",
     "sarif",
     "openssf-scorecard",
-    "github-actions"
+    "github-actions",
+    "stacked-pr",
+    "graphite",
+    "entire",
+    "code-storage",
+    "codex"
   ]
 }

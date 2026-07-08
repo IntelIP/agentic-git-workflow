@@ -25,6 +25,8 @@ The agent is optional. The evidence contract is the product.
 | Supply-chain steps | [in-toto](https://in-toto.io/), [in-toto docs](https://in-toto.io/docs/getting-started/) | Treat plan, edit, test, review, and merge as auditable steps |
 | Merge safety | [GitHub merge queues](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue) | Validate the final merge state, not just stale local state |
 | Stacked review | [Graphite stacked PRs](https://graphite.com/docs/best-practices-for-reviewing-stacks) | Split large agent work into reviewable PRs |
+| Agentic Git substrate | [Code Storage](https://code.storage/) | Treat repositories, branches, commits, patches, and code-like artifacts as machine-addressable product data |
+| Agent session ledger | [Entire](https://entire.io/), [Entire glossary](https://docs.entire.io/glossary) | Attach checkpoint and session context to code changes without making the PR body the only audit record |
 | Review-time analysis | [Google Tricorder](https://research.google.com/pubs/archive/43322.pdf), [Google SWE book: static analysis](https://abseil.io/resources/swe-book/html/ch20.html) | Put actionable automated checks in the review path |
 | OSS health | [OpenSSF Scorecard](https://github.com/ossf/scorecard), [Scorecard](https://scorecard.dev/) | Track public repo hygiene without making it a deployment gate |
 | Agent evals | [Inspect AI](https://inspect.aisi.org.uk/), [OpenAI Evals](https://github.com/openai/evals) | Test agent behavior over repeated tasks, not one-off claims |
@@ -40,6 +42,7 @@ The agent is optional. The evidence contract is the product.
 | Evidence workflow | GitHub Actions, reusable workflows | Run evidence checks in CI |
 | PR template | Code review practice | Put evidence summary in front of reviewers |
 | Scorecard workflow | OpenSSF Scorecard | Track public repo health |
+| Tooling stack guide | Code Storage, Entire, Graphite | Tag the workflow ecosystem while keeping vendor APIs outside v0.1.0 core |
 
 ## Claims We Can Make
 

@@ -1,0 +1,16 @@
+name: Evident Evidence
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  evidence:
+    uses: IntelIP/agentic-git-workflow/.github/workflows/evident-evidence.yml@v0.1.0
+    with:
+      # Replace with the repository's normal validation command.
+      validation_command: npm test
+      toolkit_ref: v0.1.0

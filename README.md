@@ -7,6 +7,9 @@
 ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-CI-2088FF?logo=githubactions&logoColor=white)
 ![JSON Schema](https://img.shields.io/badge/JSON%20Schema-evidence%20contract-0B6BFF)
 ![SARIF](https://img.shields.io/badge/SARIF-code%20scanning-2563EB)
+![Graphite](https://img.shields.io/badge/Graphite-stacked%20review-6F42C1)
+![Entire](https://img.shields.io/badge/Entire-checkpoint%20ledger-111827)
+![Code Storage](https://img.shields.io/badge/Code%20Storage-git%20substrate-0F766E)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
 Evidence-backed pull request governance for agentic development.
@@ -55,8 +58,24 @@ Evident gives reviewers a repeatable answer to:
 | Security signal | OpenSSF Scorecard |
 | Code scanning output | SARIF |
 | Review surface | GitHub Pull Requests |
+| Stacked review | Graphite or Graphite-like PR stacks |
+| Checkpoint ledger | Entire or compatible Git-backed session ledger |
+| Git substrate | GitHub today; Code Storage-compatible machine Git layer |
+| Agent review | Codex review, when configured |
 | Governance model | Default-deny external action policy |
 | Prior-art alignment | SLSA-inspired, in-toto-inspired |
+
+## Agentic Tooling Context
+
+Evident is the evidence gate in a larger agentic Git stack:
+
+- Code Storage-style substrate for machine-first Git repositories, branches, and code state
+- Entire-style checkpoint ledger for agent session context and why-traceability
+- Graphite-style stacked PR workflow for small dependent changes
+- GitHub Pull Requests and GitHub Actions for review, checks, and artifacts
+- Codex review as an optional agentic review layer
+
+See [Agentic tooling stack](docs/tooling-stack.md) for the full layer map and vendor-boundary notes.
 
 ## Service Modules
 
@@ -70,6 +89,29 @@ Evident gives reviewers a repeatable answer to:
 | PR template | `.github/pull_request_template.md` | Puts evidence summary in front of reviewers |
 
 ## Quick Start
+
+Add Evident to another repository:
+
+```yaml
+name: Evident Evidence
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  evidence:
+    uses: IntelIP/agentic-git-workflow/.github/workflows/evident-evidence.yml@v0.1.0
+    with:
+      # Replace with the repository's normal validation command.
+      validation_command: npm test
+      toolkit_ref: v0.1.0
+```
+
+`toolkit_ref` is required when the consumer repository does not vendor the Evident scripts. In consumer repositories, setting it forces the workflow to use the pinned Evident toolkit instead of PR-controlled local scripts. Pin it to the same release tag or SHA as the reusable workflow. Before the first release tag exists, use `main` instead of `v0.1.0`.
 
 Validate the bundled fixture:
 
@@ -105,7 +147,7 @@ npm run evident:external-actions:check
 | `scripts/` | Dependency-free writer and validators |
 | `examples/` | Minimal valid evidence fixture |
 | `templates/` | PR template for evidence-backed review |
-| `docs/` | Workflow model, schema reference, and research grounding |
+| `docs/` | Getting started, review guidance, workflow model, schema reference, and research grounding |
 
 ## Protected Action Classes
 
@@ -124,7 +166,7 @@ The external-action checker fails when an action is marked `attempted: true` wit
 
 ## GitHub Actions
 
-Run directly on pull requests:
+Run directly on pull requests in this repository:
 
 ```yaml
 name: Evident Evidence
@@ -135,17 +177,25 @@ on:
 jobs:
   evidence:
     uses: IntelIP/agentic-git-workflow/.github/workflows/evident-evidence.yml@main
+    with:
+      toolkit_ref: main
 ```
 
-The workflow writes `evident-pr-evidence.json`, validates the envelope, checks the external-action policy, and uploads the evidence artifact.
+For consumer repositories that use fallback toolkit checkout, pin both the workflow ref and `toolkit_ref` to the same release tag.
+
+The workflow runs the repository validation command first, then writes `evident-pr-evidence.json`, validates the envelope, checks the external-action policy, and uploads the evidence artifact.
 
 ## Docs
 
+- [Getting started](docs/getting-started.md)
+- [Agentic tooling stack](docs/tooling-stack.md)
 - [Workflow model](docs/workflow-model.md)
 - [Evidence schema](docs/evidence-schema.md)
+- [Codex review](docs/codex-review.md)
 - [Research grounding](docs/research-grounding.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 
 ## Non-Goals
 
@@ -157,6 +207,6 @@ The workflow writes `evident-pr-evidence.json`, validates the envelope, checks t
 
 ## Status
 
-Current release: v0.1.0 public initial release.
+Current package version: v0.1.0. GitHub release tag pending.
 
 Evident is intentionally small: schemas, scripts, reusable workflows, examples, templates, and docs.

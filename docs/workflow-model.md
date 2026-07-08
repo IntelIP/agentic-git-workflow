@@ -14,6 +14,16 @@ Evident turns an agentic coding run into a reviewable pull request packet.
 | Stack | Ordered PR chain for larger changes |
 | Merge queue | Optional final validation point before main |
 
+## Tooling Layers
+
+| Layer | Example Tooling | Role |
+| --- | --- | --- |
+| Git substrate | GitHub, Code Storage | Stores repositories, branches, commits, and patch state |
+| Session ledger | Entire | Preserves checkpoint and agent-run context for later review |
+| Evidence gate | Evident | Validates commands, checks, changed files, approvals, and side-effect policy |
+| Stacked review | Graphite | Keeps related PRs small, ordered, and reviewable |
+| Agent review | Codex review | Adds optional diff and evidence review by an agent |
+
 ## Standard Flow
 
 ```text

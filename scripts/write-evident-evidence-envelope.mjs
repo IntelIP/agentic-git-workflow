@@ -9,6 +9,7 @@ const now = new Date().toISOString();
 const changedFiles = getChangedFiles();
 const validationCommand = env("EVIDENT_VALIDATION_COMMAND");
 const validationStatus = normalizeStatus(env("EVIDENT_VALIDATION_STATUS") || "skipped");
+const writerCommand = env("EVIDENT_WRITER_COMMAND") || `node ${process.argv[1] || "scripts/write-evident-evidence-envelope.mjs"}`;
 const sha = env("GITHUB_SHA") || git(["rev-parse", "HEAD"]) || "unknown";
 const baseRef = env("GITHUB_BASE_REF") || git(["rev-parse", "--abbrev-ref", "HEAD"]) || "main";
 const headRef = env("GITHUB_HEAD_REF") || git(["rev-parse", "--abbrev-ref", "HEAD"]) || "HEAD";
@@ -52,7 +53,7 @@ const evidence = {
       ]
     : [
         {
-          command: "node scripts/write-evident-evidence-envelope.mjs",
+          command: writerCommand,
           status: "passed",
           exitCode: 0,
           completedAt: now,
@@ -109,13 +110,17 @@ function getChangedFiles() {
     }
   }
 
-  const stagedOrWorking = git(["diff", "--name-only", "HEAD"]);
-  const untracked = git(["ls-files", "--others", "--exclude-standard"]);
-  const localFiles = [...splitLines(stagedOrWorking), ...splitLines(untracked)];
+  const stagedOrWorking = splitLines(git(["diff", "--name-only", "HEAD"]));
+  const untracked = filterFallbackToolkitFiles(splitLines(git(["ls-files", "--others", "--exclude-standard"])));
+  const localFiles = [...stagedOrWorking, ...untracked];
   if (localFiles.length > 0) return [...new Set(localFiles)].sort();
 
   const lastCommit = git(["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "HEAD"]);
   return splitLines(lastCommit).sort();
+}
+
+function filterFallbackToolkitFiles(files) {
+  return files.filter((file) => file !== ".evident/toolkit" && !file.startsWith(".evident/toolkit/"));
 }
 
 function defaultActionClasses() {
