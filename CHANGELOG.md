@@ -2,7 +2,7 @@
 
 All notable changes to Tabellio are recorded here.
 
-## 0.1.0 - Pending Release
+## 0.1.0 - 2026-07-08
 
 Initial public release.
 
