@@ -97,6 +97,7 @@ jobs:
           EVIDENCE_PATH: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
           EVIDENT_VALIDATION_COMMAND: ${{ inputs.validation_command || '' }}
           EVIDENT_VALIDATION_STATUS: ${{ steps.validation.outcome || 'skipped' }}
+          EVIDENT_WRITER_COMMAND: node ${{ steps.toolkit.outputs.path }}/scripts/write-evident-evidence-envelope.mjs
 
       - name: Validate evidence envelope
         if: ${{ always() && steps.toolkit.outcome == 'success' }}
