@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 
 const args = parseArgs(process.argv.slice(2));
-const evidencePath = args.evidence ?? "evident-pr-evidence.json";
+const evidencePath = args.evidence ?? "tabellio-pr-evidence.json";
 const requiredActionClasses = [
   "deployment",
   "database-migration",

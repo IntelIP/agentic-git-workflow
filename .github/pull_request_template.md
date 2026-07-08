@@ -1,4 +1,4 @@
-## Evident Evidence
+## Tabellio Evidence
 
 - [ ] Evidence envelope generated
 - [ ] Evidence envelope validated
@@ -11,7 +11,7 @@ Evidence summary:
 
 ```json
 {
-  "schemaVersion": "evident-evidence/v0.1",
+  "schemaVersion": "tabellio-evidence/v0.1",
   "runId": "",
   "baseRef": "",
   "headRef": "",

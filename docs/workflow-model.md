@@ -1,6 +1,6 @@
-# Evident Workflow Model
+# Tabellio Workflow Model
 
-Evident turns an agentic coding run into a reviewable pull request packet.
+Tabellio turns an agentic coding run into a reviewable pull request packet.
 
 ## Core Objects
 
@@ -20,7 +20,7 @@ Evident turns an agentic coding run into a reviewable pull request packet.
 | --- | --- | --- |
 | Git substrate | GitHub, Code Storage | Stores repositories, branches, commits, and patch state |
 | Session ledger | Entire | Preserves checkpoint and agent-run context for later review |
-| Evidence gate | Evident | Validates commands, checks, changed files, approvals, and side-effect policy |
+| Evidence gate | Tabellio | Validates commands, checks, changed files, approvals, and side-effect policy |
 | Stacked review | Graphite | Keeps related PRs small, ordered, and reviewable |
 | Agent review | Codex review | Adds optional diff and evidence review by an agent |
 

@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Tabellio product overview</title>
+  <desc id="desc">Tabellio evidence-backed pull request governance overview.</desc>
+  <defs>
+    <linearGradient id="orange" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#F2B37B"/>
+      <stop offset="0.5" stop-color="#DA5C2C"/>
+      <stop offset="1" stop-color="#9F341D"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="50%" cy="28%" r="60%">
+      <stop offset="0" stop-color="#DA5C2C" stop-opacity="0.22"/>
+      <stop offset="0.45" stop-color="#DA5C2C" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000000" flood-opacity="0.36"/>
+    </filter>
+    <style>
+      .title { font: 780 112px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #eeeeee; letter-spacing: -1.5px; }
+      .subtitle { font: 400 28px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #b4b4b4; letter-spacing: 0; }
+      .cardTitle { font: 760 28px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #eeeeee; letter-spacing: 0; }
+      .body { font: 500 18px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #b4b4b4; letter-spacing: 0; }
+      .mono { font: 500 17px "SFMono-Regular", Consolas, "Liberation Mono", monospace; fill: #b4b4b4; letter-spacing: 0; }
+      .pill { font: 700 14px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0.04em; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="#000000"/>
+  <rect width="1600" height="900" fill="url(#halo)"/>
+  <g opacity="0.24" stroke="#202020" stroke-width="1">
+    <path d="M0 90h1600M0 180h1600M0 270h1600M0 360h1600M0 450h1600M0 540h1600M0 630h1600M0 720h1600M0 810h1600"/>
+    <path d="M100 0v900M200 0v900M300 0v900M400 0v900M500 0v900M600 0v900M700 0v900M800 0v900M900 0v900M1000 0v900M1100 0v900M1200 0v900M1300 0v900M1400 0v900M1500 0v900"/>
+  </g>
+
+  <g transform="translate(516 70)">
+    <circle cx="120" cy="120" r="82" fill="#111111" stroke="url(#orange)" stroke-width="14"/>
+    <circle cx="120" cy="120" r="52" fill="none" stroke="#3A3A3A" stroke-width="7"/>
+    <path d="M70 92H170M120 92V174" fill="none" stroke="#EEEEEE" stroke-width="15" stroke-linecap="round"/>
+    <path d="M56 152C86 149 91 110 121 125C143 135 151 164 184 140" fill="none" stroke="#DA5C2C" stroke-width="12" stroke-linecap="round"/>
+    <circle cx="56" cy="152" r="12" fill="#000000" stroke="#F2B37B" stroke-width="8"/>
+    <circle cx="184" cy="140" r="12" fill="#000000" stroke="#F2B37B" stroke-width="8"/>
+    <text x="238" y="156" class="title">Tabellio</text>
+  </g>
+  <text x="800" y="332" text-anchor="middle" class="subtitle">Evidence-backed pull request governance for agentic development.</text>
+
+  <g transform="translate(130 430)" filter="url(#soft)">
+    <rect width="360" height="250" rx="10" fill="#111111" stroke="#3A3A3A"/>
+    <text x="34" y="52" class="cardTitle">Pull Request</text>
+    <text x="34" y="86" class="body">Diff, branch, task source</text>
+    <path d="M54 150h88c50 0 54-56 112-56h50" fill="none" stroke="#DA5C2C" stroke-width="12" stroke-linecap="round"/>
+    <circle cx="54" cy="150" r="18" fill="#111111" stroke="#F2B37B" stroke-width="10"/>
+    <circle cx="304" cy="94" r="18" fill="#111111" stroke="#F2B37B" stroke-width="10"/>
+    <rect x="34" y="190" width="112" height="28" rx="4" fill="#191919" stroke="#3A3A3A"/>
+    <text x="47" y="210" class="mono">main</text>
+    <rect x="158" y="190" width="150" height="28" rx="4" fill="#191919" stroke="#3A3A3A"/>
+    <text x="171" y="210" class="mono">agent/run</text>
+  </g>
+
+  <path d="M530 555h140" stroke="#DA5C2C" stroke-width="10" stroke-linecap="round" stroke-dasharray="2 22"/>
+  <path d="M660 532l42 23-42 23z" fill="#DA5C2C"/>
+
+  <g transform="translate(620 390)" filter="url(#soft)">
+    <rect width="360" height="330" rx="10" fill="#111111" stroke="#DA5C2C" stroke-opacity="0.72"/>
+    <text x="34" y="52" class="cardTitle">Evidence Packet</text>
+    <text x="34" y="86" class="body">Machine-readable review record</text>
+    <rect x="34" y="116" width="292" height="144" rx="6" fill="#000000" stroke="#3A3A3A"/>
+    <text x="58" y="150" class="mono">{</text>
+    <text x="82" y="180" class="mono">"schema": "tabellio/v0.1",</text>
+    <text x="82" y="210" class="mono">"commands": "passed",</text>
+    <text x="82" y="240" class="mono">"sideEffects": "denied"</text>
+    <text x="58" y="270" class="mono">}</text>
+    <rect x="34" y="282" width="110" height="30" rx="999" fill="#191919" stroke="#3A3A3A"/>
+    <text x="53" y="303" class="pill" fill="#F2B37B">SIGNED</text>
+    <rect x="156" y="282" width="126" height="30" rx="999" fill="#191919" stroke="#3A3A3A"/>
+    <text x="175" y="303" class="pill" fill="#EEEEEE">VALIDATED</text>
+  </g>
+
+  <path d="M1020 555h140" stroke="#DA5C2C" stroke-width="10" stroke-linecap="round" stroke-dasharray="2 22"/>
+  <path d="M1150 532l42 23-42 23z" fill="#DA5C2C"/>
+
+  <g transform="translate(1110 430)" filter="url(#soft)">
+    <rect width="360" height="250" rx="10" fill="#111111" stroke="#3A3A3A"/>
+    <text x="34" y="52" class="cardTitle">Approval Gate</text>
+    <text x="34" y="86" class="body">Default-deny side effects</text>
+    <g transform="translate(42 122)">
+      <rect width="276" height="34" rx="5" fill="#191919" stroke="#3A3A3A"/>
+      <text x="18" y="23" class="mono">deploy</text>
+      <path d="M226 16l12 12 28-30" transform="translate(0 2)" fill="none" stroke="#DA5C2C" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect y="52" width="276" height="34" rx="5" fill="#191919" stroke="#3A3A3A"/>
+      <text x="18" y="75" class="mono">migration</text>
+      <path d="M226 68l12 12 28-30" transform="translate(0 2)" fill="none" stroke="#DA5C2C" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

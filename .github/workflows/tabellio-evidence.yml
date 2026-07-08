@@ -1,4 +1,4 @@
-name: Evident Evidence
+name: Tabellio Evidence
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
       evidence_path:
         description: Path to the evidence envelope.
         required: false
-        default: evident-pr-evidence.json
+        default: tabellio-pr-evidence.json
         type: string
       validation_command:
         description: Command to run before writing evidence.
@@ -15,7 +15,7 @@ on:
         default: ""
         type: string
       toolkit_ref:
-        description: Evident toolkit ref for fallback scripts. Pin to the same ref as the reusable workflow.
+        description: Tabellio toolkit ref for fallback scripts. Pin to the same ref as the reusable workflow.
         required: false
         type: string
   workflow_call:
@@ -23,7 +23,7 @@ on:
       evidence_path:
         description: Path to the evidence envelope.
         required: false
-        default: evident-pr-evidence.json
+        default: tabellio-pr-evidence.json
         type: string
       validation_command:
         description: Command to run before writing evidence.
@@ -31,7 +31,7 @@ on:
         default: ""
         type: string
       toolkit_ref:
-        description: Evident toolkit ref for fallback scripts. Pin to the same ref as the reusable workflow.
+        description: Tabellio toolkit ref for fallback scripts. Pin to the same ref as the reusable workflow.
         required: false
         type: string
 
@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   evidence:
-    name: Evident evidence
+    name: Tabellio evidence
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -58,64 +58,64 @@ jobs:
         if: ${{ inputs.validation_command }}
         run: ${{ inputs.validation_command }}
 
-      - name: Resolve Evident toolkit path
+      - name: Resolve Tabellio toolkit path
         id: toolkit
         if: ${{ always() }}
         shell: bash
         env:
           TOOLKIT_REF: ${{ inputs.toolkit_ref || '' }}
         run: |
-          if [ "$GITHUB_REPOSITORY" = "IntelIP/agentic-git-workflow" ]; then
+          if [ "$GITHUB_REPOSITORY" = "IntelIP/Tabellio" ]; then
             echo "path=." >> "$GITHUB_OUTPUT"
           elif [ -n "$TOOLKIT_REF" ]; then
-            echo "path=.evident/toolkit" >> "$GITHUB_OUTPUT"
+            echo "path=.tabellio/toolkit" >> "$GITHUB_OUTPUT"
             echo "ref=$TOOLKIT_REF" >> "$GITHUB_OUTPUT"
-          elif [ -f scripts/write-evident-evidence-envelope.mjs ] && \
-            [ -f scripts/check-evident-evidence-envelope.mjs ] && \
-            [ -f scripts/check-evident-external-actions.mjs ]; then
+          elif [ -f scripts/write-tabellio-evidence-envelope.mjs ] && \
+            [ -f scripts/check-tabellio-evidence-envelope.mjs ] && \
+            [ -f scripts/check-tabellio-external-actions.mjs ]; then
             echo "path=." >> "$GITHUB_OUTPUT"
           else
-            echo "::error::toolkit_ref is required when Evident scripts are not vendored. Pin it to the same ref as the reusable workflow."
-            echo "path=.evident/toolkit" >> "$GITHUB_OUTPUT"
+            echo "::error::toolkit_ref is required when Tabellio scripts are not vendored. Pin it to the same ref as the reusable workflow."
+            echo "path=.tabellio/toolkit" >> "$GITHUB_OUTPUT"
             exit 1
           fi
 
-      - name: Checkout Evident toolkit
-        if: ${{ always() && steps.toolkit.outputs.path == '.evident/toolkit' && steps.toolkit.outputs.ref != '' }}
+      - name: Checkout Tabellio toolkit
+        if: ${{ always() && steps.toolkit.outputs.path == '.tabellio/toolkit' && steps.toolkit.outputs.ref != '' }}
         uses: actions/checkout@v5
         with:
-          repository: IntelIP/agentic-git-workflow
+          repository: IntelIP/Tabellio
           ref: ${{ steps.toolkit.outputs.ref }}
-          path: .evident/toolkit
+          path: .tabellio/toolkit
           persist-credentials: false
 
       - name: Write evidence envelope
         if: ${{ always() && steps.toolkit.outcome == 'success' }}
-        run: node "${TOOLKIT_PATH}/scripts/write-evident-evidence-envelope.mjs" --out "${EVIDENCE_PATH}"
+        run: node "${TOOLKIT_PATH}/scripts/write-tabellio-evidence-envelope.mjs" --out "${EVIDENCE_PATH}"
         env:
           TOOLKIT_PATH: ${{ steps.toolkit.outputs.path }}
-          EVIDENCE_PATH: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
-          EVIDENT_VALIDATION_COMMAND: ${{ inputs.validation_command || '' }}
-          EVIDENT_VALIDATION_STATUS: ${{ steps.validation.outcome || 'skipped' }}
-          EVIDENT_WRITER_COMMAND: node ${{ steps.toolkit.outputs.path }}/scripts/write-evident-evidence-envelope.mjs
+          EVIDENCE_PATH: ${{ inputs.evidence_path || 'tabellio-pr-evidence.json' }}
+          TABELLIO_VALIDATION_COMMAND: ${{ inputs.validation_command || '' }}
+          TABELLIO_VALIDATION_STATUS: ${{ steps.validation.outcome || 'skipped' }}
+          TABELLIO_WRITER_COMMAND: node ${{ steps.toolkit.outputs.path }}/scripts/write-tabellio-evidence-envelope.mjs
 
       - name: Validate evidence envelope
         if: ${{ always() && steps.toolkit.outcome == 'success' }}
-        run: node "${TOOLKIT_PATH}/scripts/check-evident-evidence-envelope.mjs" --evidence "${EVIDENCE_PATH}"
+        run: node "${TOOLKIT_PATH}/scripts/check-tabellio-evidence-envelope.mjs" --evidence "${EVIDENCE_PATH}"
         env:
           TOOLKIT_PATH: ${{ steps.toolkit.outputs.path }}
-          EVIDENCE_PATH: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
+          EVIDENCE_PATH: ${{ inputs.evidence_path || 'tabellio-pr-evidence.json' }}
 
       - name: Check external action policy
         if: ${{ always() && steps.toolkit.outcome == 'success' }}
-        run: node "${TOOLKIT_PATH}/scripts/check-evident-external-actions.mjs" --evidence "${EVIDENCE_PATH}"
+        run: node "${TOOLKIT_PATH}/scripts/check-tabellio-external-actions.mjs" --evidence "${EVIDENCE_PATH}"
         env:
           TOOLKIT_PATH: ${{ steps.toolkit.outputs.path }}
-          EVIDENCE_PATH: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
+          EVIDENCE_PATH: ${{ inputs.evidence_path || 'tabellio-pr-evidence.json' }}
 
       - name: Upload evidence artifact
         if: ${{ always() && steps.toolkit.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
-          name: evident-pr-evidence
-          path: ${{ inputs.evidence_path || 'evident-pr-evidence.json' }}
+          name: tabellio-pr-evidence
+          path: ${{ inputs.evidence_path || 'tabellio-pr-evidence.json' }}

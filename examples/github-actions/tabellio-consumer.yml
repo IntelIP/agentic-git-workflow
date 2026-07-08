@@ -1,4 +1,4 @@
-name: Evident Evidence
+name: Tabellio Evidence
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   evidence:
-    uses: IntelIP/agentic-git-workflow/.github/workflows/evident-evidence.yml@v0.1.0
+    uses: IntelIP/Tabellio/.github/workflows/tabellio-evidence.yml@v0.1.0
     with:
       # Replace with the repository's normal validation command.
       validation_command: npm test

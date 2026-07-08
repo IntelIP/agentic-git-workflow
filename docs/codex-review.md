@@ -1,6 +1,6 @@
 # Codex Review
 
-Codex review is an optional review layer for Evident pull requests. It should inspect the diff and the evidence packet, not replace deterministic checks.
+Codex review is an optional review layer for Tabellio pull requests. It should inspect the diff and the evidence packet, not replace deterministic checks.
 
 ## Local Preflight
 

@@ -4,12 +4,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 const args = parseArgs(process.argv.slice(2));
-const outPath = args.out ?? "evident-pr-evidence.json";
+const outPath = args.out ?? "tabellio-pr-evidence.json";
 const now = new Date().toISOString();
 const changedFiles = getChangedFiles();
-const validationCommand = env("EVIDENT_VALIDATION_COMMAND");
-const validationStatus = normalizeStatus(env("EVIDENT_VALIDATION_STATUS") || "skipped");
-const writerCommand = env("EVIDENT_WRITER_COMMAND") || `node ${process.argv[1] || "scripts/write-evident-evidence-envelope.mjs"}`;
+const validationCommand = env("TABELLIO_VALIDATION_COMMAND");
+const validationStatus = normalizeStatus(env("TABELLIO_VALIDATION_STATUS") || "skipped");
+const writerCommand = env("TABELLIO_WRITER_COMMAND") || `node ${process.argv[1] || "scripts/write-tabellio-evidence-envelope.mjs"}`;
 const sha = env("GITHUB_SHA") || git(["rev-parse", "HEAD"]) || "unknown";
 const baseRef = env("GITHUB_BASE_REF") || git(["rev-parse", "--abbrev-ref", "HEAD"]) || "main";
 const headRef = env("GITHUB_HEAD_REF") || git(["rev-parse", "--abbrev-ref", "HEAD"]) || "HEAD";
@@ -17,7 +17,7 @@ const repo = env("GITHUB_REPOSITORY") || basename(git(["rev-parse", "--show-topl
 const runId = env("GITHUB_RUN_ID") || `local-${sha.slice(0, 12)}-${Date.now()}`;
 
 const evidence = {
-  schemaVersion: "evident-evidence/v0.1",
+  schemaVersion: "tabellio-evidence/v0.1",
   runId,
   repo,
   git: {
@@ -32,14 +32,14 @@ const evidence = {
     id: env("GITHUB_ACTOR") || env("USER") || "local-agent",
   },
   agentRuntime: {
-    name: env("EVIDENT_RUNTIME_NAME") || "unspecified",
-    model: env("EVIDENT_RUNTIME_MODEL") || "",
-    tooling: splitCsv(env("EVIDENT_RUNTIME_TOOLING") || "git,github-actions,node"),
+    name: env("TABELLIO_RUNTIME_NAME") || "unspecified",
+    model: env("TABELLIO_RUNTIME_MODEL") || "",
+    tooling: splitCsv(env("TABELLIO_RUNTIME_TOOLING") || "git,github-actions,node"),
   },
   taskSource: {
-    type: env("EVIDENT_TASK_SOURCE_TYPE") || "manual",
-    summary: env("EVIDENT_TASK_SUMMARY") || "Evident evidence envelope generated from repository state.",
-    url: env("EVIDENT_TASK_URL") || "",
+    type: env("TABELLIO_TASK_SOURCE_TYPE") || "manual",
+    summary: env("TABELLIO_TASK_SUMMARY") || "Tabellio evidence envelope generated from repository state.",
+    url: env("TABELLIO_TASK_URL") || "",
   },
   changedFiles,
   commandsRun: validationCommand
@@ -84,7 +84,7 @@ const evidence = {
   },
   artifacts: [
     {
-      name: "Evident evidence envelope",
+      name: "Tabellio evidence envelope",
       path: outPath,
     },
   ],
@@ -98,7 +98,7 @@ writeFileSync(outPath, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(JSON.stringify(evidence, null, 2));
 
 function getChangedFiles() {
-  const explicit = env("EVIDENT_CHANGED_FILES");
+  const explicit = env("TABELLIO_CHANGED_FILES");
   if (explicit) return splitCsv(explicit);
 
   const base = env("GITHUB_BASE_REF");
@@ -120,7 +120,7 @@ function getChangedFiles() {
 }
 
 function filterFallbackToolkitFiles(files) {
-  return files.filter((file) => file !== ".evident/toolkit" && !file.startsWith(".evident/toolkit/"));
+  return files.filter((file) => file !== ".tabellio/toolkit" && !file.startsWith(".tabellio/toolkit/"));
 }
 
 function defaultActionClasses() {

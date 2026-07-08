@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Tabellio mark</title>
+  <desc id="desc">Circular attestation mark with a hidden T and provenance path.</desc>
+  <defs>
+    <linearGradient id="orange" x1="96" y1="72" x2="416" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F2B37B"/>
+      <stop offset="0.5" stop-color="#DA5C2C"/>
+      <stop offset="1" stop-color="#9F341D"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="#000000"/>
+  <circle cx="256" cy="256" r="150" fill="#111111" stroke="url(#orange)" stroke-width="24"/>
+  <circle cx="256" cy="256" r="96" fill="none" stroke="#3A3A3A" stroke-width="10"/>
+  <path d="M164 204H348M256 204V352" fill="none" stroke="#EEEEEE" stroke-width="28" stroke-linecap="round"/>
+  <path d="M136 314C190 309 196 235 253 262C290 280 306 331 376 286" fill="none" stroke="#DA5C2C" stroke-width="22" stroke-linecap="round"/>
+  <circle cx="136" cy="314" r="22" fill="#000000" stroke="#F2B37B" stroke-width="16"/>
+  <circle cx="376" cy="286" r="22" fill="#000000" stroke="#F2B37B" stroke-width="16"/>
+</svg>

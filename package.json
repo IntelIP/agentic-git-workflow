@@ -1,25 +1,43 @@
 {
-  "name": "agentic-git-workflow",
+  "name": "@intelip/tabellio",
   "version": "0.1.0",
-  "description": "Evident: evidence-backed pull request governance for agentic development.",
+  "description": "Tabellio: evidence-backed pull request governance for agentic development.",
   "type": "module",
   "license": "Apache-2.0",
   "author": "IntelIP",
-  "homepage": "https://github.com/IntelIP/agentic-git-workflow#readme",
+  "homepage": "https://github.com/IntelIP/Tabellio#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/IntelIP/agentic-git-workflow.git"
+    "url": "git+https://github.com/IntelIP/Tabellio.git"
   },
   "bugs": {
-    "url": "https://github.com/IntelIP/agentic-git-workflow/issues"
+    "url": "https://github.com/IntelIP/Tabellio/issues"
   },
   "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    ".github/pull_request_template.md",
+    ".github/workflows",
+    "schemas",
+    "scripts",
+    "examples",
+    "templates",
+    "docs"
+  ],
   "scripts": {
-    "evident:evidence:example:check": "node scripts/check-evident-evidence-envelope.mjs --evidence examples/evident-evidence/minimal-evidence.json",
-    "evident:evidence:write": "node scripts/write-evident-evidence-envelope.mjs --out evident-pr-evidence.json",
-    "evident:evidence:check": "node scripts/check-evident-evidence-envelope.mjs --evidence evident-pr-evidence.json",
-    "evident:external-actions:check": "node scripts/check-evident-external-actions.mjs --evidence evident-pr-evidence.json",
-    "check": "npm run evident:evidence:example:check && node scripts/check-evident-external-actions.mjs --evidence examples/evident-evidence/minimal-evidence.json"
+    "tabellio:evidence:example:check": "node scripts/check-tabellio-evidence-envelope.mjs --evidence examples/tabellio-evidence/minimal-evidence.json",
+    "tabellio:evidence:write": "node scripts/write-tabellio-evidence-envelope.mjs --out tabellio-pr-evidence.json",
+    "tabellio:evidence:check": "node scripts/check-tabellio-evidence-envelope.mjs --evidence tabellio-pr-evidence.json",
+    "tabellio:external-actions:check": "node scripts/check-tabellio-external-actions.mjs --evidence tabellio-pr-evidence.json",
+    "check": "npm run tabellio:evidence:example:check && node scripts/check-tabellio-external-actions.mjs --evidence examples/tabellio-evidence/minimal-evidence.json"
   },
   "engines": {
     "node": ">=20"
@@ -32,7 +50,7 @@
     "provenance",
     "ci",
     "workflow",
-    "evident",
+    "tabellio",
     "json-schema",
     "sarif",
     "openssf-scorecard",

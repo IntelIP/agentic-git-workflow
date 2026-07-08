@@ -1,6 +1,6 @@
 # Evidence Schema
 
-The evidence envelope is the core Evident contract.
+The evidence envelope is the core Tabellio contract.
 
 Schema files:
 
@@ -11,7 +11,7 @@ Schema files:
 
 | Field | Purpose |
 | --- | --- |
-| `schemaVersion` | Contract version. Current value: `evident-evidence/v0.1` |
+| `schemaVersion` | Contract version. Current value: `tabellio-evidence/v0.1` |
 | `runId` | Unique evidence run id |
 | `repo` | Repository name |
 | `git` | Base ref, head ref, SHA, optional PR metadata |
@@ -28,7 +28,7 @@ Schema files:
 
 ## Minimal Valid Fixture
 
-The smallest maintained valid fixture lives at `examples/evident-evidence/minimal-evidence.json`.
+The smallest maintained valid fixture lives at `examples/tabellio-evidence/minimal-evidence.json`.
 
 Use that fixture instead of copying a shortened shape: the validators require at least one command, one check, and the complete default-deny action-class set.
 
@@ -73,16 +73,16 @@ The checker fails when `attempted: true` and `approved !== true`.
 ## Validation Commands
 
 ```bash
-node scripts/check-evident-evidence-envelope.mjs --evidence evident-pr-evidence.json
-node scripts/check-evident-external-actions.mjs --evidence evident-pr-evidence.json
+node scripts/check-tabellio-evidence-envelope.mjs --evidence tabellio-pr-evidence.json
+node scripts/check-tabellio-external-actions.mjs --evidence tabellio-pr-evidence.json
 ```
 
 Generate and validate:
 
 ```bash
-node scripts/write-evident-evidence-envelope.mjs --out evident-pr-evidence.json
-node scripts/check-evident-evidence-envelope.mjs --evidence evident-pr-evidence.json
-node scripts/check-evident-external-actions.mjs --evidence evident-pr-evidence.json
+node scripts/write-tabellio-evidence-envelope.mjs --out tabellio-pr-evidence.json
+node scripts/check-tabellio-evidence-envelope.mjs --evidence tabellio-pr-evidence.json
+node scripts/check-tabellio-external-actions.mjs --evidence tabellio-pr-evidence.json
 ```
 
 ## Boundary

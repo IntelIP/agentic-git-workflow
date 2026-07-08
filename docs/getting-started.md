@@ -1,6 +1,6 @@
 # Getting Started
 
-Evident adds a machine-readable evidence packet to pull requests. It is agent-agnostic: humans, CI, coding agents, and mixed workflows can all produce the same review surface.
+Tabellio adds a machine-readable evidence packet to pull requests. It is agent-agnostic: humans, CI, coding agents, and mixed workflows can all produce the same review surface.
 
 ## Requirements
 
@@ -11,10 +11,10 @@ Evident adds a machine-readable evidence packet to pull requests. It is agent-ag
 
 ## Add The Reusable Workflow
 
-Create `.github/workflows/evident.yml` in the consumer repository:
+Create `.github/workflows/tabellio.yml` in the consumer repository:
 
 ```yaml
-name: Evident Evidence
+name: Tabellio Evidence
 
 on:
   pull_request:
@@ -25,22 +25,22 @@ permissions:
 
 jobs:
   evidence:
-    uses: IntelIP/agentic-git-workflow/.github/workflows/evident-evidence.yml@v0.1.0
+    uses: IntelIP/Tabellio/.github/workflows/tabellio-evidence.yml@v0.1.0
     with:
       # Replace with the repository's normal validation command.
       validation_command: npm test
       toolkit_ref: v0.1.0
 ```
 
-`toolkit_ref` is required when the consumer repository does not vendor the Evident scripts. In consumer repositories, setting it forces the workflow to use the pinned Evident toolkit instead of PR-controlled local scripts. Pin it to the same release tag or SHA as the reusable workflow. Before the first release tag exists, use `main` for both refs.
+`toolkit_ref` is required when the consumer repository does not vendor the Tabellio scripts. In consumer repositories, setting it forces the workflow to use the pinned Tabellio toolkit instead of PR-controlled local scripts. Pin it to the same release tag or SHA as the reusable workflow. Before the first release tag exists, use `main` for both refs.
 
 ## What The Workflow Does
 
 1. Checks out the pull request repository.
 2. Runs the optional validation command before adding any fallback toolkit files.
-3. Uses local Evident scripts when the repository vendors them.
-4. Otherwise checks out the Evident toolkit at `toolkit_ref`.
-5. Writes `evident-pr-evidence.json`.
+3. Uses local Tabellio scripts when the repository vendors them.
+4. Otherwise checks out the Tabellio toolkit at `toolkit_ref`.
+5. Writes `tabellio-pr-evidence.json`.
 6. Validates the evidence envelope.
 7. Checks the default-deny external action policy.
 8. Uploads the evidence artifact.
@@ -51,19 +51,19 @@ From this repository:
 
 ```bash
 npm run check
-node scripts/write-evident-evidence-envelope.mjs --out /tmp/evident-pr-evidence.json
-node scripts/check-evident-evidence-envelope.mjs --evidence /tmp/evident-pr-evidence.json
-node scripts/check-evident-external-actions.mjs --evidence /tmp/evident-pr-evidence.json
+node scripts/write-tabellio-evidence-envelope.mjs --out /tmp/tabellio-pr-evidence.json
+node scripts/check-tabellio-evidence-envelope.mjs --evidence /tmp/tabellio-pr-evidence.json
+node scripts/check-tabellio-external-actions.mjs --evidence /tmp/tabellio-pr-evidence.json
 ```
 
 From a consumer repository that does not vendor the scripts, use the GitHub Actions workflow as the integration point.
 
 ## Pull Request Copy
 
-Add the Evident checklist to the repository PR template:
+Add the Tabellio checklist to the repository PR template:
 
 ```markdown
-## Evident Evidence
+## Tabellio Evidence
 
 - [ ] Evidence envelope generated
 - [ ] Evidence envelope validated
@@ -97,5 +97,5 @@ Keep the first PR small:
 1. Add the workflow file.
 2. Add the PR template checklist.
 3. Open a test pull request.
-4. Confirm `Evident evidence` passes.
-5. Confirm the uploaded artifact contains `evident-pr-evidence.json`.
+4. Confirm `Tabellio evidence` passes.
+5. Confirm the uploaded artifact contains `tabellio-pr-evidence.json`.

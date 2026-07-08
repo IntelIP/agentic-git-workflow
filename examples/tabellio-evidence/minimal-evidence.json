@@ -1,13 +1,13 @@
 {
-  "schemaVersion": "evident-evidence/v0.1",
+  "schemaVersion": "tabellio-evidence/v0.1",
   "runId": "local-example-001",
-  "repo": "example/agentic-git-workflow",
+  "repo": "example/tabellio",
   "git": {
     "baseRef": "main",
-    "headRef": "evident/example-evidence",
+    "headRef": "tabellio/example-evidence",
     "sha": "0000000000000000000000000000000000000000",
     "pullRequest": "1",
-    "pullRequestUrl": "https://github.com/example/agentic-git-workflow/pull/1"
+    "pullRequestUrl": "https://github.com/example/tabellio/pull/1"
   },
   "actor": {
     "type": "agent",
@@ -20,23 +20,23 @@
   },
   "taskSource": {
     "type": "chat",
-    "summary": "Create a minimal evidence fixture for the Evident workflow."
+    "summary": "Create a minimal evidence fixture for the Tabellio workflow."
   },
   "changedFiles": [
     "docs/research-grounding.md",
     "schemas/evidence-envelope.schema.json",
-    "scripts/check-evident-evidence-envelope.mjs"
+    "scripts/check-tabellio-evidence-envelope.mjs"
   ],
   "commandsRun": [
     {
-      "command": "node scripts/check-evident-evidence-envelope.mjs --evidence examples/evident-evidence/minimal-evidence.json",
+      "command": "node scripts/check-tabellio-evidence-envelope.mjs --evidence examples/tabellio-evidence/minimal-evidence.json",
       "status": "passed",
       "exitCode": 0
     }
   ],
   "checks": [
     {
-      "name": "evident-evidence-envelope",
+      "name": "tabellio-evidence-envelope",
       "status": "passed",
       "summary": "Minimal fixture validates against v0.1 required fields and default-deny policy."
     }
@@ -127,7 +127,7 @@
   "artifacts": [
     {
       "name": "minimal evidence fixture",
-      "path": "examples/evident-evidence/minimal-evidence.json"
+      "path": "examples/tabellio-evidence/minimal-evidence.json"
     }
   ],
   "createdAt": "2026-07-02T00:00:00.000Z"

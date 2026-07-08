@@ -22,17 +22,17 @@ npm run check
 Generate and validate a fresh evidence packet:
 
 ```bash
-node scripts/write-evident-evidence-envelope.mjs --out /tmp/evident-pr-evidence.json
-node scripts/check-evident-evidence-envelope.mjs --evidence /tmp/evident-pr-evidence.json
-node scripts/check-evident-external-actions.mjs --evidence /tmp/evident-pr-evidence.json
+node scripts/write-tabellio-evidence-envelope.mjs --out /tmp/tabellio-pr-evidence.json
+node scripts/check-tabellio-evidence-envelope.mjs --evidence /tmp/tabellio-pr-evidence.json
+node scripts/check-tabellio-external-actions.mjs --evidence /tmp/tabellio-pr-evidence.json
 ```
 
 Check script syntax:
 
 ```bash
-node --check scripts/check-evident-evidence-envelope.mjs
-node --check scripts/check-evident-external-actions.mjs
-node --check scripts/write-evident-evidence-envelope.mjs
+node --check scripts/check-tabellio-evidence-envelope.mjs
+node --check scripts/check-tabellio-external-actions.mjs
+node --check scripts/write-tabellio-evidence-envelope.mjs
 ```
 
 Check the reusable workflow syntax before release:

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/IntelIP/agentic-git-workflow/main/schemas/evidence-envelope.schema.json",
-  "title": "Evident Evidence Envelope",
+  "$id": "https://raw.githubusercontent.com/IntelIP/Tabellio/main/schemas/evidence-envelope.schema.json",
+  "title": "Tabellio Evidence Envelope",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -23,7 +23,7 @@
   "properties": {
     "schemaVersion": {
       "type": "string",
-      "const": "evident-evidence/v0.1"
+      "const": "tabellio-evidence/v0.1"
     },
     "runId": {
       "type": "string",

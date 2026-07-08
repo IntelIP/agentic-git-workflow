@@ -1,30 +1,32 @@
 # Agentic Tooling Stack
 
-Evident sits in a broader agentic Git workflow. It does not replace the forge, the code storage layer, the checkpoint ledger, or stacked PR tooling. It records the evidence packet that makes those layers reviewable.
+Tabellio sits in a broader agentic Git workflow. It does not replace the forge, the code storage layer, the checkpoint ledger, or stacked PR tooling. It records the evidence packet that makes those layers reviewable.
+
+The main idea: agentic Git should be built around more than a patch. It should preserve the work request, the reason for the change, the runtime that produced it, the commands that ran, the checkpoints that explain it, and the side effects that require approval.
 
 ## Layer Map
 
-| Layer | Tooling | Role In The Workflow | Evident Boundary |
+| Layer | Tooling | Role In The Workflow | Tabellio Boundary |
 | --- | --- | --- | --- |
 | Work request | Issue, ticket, chat request, or manual prompt | Defines why the change exists | Captured as `taskSource` |
-| Coding runtime | Codex or another coding agent | Produces the branch, diff, and validation attempts | Captured as `actor`, `agentRuntime`, and `commandsRun` |
-| Git substrate | GitHub today; Code Storage as machine-first Git infrastructure | Stores repositories, branches, commits, patches, and agent-created code state | Captured as `repo`, `git`, and `changedFiles` |
-| Checkpoint ledger | Entire Checkpoints | Links commits to agent sessions, prompts, transcript context, token usage, and attribution | Referenced as an artifact or runtime tool, not required by core |
-| Evidence gate | Evident | Writes and validates the PR evidence envelope and external-action policy | Core product surface |
-| Stacked review | Graphite or Graphite-like stacked PR tooling | Keeps dependent PRs small, ordered, reviewable, and resubmittable | Captured through stack metadata in future versions |
-| Forge and CI | GitHub Pull Requests and GitHub Actions | Hosts review, checks, artifacts, and merge state | Current v0.1.0 integration point |
-| Repo hygiene | OpenSSF Scorecard, SARIF, static checks | Adds public health and automated review signals | Recorded as checks or artifacts |
+| Coding runtime | [OpenAI Codex](https://openai.com/codex/) or another coding agent | Produces the branch, diff, and validation attempts | Captured as `actor`, `agentRuntime`, and `commandsRun` |
+| Git substrate | [GitHub](https://github.com/) today; [Code Storage](https://code.storage/) as machine-first Git infrastructure | Stores repositories, branches, commits, patches, and agent-created code state | Captured as `repo`, `git`, and `changedFiles` |
+| Checkpoint ledger | [Entire Checkpoints](https://entire.io/) and [Entire CLI](https://github.com/entireio/cli) | Links commits to agent sessions, prompts, transcript context, token usage, and attribution | Referenced as an artifact or runtime tool, not required by core |
+| Evidence gate | Tabellio | Writes and validates the PR evidence envelope and external-action policy | Core product surface |
+| Stacked review | [Graphite](https://graphite.dev/) or Graphite-like stacked PR tooling | Keeps dependent PRs small, ordered, reviewable, and resubmittable | Captured through stack metadata in future versions |
+| Forge and CI | [GitHub Pull Requests](https://github.com/features/code-review) and [GitHub Actions](https://github.com/features/actions) | Hosts review, checks, artifacts, and merge state | Current v0.1.0 integration point |
+| Repo hygiene | [OpenSSF Scorecard](https://securityscorecards.dev/), [SARIF](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html), and static checks | Adds public health and automated review signals | Recorded as checks or artifacts |
 
-## Startup Tool Tags
+## Tool Tags
 
 | Tool | Tag | Why It Matters |
 | --- | --- | --- |
 | [Code Storage](https://code.storage/) | `code-storage` | API-first Git infrastructure for machine-created repositories, branches, commits, and code-like artifacts |
 | [Entire](https://entire.io/) | `entire` | Checkpoint and session ledger for agent-assisted work, with checkpoint metadata stored in Git |
-| [Graphite](https://graphite.com/) | `graphite` | Stacked PR and code review workflow for keeping agent-produced changes reviewable |
+| [Graphite](https://graphite.dev/) | `graphite` | Stacked PR and code review workflow for keeping agent-produced changes reviewable |
 | [OpenAI Codex](https://openai.com/codex/) | `codex` | Coding and review agent used to produce or inspect changes |
 
-These tags describe the workflow ecosystem. Evident v0.1.0 does not call vendor APIs for Code Storage, Entire, Graphite, or Codex.
+These tags describe the workflow ecosystem. Tabellio v0.1.0 does not call vendor APIs for Code Storage, Entire, Graphite, or Codex.
 
 ## Control-Plane Shape
 

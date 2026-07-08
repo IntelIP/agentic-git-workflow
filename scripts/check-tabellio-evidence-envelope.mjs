@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 
 const args = parseArgs(process.argv.slice(2));
-const evidencePath = args.evidence ?? "evident-pr-evidence.json";
+const evidencePath = args.evidence ?? "tabellio-pr-evidence.json";
 const root = process.cwd();
 const requiredActionClasses = [
   "deployment",
@@ -28,7 +28,7 @@ try {
 
 const result = {
   ok: blockers.length === 0,
-  status: blockers.length === 0 ? "evident_evidence_envelope_ready" : "blocked",
+  status: blockers.length === 0 ? "tabellio_evidence_envelope_ready" : "blocked",
   checkedAt: new Date().toISOString(),
   evidencePath,
   schemaPath: "schemas/evidence-envelope.schema.json",
@@ -57,7 +57,7 @@ function validateEvidence(value, localBlockers, localWarnings) {
     return;
   }
 
-  stringEquals(value.schemaVersion, "evident-evidence/v0.1", "schemaVersion", localBlockers);
+  stringEquals(value.schemaVersion, "tabellio-evidence/v0.1", "schemaVersion", localBlockers);
   requiredString(value.runId, "runId", localBlockers);
   requiredString(value.repo, "repo", localBlockers);
   requiredString(value.createdAt, "createdAt", localBlockers);
