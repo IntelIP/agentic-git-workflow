@@ -24,7 +24,7 @@ Tabellio turns an agentic coding run into a provider-neutral Git context packet 
 | Git substrate | Standard Git CLI and bare repositories | Stores repositories, branches, commits, and patch state |
 | Session ledger | Git notes; Entire optionally | Preserves checkpoint and agent-run context for later review |
 | Evidence gate | Tabellio | Validates commands, checks, changed files, approvals, and side-effect policy |
-| Stacked review | Graphite | Keeps related PRs small, ordered, and reviewable |
+| Stacked review | git-spice | Keeps related change requests small, ordered, and reviewable across supported forges |
 | Agent review | Codex review | Adds optional diff and evidence review by an agent |
 
 ## Standard Flow
@@ -113,5 +113,5 @@ Future versions can add:
 - in-toto link metadata
 - OpenTelemetry spans
 - model/tool eval suites
-- Graphite stack metadata
+- remote git-spice submission and merge orchestration
 - forge-specific merge queue metadata

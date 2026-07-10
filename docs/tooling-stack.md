@@ -13,8 +13,8 @@ The main idea: agentic Git should be built around more than a patch. It should p
 | Git substrate | Standard Git CLI, bare repositories, and worktrees | Stores repositories, branches, commits, patches, and agent-created code state | Implemented by `NativeGitStore` |
 | Checkpoint ledger | [Entire Checkpoints](https://entire.io/) and [Entire CLI](https://github.com/entireio/cli) | Links commits to agent sessions, prompts, transcript context, token usage, and attribution | Referenced as an artifact or runtime tool, not required by core |
 | Evidence gate | Tabellio | Writes and validates the PR evidence envelope and external-action policy | Core product surface |
-| Stacked review | [Graphite](https://graphite.dev/) or Graphite-like stacked PR tooling | Keeps dependent PRs small, ordered, reviewable, and resubmittable | Captured through stack metadata in future versions |
-| Forge and CI | GitHub or another forge | Optionally hosts review, checks, artifacts, and merge state | Adapter boundary; not required by native core |
+| Stacked review | [git-spice](https://abhinav.github.io/git-spice/) | Keeps dependent change requests small, ordered, reviewable, and resubmittable across Forgejo, Gitea, GitLab, Bitbucket, or GitHub | Read through `GitSpiceStackManager` into `tabellio-stack/v0.1` |
+| Forge and CI | Forgejo, Gitea, GitLab, Bitbucket, GitHub, or another Git remote | Optionally hosts review, checks, artifacts, and merge state | Adapter boundary; not required by native core |
 | Repo hygiene | [OpenSSF Scorecard](https://securityscorecards.dev/), [SARIF](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html), and static checks | Adds public health and automated review signals | Recorded as checks or artifacts |
 
 ## Tool Tags
@@ -22,10 +22,10 @@ The main idea: agentic Git should be built around more than a patch. It should p
 | Tool | Tag | Why It Matters |
 | --- | --- | --- |
 | [Entire](https://entire.io/) | `entire` | Checkpoint and session ledger for agent-assisted work, with checkpoint metadata stored in Git |
-| [Graphite](https://graphite.dev/) | `graphite` | Stacked PR and code review workflow for keeping agent-produced changes reviewable |
+| [git-spice](https://abhinav.github.io/git-spice/) | `git-spice` | Offline-first stacked branch and change-request workflow with forge-specific adapters |
 | [OpenAI Codex](https://openai.com/codex/) | `codex` | Coding and review agent used to produce or inspect changes |
 
-These tools remain optional. Native context capture calls only local Node.js and Git processes.
+The git-spice adapter is optional at runtime. Native context capture still calls only local Node.js and Git processes.
 
 ## Control-Plane Shape
 
@@ -75,7 +75,7 @@ Not included yet:
 
 - remote repository transport or hosting service
 - Entire checkpoint ingestion
-- Graphite stack metadata ingestion
+- remote git-spice submission, review mutation, and stack merge
 - Codex review automation
 - signed evidence
 - formal SLSA or in-toto compliance
@@ -86,6 +86,14 @@ Not included yet:
 | --- | --- |
 | Forge repository or branch id | adapter metadata outside the provider-neutral core |
 | Entire checkpoint id | `artifacts[]`, future `checkpoints[]` |
-| Graphite stack id or parent PR | future `stack` metadata |
+| git-spice branch parent or change-request id | `tabellio-stack/v0.1` snapshot |
 | Codex review result | `checks[]` and `artifacts[]` |
 | Plane or ticket system item | `taskSource.url` |
+
+## git-spice Boundary
+
+Tabellio invokes the installed `git-spice` executable with prompts and remote status lookups disabled. It consumes documented JSON output from `git-spice log short --json`, normalizes that output, and excludes local worktree paths.
+
+Tabellio does not read or modify git-spice's internal `refs/spice/data` layout. Remote submission and merge remain outside this read-only adapter because they push branches and mutate forge state.
+
+git-spice is GPL-3.0-or-later and is not bundled or linked into the Apache-2.0 Tabellio package. Operators install the separate executable. Modifications or redistribution of git-spice must follow its license.

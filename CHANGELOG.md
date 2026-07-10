@@ -6,6 +6,8 @@ All notable changes to Tabellio are recorded here.
 
 ### Added
 
+- Read-only git-spice stack adapter with provider-neutral `tabellio-stack/v0.1` snapshots.
+- Stack snapshot schema, validator, CLI, example, and adapter tests.
 - Local agent-run CLI with start, checkpoint, finish, status, and safe promotion commands.
 - Mutable `tabellio-run/v0.1` local state contract and end-to-end lifecycle artifacts.
 - Provider-neutral `RepositoryStore` contract and standard Git provider.
@@ -27,6 +29,10 @@ All notable changes to Tabellio are recorded here.
 - Timed-out Git commands now fail instead of appearing successful.
 - Required repository validation commands now appear in generated evidence.
 - Windows local remote paths are hashed before entering context identity.
+
+### Changed
+
+- Replaced Graphite as the planned stacked-review integration with host-agnostic git-spice.
 
 ## 0.1.0 - 2026-07-08
 

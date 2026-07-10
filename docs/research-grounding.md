@@ -25,7 +25,7 @@ The agent is optional. The evidence contract is the product.
 | Supply-chain steps | [in-toto](https://in-toto.io/), [in-toto docs](https://in-toto.io/docs/getting-started/) | Treat plan, edit, test, review, and merge as auditable steps |
 | Merge safety | [GitHub merge queues](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue) | Validate the final merge state, not just stale local state |
 | OSS repo structure | [Vercel AI SDK](https://github.com/vercel/ai), [Next.js](https://github.com/vercel/next.js), [Vercel CLI](https://github.com/vercel/vercel) | Keep the README short, link docs clearly, and surface contributing, security, and license files |
-| Stacked review | [Graphite](https://graphite.dev/) | Split large agent work into reviewable PRs |
+| Stacked review | [git-spice](https://abhinav.github.io/git-spice/), [git-spice JSON output](https://abhinav.github.io/git-spice/cli/json/) | Split large agent work into reviewable change requests while keeping stack state Git-native and machine-readable |
 | Agentic Git substrate | [Git repository layout](https://git-scm.com/docs/gitrepository-layout), [Git worktree](https://git-scm.com/docs/git-worktree), [Git notes](https://git-scm.com/docs/git-notes) | Treat repositories, workspaces, commits, refs, and checkpoint context as machine-addressable product data using standard Git |
 | Concurrent merge safety | [Git merge-tree](https://git-scm.com/docs/git-merge-tree), [Git update-ref](https://git-scm.com/docs/git-update-ref) | Preview merges without a checkout and update refs only when the expected old commit still matches |
 | Agent session ledger | [Entire](https://entire.io/), [Entire glossary](https://docs.entire.io/glossary) | Attach checkpoint and session context to code changes without making the PR body the only audit record |
@@ -45,7 +45,7 @@ The agent is optional. The evidence contract is the product.
 | Evidence workflow | GitHub Actions, reusable workflows | Run evidence checks in CI |
 | PR template | Code review practice | Put evidence summary in front of reviewers |
 | Scorecard workflow | OpenSSF Scorecard | Track public repo health |
-| Tooling stack guide | Standard Git, Entire, Graphite | Keep the core provider-neutral while allowing optional review and ledger adapters |
+| Tooling stack guide | Standard Git, Entire, git-spice | Keep the core provider-neutral while allowing host-agnostic review and ledger adapters |
 
 ## Claims We Can Make
 

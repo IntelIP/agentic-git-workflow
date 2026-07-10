@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "tabellio-stack/v0.1",
+  "repository": {
+    "id": "example/tabellio"
+  },
+  "provider": {
+    "id": "git-spice",
+    "version": "0.30.1"
+  },
+  "capturedAt": "2026-07-10T12:00:00.000Z",
+  "currentBranch": "agent/implementation",
+  "roots": ["main"],
+  "branches": [
+    {
+      "name": "agent/implementation",
+      "current": true,
+      "parent": "agent/substrate",
+      "children": [],
+      "needsRestack": false,
+      "checkedOutElsewhere": false,
+      "changeRequest": null,
+      "push": null
+    },
+    {
+      "name": "agent/substrate",
+      "current": false,
+      "parent": "main",
+      "children": ["agent/implementation"],
+      "needsRestack": false,
+      "checkedOutElsewhere": false,
+      "changeRequest": {
+        "id": "#12",
+        "url": "https://forgejo.example.test/example/tabellio/pulls/12",
+        "status": null
+      },
+      "push": {
+        "ahead": 0,
+        "behind": 0,
+        "needsPush": false
+      }
+    },
+    {
+      "name": "main",
+      "current": false,
+      "parent": null,
+      "children": ["agent/substrate"],
+      "needsRestack": false,
+      "checkedOutElsewhere": false,
+      "changeRequest": null,
+      "push": null
+    }
+  ]
+}

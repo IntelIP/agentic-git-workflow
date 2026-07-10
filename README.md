@@ -7,7 +7,7 @@
 [![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-CI-2088FF?logo=githubactions&logoColor=white)](https://github.com/features/actions)
 [![JSON Schema](https://img.shields.io/badge/JSON%20Schema-evidence%20contract-0B6BFF)](https://json-schema.org/)
 [![SARIF](https://img.shields.io/badge/SARIF-code%20scanning-2563EB)](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
-[![Graphite](https://img.shields.io/badge/Graphite-stacked%20review-6F42C1)](https://graphite.dev/)
+[![git-spice](https://img.shields.io/badge/git--spice-stacked%20review-B45309)](https://abhinav.github.io/git-spice/)
 [![Entire](https://img.shields.io/badge/Entire-checkpoint%20ledger-111827)](https://entire.io/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
@@ -64,13 +64,13 @@ AI-assisted pull requests should not depend on reviewer trust alone. Tabellio gi
 | Security signal | [OpenSSF Scorecard](https://securityscorecards.dev/) | Publishes a non-gating public repository health signal |
 | Code scanning output | [SARIF](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) | Carries Scorecard output into GitHub code scanning |
 | Review surface | [GitHub Pull Requests](https://github.com/features/code-review) | Shows checks, artifacts, and reviewer context |
-| Stacked review | [Graphite](https://graphite.dev/) | Intended companion for small dependent PR stacks |
+| Stacked review | [git-spice](https://abhinav.github.io/git-spice/) | Host-agnostic stack engine for small dependent change requests |
 | Checkpoint ledger | [Entire](https://entire.io/) and [Entire CLI](https://github.com/entireio/cli) | Intended companion for agent session and checkpoint context |
 | Git substrate | Standard Git CLI, bare repositories, and worktrees | Stores repositories, branches, commits, patches, and agent-created code state |
 | Agent review | [OpenAI Codex](https://openai.com/codex/) | Optional review layer when configured |
 | Prior art | [SLSA](https://slsa.dev/) and [in-toto](https://in-toto.io/) | Inspiration for provenance and supply-chain evidence, without a compliance claim |
 
-GitHub remains an optional storage, CI, and review surface. Entire, Graphite, and Codex remain optional companions.
+GitHub remains an optional storage, CI, and review surface. Entire, git-spice, and Codex remain separate integration layers.
 
 ## Core Files
 
@@ -80,6 +80,7 @@ GitHub remains an optional storage, CI, and review surface. Entire, Graphite, an
 | `.github/workflows/scorecard.yml` | Non-gating OpenSSF Scorecard scan |
 | `schemas/` | Evidence and external-action JSON schemas |
 | `scripts/providers/native-git-store.mjs` | Standard Git storage provider |
+| `scripts/providers/git-spice-stack-manager.mjs` | Read-only git-spice stack adapter |
 | `scripts/lib/` | Git process, repository contract, worktree, and context primitives |
 | `scripts/` | Dependency-free capture, writer, and validators |
 | `examples/` | Minimal valid evidence fixture and consumer workflow example |
@@ -164,6 +165,8 @@ Package scripts:
 npm run check
 npm run tabellio:run -- status --run-id run-42
 npm run tabellio:run:example:check
+npm run tabellio:stack -- --repo . --repo-id IntelIP/Tabellio --out tabellio-stack.json
+npm run tabellio:stack:check
 npm run tabellio:context:capture
 npm run tabellio:context:check
 npm run tabellio:evidence:write

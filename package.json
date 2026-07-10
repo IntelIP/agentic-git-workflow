@@ -11,7 +11,8 @@
     "url": "git+https://github.com/IntelIP/Tabellio.git"
   },
   "bin": {
-    "tabellio-run": "scripts/tabellio-run.mjs"
+    "tabellio-run": "scripts/tabellio-run.mjs",
+    "tabellio-stack": "scripts/tabellio-stack.mjs"
   },
   "bugs": {
     "url": "https://github.com/IntelIP/Tabellio/issues"
@@ -39,6 +40,9 @@
     "test": "node --test tests/*.test.mjs",
     "tabellio:run": "node scripts/tabellio-run.mjs",
     "tabellio:run:example:check": "node scripts/check-tabellio-run.mjs --state examples/tabellio-run/minimal-run.json",
+    "tabellio:stack": "node scripts/tabellio-stack.mjs",
+    "tabellio:stack:check": "node scripts/check-tabellio-stack.mjs --stack tabellio-stack.json",
+    "tabellio:stack:example:check": "node scripts/check-tabellio-stack.mjs --stack examples/tabellio-stack/minimal-stack.json",
     "tabellio:context:capture": "node scripts/capture-tabellio-context.mjs --out tabellio-context.json",
     "tabellio:context:check": "node scripts/check-tabellio-context.mjs --context tabellio-context.json",
     "tabellio:context:example:check": "node scripts/check-tabellio-context.mjs --context examples/tabellio-context/minimal-context.json",
@@ -46,7 +50,7 @@
     "tabellio:evidence:write": "node scripts/write-tabellio-evidence-envelope.mjs --out tabellio-pr-evidence.json",
     "tabellio:evidence:check": "node scripts/check-tabellio-evidence-envelope.mjs --evidence tabellio-pr-evidence.json",
     "tabellio:external-actions:check": "node scripts/check-tabellio-external-actions.mjs --evidence tabellio-pr-evidence.json",
-    "check": "npm test && npm run tabellio:run:example:check && npm run tabellio:context:example:check && npm run tabellio:evidence:example:check && node scripts/check-tabellio-external-actions.mjs --evidence examples/tabellio-evidence/minimal-evidence.json"
+    "check": "npm test && npm run tabellio:run:example:check && npm run tabellio:stack:example:check && npm run tabellio:context:example:check && npm run tabellio:evidence:example:check && node scripts/check-tabellio-external-actions.mjs --evidence examples/tabellio-evidence/minimal-evidence.json"
   },
   "engines": {
     "node": ">=20"
@@ -68,7 +72,8 @@
     "openssf-scorecard",
     "github-actions",
     "stacked-pr",
-    "graphite",
+    "git-spice",
+    "forgejo",
     "entire",
     "codex"
   ]

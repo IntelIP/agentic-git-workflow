@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:stack-snapshot:v0.1",
+  "title": "Tabellio Stack Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "repository", "provider", "capturedAt", "currentBranch", "roots", "branches"],
+  "properties": {
+    "schemaVersion": { "const": "tabellio-stack/v0.1" },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": { "id": { "type": "string", "minLength": 1 } }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": { "const": "git-spice" },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "currentBranch": { "type": ["string", "null"], "minLength": 1 },
+    "roots": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "branches": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/branch" }
+    }
+  },
+  "$defs": {
+    "branch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "current", "parent", "children", "needsRestack", "checkedOutElsewhere", "changeRequest", "push"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "current": { "type": "boolean" },
+        "parent": { "type": ["string", "null"], "minLength": 1 },
+        "children": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "needsRestack": { "type": "boolean" },
+        "checkedOutElsewhere": { "type": "boolean" },
+        "changeRequest": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "url", "status"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "url": { "type": "string", "format": "uri" },
+                "status": { "enum": ["open", "closed", "merged", null] }
+              }
+            }
+          ]
+        },
+        "push": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ahead", "behind", "needsPush"],
+              "properties": {
+                "ahead": { "type": "integer", "minimum": 0 },
+                "behind": { "type": "integer", "minimum": 0 },
+                "needsPush": { "type": "boolean" }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

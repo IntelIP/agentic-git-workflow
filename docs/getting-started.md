@@ -7,8 +7,24 @@ Tabellio captures provider-neutral Git context and can attach a machine-readable
 - Git repository
 - Node.js 20 or later
 - Git 2.38 or later with `merge-tree --write-tree`
+- git-spice 0.18 or later for optional stack snapshots; Forgejo support requires 0.30 or later
 
 GitHub and GitHub Actions are required only for the optional reusable workflow below.
+
+## Capture A Stack
+
+Initialize git-spice in a normal working repository, then capture its local stack graph without contacting the forge:
+
+```bash
+git-spice repo init
+node scripts/tabellio-stack.mjs \
+  --repo . \
+  --repo-id example/repository \
+  --out tabellio-stack.json
+node scripts/check-tabellio-stack.mjs --stack tabellio-stack.json
+```
+
+The adapter uses documented JSON output and disables change-request status and comment queries. Submission and merging remain explicit external actions handled separately.
 
 ## Add The Reusable Workflow
 
@@ -54,6 +70,7 @@ From this repository:
 
 ```bash
 npm run check
+node scripts/check-tabellio-stack.mjs --stack examples/tabellio-stack/minimal-stack.json
 node scripts/capture-tabellio-context.mjs --repo . --repo-id example/repository --base main --head HEAD --out /tmp/tabellio-context.json
 node scripts/check-tabellio-context.mjs --context /tmp/tabellio-context.json
 node scripts/write-tabellio-evidence-envelope.mjs --context /tmp/tabellio-context.json --out /tmp/tabellio-pr-evidence.json
