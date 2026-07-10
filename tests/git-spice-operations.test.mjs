@@ -57,6 +57,11 @@ test("approved git-spice operations execute exact safe argument sets and consume
       expected: ["--no-prompt", "repo", "sync", "--restack=none"],
     },
     {
+      operation: "restack",
+      parameters: {},
+      expected: ["--no-prompt", "branch", "restack", "--branch", "feature"],
+    },
+    {
       operation: "merge",
       parameters: { method: "squash", readyTimeout: "0", mergeTimeout: "2m" },
       expected: ["--no-prompt", "branch", "merge", "--branch", "feature", "--method", "squash", "--ready-timeout", "0", "--merge-timeout", "2m"],

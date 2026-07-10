@@ -183,6 +183,9 @@ export function operationArgs(intent) {
   if (intent.operation === "sync") {
     return [...common, "repo", "sync", `--restack=${intent.parameters.restack}`];
   }
+  if (intent.operation === "restack") {
+    return [...common, "branch", "restack", "--branch", intent.branch];
+  }
   return [
     ...common,
     "branch", "merge",

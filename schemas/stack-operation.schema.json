@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "properties": {
     "schemaVersion": { "const": "tabellio-stack-operation/v0.1" },
-    "operation": { "enum": ["submit", "update", "sync", "merge"] },
+    "operation": { "enum": ["submit", "update", "sync", "restack", "merge"] },
     "repository": {
       "type": "object",
       "required": ["id", "headCommit", "refsDigest"],
@@ -71,6 +71,17 @@
             "required": ["restack"],
             "additionalProperties": false,
             "properties": { "restack": { "enum": ["none", "aboves", "upstack"] } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "restack" } } },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "maxProperties": 0
           }
         }
       }

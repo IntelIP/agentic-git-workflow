@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:agent-review:v0.1",
+  "title": "Tabellio Agent Review",
+  "type": "object",
+  "required": ["schemaVersion", "reviewId", "reviewer", "repository", "changeRequest", "findings", "createdAt"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "tabellio-agent-review/v0.1" },
+    "reviewId": { "type": "string", "minLength": 1 },
+    "reviewer": {
+      "type": "object",
+      "required": ["id", "runtime"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "runtime": { "type": "string", "minLength": 1 }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": { "id": { "type": "string", "minLength": 1 } }
+    },
+    "changeRequest": {
+      "type": "object",
+      "required": ["number", "headCommit"],
+      "additionalProperties": false,
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "headCommit": { "$ref": "#/$defs/oid" }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "body", "severity", "actionable", "path", "line"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "body": { "type": "string" },
+          "severity": { "enum": ["critical", "high", "medium", "low", "info"] },
+          "actionable": { "type": "boolean" },
+          "path": { "type": ["string", "null"], "minLength": 1 },
+          "line": { "type": ["integer", "null"], "minimum": 1 }
+        }
+      }
+    },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "oid": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" }
+  }
+}
