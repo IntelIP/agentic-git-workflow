@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { captureContext } from "./lib/capture-context.mjs";
+import { captureContext, localRepositoryId } from "./lib/capture-context.mjs";
 import { NativeGitStore } from "./providers/native-git-store.mjs";
 
 const args = parseArgs(process.argv.slice(2));
@@ -36,7 +36,7 @@ console.log(JSON.stringify(packet, null, 2));
 async function repositoryId(nativeStore) {
   const remote = await nativeStore.gitConfig("remote.origin.url");
   if (remote) return normalizeRemote(remote);
-  return `local/${nativeStore.repoPath.split("/").filter(Boolean).at(-1) ?? "repository"}`;
+  return localRepositoryId(nativeStore.repoPath);
 }
 
 function normalizeRemote(remote) {

@@ -15,6 +15,8 @@ const recordedContextPath = absoluteContextPath
 const context = absoluteContextPath ? await readContextPacket(absoluteContextPath) : null;
 const now = new Date().toISOString();
 const changedFiles = context ? context.changeSet.files.map((file) => file.path).sort() : getChangedFiles();
+const requiredValidationCommand = env("TABELLIO_REQUIRED_VALIDATION_COMMAND");
+const requiredValidationStatus = normalizeStatus(env("TABELLIO_REQUIRED_VALIDATION_STATUS") || "skipped");
 const validationCommand = env("TABELLIO_VALIDATION_COMMAND");
 const validationStatus = normalizeStatus(env("TABELLIO_VALIDATION_STATUS") || "skipped");
 const writerCommand = env("TABELLIO_WRITER_COMMAND") || `node ${process.argv[1] || "scripts/write-tabellio-evidence-envelope.mjs"}`;
@@ -50,23 +52,7 @@ const evidence = {
     url: env("TABELLIO_TASK_URL") || "",
   },
   changedFiles,
-  commandsRun: validationCommand
-    ? [
-        {
-          command: validationCommand,
-          status: validationStatus,
-          exitCode: validationStatus === "passed" ? 0 : validationStatus === "failed" ? 1 : null,
-          completedAt: now,
-        },
-      ]
-    : [
-        {
-          command: writerCommand,
-          status: "passed",
-          exitCode: 0,
-          completedAt: now,
-        },
-      ],
+  commandsRun: buildCommandsRun(),
   checks: [
     {
       name: "evidence-envelope-generated",
@@ -181,6 +167,30 @@ function normalizeStatus(value) {
   if (value === "success" || value === "passed") return "passed";
   if (value === "failure" || value === "failed" || value === "cancelled" || value === "timed_out") return "failed";
   return "skipped";
+}
+
+function buildCommandsRun() {
+  const commands = [];
+  const seen = new Set();
+  for (const [command, status] of [
+    [requiredValidationCommand, requiredValidationStatus],
+    [validationCommand, validationStatus],
+  ]) {
+    if (!command || seen.has(command)) continue;
+    seen.add(command);
+    commands.push({
+      command,
+      status,
+      ...(status === "passed" ? { exitCode: 0 } : status === "failed" ? { exitCode: 1 } : {}),
+      completedAt: now,
+    });
+  }
+  return commands.length > 0 ? commands : [{
+    command: writerCommand,
+    status: "passed",
+    exitCode: 0,
+    completedAt: now,
+  }];
 }
 
 function readPullRequestNumber() {

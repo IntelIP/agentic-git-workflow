@@ -79,6 +79,12 @@ export function validateContextPacket(value, { verifyIntegrity = true } = {}) {
     requiredString(value.refs[key].name, `refs.${key}.name`);
     oid(value.refs[key].commit, `refs.${key}.commit`);
   }
+  const repositoryOidLength = value.refs.base.commit.length;
+  for (const key of ["head", "mergeBase"]) {
+    if (value.refs[key].commit.length !== repositoryOidLength) {
+      throw new Error(`refs.${key}.commit must use the repository object format.`);
+    }
+  }
 
   requireObject(value.changeSet, "changeSet");
   exactKeys(value.changeSet, ["files"], "changeSet");
@@ -99,6 +105,9 @@ export function validateContextPacket(value, { verifyIntegrity = true } = {}) {
     exactKeys(checkpoint, ["ref", "commit", "digest", "summary"], `checkpoints[${index}]`);
     requiredString(checkpoint.ref, `checkpoints[${index}].ref`);
     oid(checkpoint.commit, `checkpoints[${index}].commit`);
+    if (checkpoint.commit.length !== repositoryOidLength) {
+      throw new Error(`checkpoints[${index}].commit must use the repository object format.`);
+    }
     oid(checkpoint.digest, `checkpoints[${index}].digest`, 64);
     if (checkpoint.summary !== undefined) {
       requiredString(checkpoint.summary, `checkpoints[${index}].summary`);
@@ -111,7 +120,12 @@ export function validateContextPacket(value, { verifyIntegrity = true } = {}) {
   if (typeof value.mergePreview.clean !== "boolean") throw new Error("mergePreview.clean must be a boolean.");
   if (!Array.isArray(value.mergePreview.conflictFiles)) throw new Error("mergePreview.conflictFiles must be an array.");
   value.mergePreview.conflictFiles.forEach((file, index) => requiredString(file, `mergePreview.conflictFiles[${index}]`));
-  if (value.mergePreview.tree !== null) oid(value.mergePreview.tree, "mergePreview.tree");
+  if (value.mergePreview.tree !== null) {
+    oid(value.mergePreview.tree, "mergePreview.tree");
+    if (value.mergePreview.tree.length !== repositoryOidLength) {
+      throw new Error("mergePreview.tree must use the repository object format.");
+    }
+  }
 
   if (verifyIntegrity) {
     requireObject(value.integrity, "integrity");
@@ -157,10 +171,12 @@ function requireObject(value, path) {
 function exactKeys(value, allowed, path) {
   const unexpected = Object.keys(value).filter((key) => !allowed.includes(key));
   if (unexpected.length > 0) throw new Error(`${path} contains unsupported properties: ${unexpected.join(", ")}.`);
+  const undefinedKeys = Object.keys(value).filter((key) => value[key] === undefined);
+  if (undefinedKeys.length > 0) throw new Error(`${path} properties must not be undefined: ${undefinedKeys.join(", ")}.`);
 }
 
 function oid(value, path, length = null) {
-  const expression = length ? new RegExp(`^[0-9a-f]{${length}}$`) : /^[0-9a-f]{40,64}$/;
+  const expression = length ? new RegExp(`^[0-9a-f]{${length}}$`) : /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
   if (typeof value !== "string" || !expression.test(value)) throw new Error(`${path} must be a hexadecimal object ID.`);
 }
 

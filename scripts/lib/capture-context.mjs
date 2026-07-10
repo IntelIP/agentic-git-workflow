@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 
 import { createContextPacket } from "./context-packet.mjs";
 
+export function localRepositoryId(repoPath) {
+  const name = repoPath.replaceAll("\\", "/").split("/").filter(Boolean).at(-1);
+  return `local/${name ?? "repository"}`;
+}
+
 export async function captureContext({
   store,
   baseRevision,

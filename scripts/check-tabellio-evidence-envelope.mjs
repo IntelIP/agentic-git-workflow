@@ -195,13 +195,17 @@ function validateArtifacts(value, envelope, localBlockers) {
         if (artifact.sha256 !== expected) localBlockers.push(`${path}.sha256 does not match the evidence envelope.`);
       }
     }
-    if (artifact.hashScope === "file-bytes" && artifact.sha256) {
-      try {
-        const absolute = isAbsolute(artifact.path) ? artifact.path : resolve(evidenceRoot, artifact.path);
-        const expected = createHash("sha256").update(readFileSync(absolute)).digest("hex");
-        if (artifact.sha256 !== expected) localBlockers.push(`${path}.sha256 does not match the artifact bytes.`);
-      } catch (error) {
-        localBlockers.push(`${path} cannot be read: ${error instanceof Error ? error.message : String(error)}`);
+    if (artifact.hashScope === "file-bytes") {
+      if (!artifact.sha256) {
+        localBlockers.push(`${path}.sha256 is required for file-byte integrity.`);
+      } else {
+        try {
+          const absolute = isAbsolute(artifact.path) ? artifact.path : resolve(evidenceRoot, artifact.path);
+          const expected = createHash("sha256").update(readFileSync(absolute)).digest("hex");
+          if (artifact.sha256 !== expected) localBlockers.push(`${path}.sha256 does not match the artifact bytes.`);
+        } catch (error) {
+          localBlockers.push(`${path} cannot be read: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
     }
   });
@@ -216,7 +220,7 @@ function validateContextBinding(value, envelope, localBlockers) {
   requiredString(value.packetPath, "context.packetPath", localBlockers);
   if (!/^[0-9a-f]{64}$/.test(value.digest ?? "")) localBlockers.push("context.digest must be a SHA-256 digest.");
   for (const field of ["baseCommit", "headCommit", "mergeBaseCommit"]) {
-    if (!/^[0-9a-f]{40,64}$/.test(value[field] ?? "")) localBlockers.push(`context.${field} must be a Git object ID.`);
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value[field] ?? "")) localBlockers.push(`context.${field} must be a Git object ID.`);
   }
   if (typeof value.mergeClean !== "boolean") localBlockers.push("context.mergeClean must be a boolean.");
   if (value.headCommit !== envelope.git?.sha) localBlockers.push("context.headCommit must match git.sha.");

@@ -66,6 +66,7 @@ jobs:
           node-version: "20"
 
       - name: Test Tabellio
+        id: tabellio_tests
         if: ${{ github.repository == 'IntelIP/Tabellio' }}
         run: npm test
 
@@ -134,6 +135,8 @@ jobs:
           BASE_NAME: ${{ github.base_ref || github.ref_name }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           HEAD_NAME: ${{ github.head_ref || github.ref_name }}
+          TABELLIO_REQUIRED_VALIDATION_COMMAND: ${{ github.repository == 'IntelIP/Tabellio' && 'npm test' || '' }}
+          TABELLIO_REQUIRED_VALIDATION_STATUS: ${{ steps.tabellio_tests.outcome || 'skipped' }}
           TABELLIO_VALIDATION_COMMAND: ${{ inputs.validation_command || '' }}
           TABELLIO_VALIDATION_STATUS: ${{ steps.validation.outcome || 'skipped' }}
           TABELLIO_WRITER_COMMAND: node ${{ steps.toolkit.outputs.path }}/scripts/write-tabellio-evidence-envelope.mjs

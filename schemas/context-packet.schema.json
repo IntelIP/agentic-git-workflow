@@ -113,7 +113,7 @@
     }
   },
   "$defs": {
-    "oid": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+    "oid": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
     "namedCommit": {
       "type": "object",
       "additionalProperties": false,

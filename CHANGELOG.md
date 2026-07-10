@@ -20,6 +20,10 @@ All notable changes to Tabellio are recorded here.
 - Handwritten policy validators now require approval booleans, unique action IDs, and non-empty forbidden side effects.
 - Runtime context validation now matches schema property boundaries.
 - Pull request CI now runs the Tabellio unit suite and records the source head commit.
+- Merge preview uses structured output so diagnostic words in file paths remain intact.
+- Context serialization rejects undefined fields and impossible object-ID lengths.
+- Timed-out Git commands now fail instead of appearing successful.
+- Required repository validation commands now appear in generated evidence.
 
 ## 0.1.0 - 2026-07-08
 

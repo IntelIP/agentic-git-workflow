@@ -151,9 +151,9 @@
         "schemaVersion": { "const": "tabellio-context/v0.1" },
         "packetPath": { "type": "string", "minLength": 1 },
         "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "baseCommit": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
-        "headCommit": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
-        "mergeBaseCommit": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+        "baseCommit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+        "headCommit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+        "mergeBaseCommit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
         "mergeClean": { "type": "boolean" }
       }
     },
@@ -163,6 +163,9 @@
         "type": "object",
         "required": ["name", "path"],
         "additionalProperties": true,
+        "dependentRequired": {
+          "hashScope": ["sha256"]
+        },
         "properties": {
           "name": { "type": "string", "minLength": 1 },
           "path": { "type": "string", "minLength": 1 },

@@ -48,7 +48,7 @@ export function runGit({
         },
       },
       (error, stdout = "", stderr = "") => {
-        const exitCode = error?.code ?? 0;
+        const exitCode = typeof error?.code === "number" ? error.code : error ? null : 0;
         const result = {
           args: gitArgs,
           cwd,
@@ -58,7 +58,7 @@ export function runGit({
           stderr,
         };
 
-        if (!error || acceptableExitCodes.includes(exitCode)) {
+        if (!error || (exitCode !== null && acceptableExitCodes.includes(exitCode))) {
           resolve(result);
           return;
         }

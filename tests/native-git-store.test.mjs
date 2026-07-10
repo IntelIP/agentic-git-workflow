@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { runGit } from "../scripts/lib/git-process.mjs";
+import { GitCommandError, runGit } from "../scripts/lib/git-process.mjs";
 import { WorkspaceManager } from "../scripts/lib/workspace-manager.mjs";
 import { RefConflictError, NativeGitStore } from "../scripts/providers/native-git-store.mjs";
 import { createFixture, identityEnv } from "./helpers/git-fixture.mjs";
@@ -44,12 +44,21 @@ test("merge preview reports conflicts without mutating refs", async (t) => {
   t.after(() => rm(fixture.root, { recursive: true, force: true }));
   const store = await NativeGitStore.open(fixture.bare);
 
+  for (const [branch, content] of [["feature", "feature\n"], ["main", "main\n"]]) {
+    await runGit({ args: ["switch", branch], cwd: fixture.seed });
+    await writeFile(join(fixture.seed, "MY_CONFLICT_FILE"), content);
+    await writeFile(join(fixture.seed, "Auto-merging path.txt"), content);
+    await runGit({ args: ["add", "-A"], cwd: fixture.seed });
+    await runGit({ args: ["commit", "-m", `${branch} adversarial paths`], cwd: fixture.seed, env: identityEnv() });
+    await runGit({ args: ["push", "origin", branch], cwd: fixture.seed });
+  }
+
   const before = await store.resolveRef("refs/heads/main");
   const preview = await store.previewMerge({ base: "refs/heads/main", head: "refs/heads/feature" });
   const after = await store.resolveRef("refs/heads/main");
 
   assert.equal(preview.clean, false);
-  assert.deepEqual(preview.conflictFiles, ["README.md"]);
+  assert.deepEqual(preview.conflictFiles, ["Auto-merging path.txt", "MY_CONFLICT_FILE", "README.md"]);
   assert.equal(before, after);
 });
 
@@ -155,4 +164,14 @@ test("compare-and-swap creates refs in SHA-256 repositories", async (t) => {
 
   assert.equal(result.newCommit.length, 64);
   assert.equal(await store.resolveRef("refs/heads/agent/sha256"), result.newCommit);
+});
+
+test("Git process rejects commands terminated by timeout", async () => {
+  await assert.rejects(
+    runGit({
+      args: ["-c", "alias.tabellio-timeout=!sleep 2", "tabellio-timeout"],
+      timeoutMs: 10,
+    }),
+    (error) => error instanceof GitCommandError && error.exitCode === null && error.signal === "SIGTERM",
+  );
 });

@@ -126,23 +126,19 @@ export class NativeGitStore extends RepositoryStore {
     const mergeBaseResult = await this.#git(["merge-base", baseCommit, headCommit]);
     const mergeBase = mergeBaseResult.stdout.trim();
     const result = await this.#git(
-      ["merge-tree", "--write-tree", "--name-only", "--messages", baseCommit, headCommit],
+      ["merge-tree", "-z", "--write-tree", "--name-only", "--messages", baseCommit, headCommit],
       [0, 1],
     );
-    const lines = splitLines(result.stdout);
-    const tree = /^[0-9a-f]{40,64}$/.test(lines[0] ?? "") ? lines.shift() : null;
-    const conflictFiles = result.exitCode === 1
-      ? lines.filter((line) => !line.includes("CONFLICT") && !line.startsWith("Auto-merging "))
-      : [];
+    const parsed = parseMergeTree(result.stdout);
 
     return {
       baseCommit,
       headCommit,
       mergeBase,
       clean: result.exitCode === 0,
-      tree,
-      conflictFiles: [...new Set(conflictFiles)].sort(),
-      messages: result.stderr.trim() || (result.exitCode === 1 ? result.stdout.trim() : ""),
+      tree: parsed.tree,
+      conflictFiles: parsed.conflictFiles,
+      messages: result.stderr.trim() || parsed.messages.join("\n"),
     };
   }
 
@@ -150,7 +146,7 @@ export class NativeGitStore extends RepositoryStore {
     validateFullRef(ref, "ref", "refs/");
     await this.#git(["check-ref-format", ref]);
     const newCommit = await this.resolveRef(newRevision);
-    if (expectedOldCommit !== null && !/^[0-9a-f]{40,64}$/.test(expectedOldCommit)) {
+    if (expectedOldCommit !== null && !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(expectedOldCommit)) {
       throw new TypeError("expectedOldCommit must be an immutable Git object ID.");
     }
     if (expectedOldCommit !== null && expectedOldCommit.length !== newCommit.length) {
@@ -250,14 +246,35 @@ function requiredString(value, name) {
   if (typeof value !== "string" || value.trim() === "") throw new TypeError(`${name} must be a non-empty string.`);
 }
 
-function splitLines(value) {
-  return value.split("\n").map((line) => line.trim()).filter(Boolean);
-}
-
 function splitNulls(value) {
   const fields = value.split("\0");
   if (fields.at(-1) === "") fields.pop();
   return fields;
+}
+
+function parseMergeTree(value) {
+  const fields = value.split("\0");
+  const tree = fields.shift() || null;
+  const conflictFiles = [];
+  while (fields.length > 0 && fields[0] !== "") conflictFiles.push(fields.shift());
+  if (fields[0] === "") fields.shift();
+
+  const messages = [];
+  while (fields.length > 0 && fields[0] !== "") {
+    const pathCount = Number.parseInt(fields.shift(), 10);
+    if (!Number.isInteger(pathCount) || pathCount < 0 || fields.length < pathCount + 2) {
+      throw new Error("Unexpected git merge-tree message output.");
+    }
+    fields.splice(0, pathCount);
+    fields.shift();
+    messages.push(fields.shift().trimEnd());
+  }
+
+  return {
+    tree: tree && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(tree) ? tree : null,
+    conflictFiles: [...new Set(conflictFiles)].sort(),
+    messages,
+  };
 }
 
 async function nearestExistingPath(path) {
