@@ -52,10 +52,11 @@ export class ForgejoProvider extends ForgeProvider {
     return values.map(normalizeReview);
   }
 
-  async listReviewComments({ owner, repo, number }) {
-    const reviews = await this.listReviews({ owner, repo, number });
+  async listReviewComments({ owner, repo, number, reviews = null }) {
+    const reviewList = reviews ?? await this.listReviews({ owner, repo, number });
+    if (!Array.isArray(reviewList)) throw new TypeError("reviews must be an array when provided.");
     const comments = [];
-    for (const review of reviews) {
+    for (const review of reviewList) {
       const values = await this.#paginate(`${repoPath(owner, repo)}/pulls/${number}/reviews/${review.id}/comments`);
       comments.push(...values.map((value) => normalizeReviewComment(value, review.id)));
     }

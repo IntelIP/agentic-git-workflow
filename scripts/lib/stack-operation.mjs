@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 export const STACK_OPERATION_SCHEMA_VERSION = "tabellio-stack-operation/v0.1";
 export const STACK_APPROVAL_SCHEMA_VERSION = "tabellio-stack-approval/v0.1";
-export const STACK_OPERATIONS = ["submit", "update", "sync", "merge"];
+export const STACK_OPERATIONS = ["submit", "update", "sync", "restack", "merge"];
 
 export function createStackOperationIntent({
   operation,
@@ -94,6 +94,8 @@ function validateParameters(operation, value) {
   } else if (operation === "sync") {
     exactKeys(value, ["restack"], "intent.parameters");
     member(value.restack, ["none", "aboves", "upstack"], "intent.parameters.restack");
+  } else if (operation === "restack") {
+    exactKeys(value, [], "intent.parameters");
   } else {
     exactKeys(value, ["method", "readyTimeout", "mergeTimeout"], "intent.parameters");
     member(value.method, ["merge", "squash", "rebase"], "intent.parameters.method");

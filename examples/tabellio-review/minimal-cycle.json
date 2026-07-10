@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "tabellio-review-cycle/v0.1",
+  "id": "review-example-001",
+  "repository": { "id": "example/tabellio" },
+  "provider": { "id": "forgejo", "owner": "example", "repo": "tabellio" },
+  "changeRequest": {
+    "id": "7",
+    "number": 7,
+    "url": "https://forgejo.example.test/example/tabellio/pulls/7",
+    "title": "Example agent change",
+    "state": "open",
+    "draft": false,
+    "mergeable": true,
+    "headBranch": "agent/example",
+    "headCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "baseBranch": "main",
+    "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "updatedAt": "2026-07-10T12:00:00.000Z"
+  },
+  "status": "ready",
+  "round": 1,
+  "feedback": [],
+  "fixes": [],
+  "checks": {
+    "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "state": "success",
+    "total": 1,
+    "statuses": [{
+      "id": "51",
+      "context": "tests",
+      "state": "success",
+      "description": "Checks passed",
+      "targetUrl": "https://forgejo.example.test/checks/51",
+      "createdAt": "2026-07-10T12:00:00.000Z",
+      "updatedAt": "2026-07-10T12:00:00.000Z"
+    }]
+  },
+  "events": [{
+    "id": "event-example-001",
+    "type": "synced",
+    "actor": "example-agent",
+    "at": "2026-07-10T12:00:00.000Z",
+    "detail": "Synced 0 feedback items at example head."
+  }],
+  "createdAt": "2026-07-10T12:00:00.000Z",
+  "updatedAt": "2026-07-10T12:00:00.000Z",
+  "integrity": {
+    "algorithm": "sha256",
+    "digest": "71c327c3342583e5fcb72dc2c1da90c6408300ac69d7d41c497e3b6edc80499d"
+  }
+}

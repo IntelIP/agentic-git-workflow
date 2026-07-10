@@ -6,7 +6,10 @@ All notable changes to Tabellio are recorded here.
 
 ### Added
 
-- Approval-gated git-spice submit, update, sync, and merge operations.
+- Git-native JSON ledger on compare-and-swap refs for durable control-plane state.
+- Durable review cycles covering Forgejo feedback, provider-neutral agent findings, triage, checks, fixes, and readiness.
+- Entire-checkpoint-bound fix records with commit remapping across git-spice restacks.
+- Approval-gated git-spice submit, update, sync, restack, and merge operations.
 - Integrity-bound operation intents, short-lived approvals, one-use receipts, and branch-set race checks.
 - File-backed Forgejo API and Git HTTPS authentication without credentials in remote URLs or command arguments.
 - Read-only Forgejo provider for repository, pull request, review, comment, and commit-status reads.

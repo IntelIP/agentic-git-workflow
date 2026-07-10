@@ -103,6 +103,7 @@ async function operationParameters(options) {
     if (!["none", "aboves", "upstack"].includes(restack)) throw new Error("--restack must be none, aboves, or upstack.");
     return { restack };
   }
+  if (options.operation === "restack") return {};
   const method = options.method ?? "squash";
   if (!["merge", "squash", "rebase"].includes(method)) throw new Error("--method must be merge, squash, or rebase.");
   return {

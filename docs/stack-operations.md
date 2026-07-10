@@ -9,9 +9,10 @@ Supported operations:
 | `submit` | `branch submit` | Pushes a branch and creates a change request |
 | `update` | `branch submit --update-only` | Pushes and updates an existing change request |
 | `sync` | `repo sync` | Fetches remote state and may remove locally tracked merged branches |
+| `restack` | `branch restack` | Rebases one tracked branch onto its current base |
 | `merge` | `branch merge` | Merges one change request through the forge |
 
-The wrapper never exposes git-spice force push, hook bypass, or stale-base bypass flags.
+The wrapper never exposes git-spice force push, hook bypass, or stale-base bypass flags. Restack is separate from sync because a normal repository sync does not rewrite every independently stale branch.
 
 ## Plan
 

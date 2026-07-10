@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "tabellio-agent-review/v0.1",
+  "reviewId": "codex-review-example-001",
+  "reviewer": { "id": "codex", "runtime": "openai-codex" },
+  "repository": { "id": "example/tabellio" },
+  "changeRequest": {
+    "number": 7,
+    "headCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "findings": [{
+    "id": "finding-001",
+    "title": "Guard null input",
+    "body": "Add a null guard before dereferencing the value.",
+    "severity": "medium",
+    "actionable": true,
+    "path": "src/example.js",
+    "line": 12
+  }],
+  "createdAt": "2026-07-10T12:01:00.000Z"
+}
