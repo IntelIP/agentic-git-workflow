@@ -6,6 +6,8 @@ All notable changes to Tabellio are recorded here.
 
 ### Added
 
+- Local agent-run CLI with start, checkpoint, finish, status, and safe promotion commands.
+- Mutable `tabellio-run/v0.1` local state contract and end-to-end lifecycle artifacts.
 - Provider-neutral `RepositoryStore` contract and standard Git provider.
 - Bare-repository, contained-worktree, Git-note, merge-preview, and compare-and-swap primitives.
 - Integrity-protected `tabellio-context/v0.1` packet and CLI capture/check commands.

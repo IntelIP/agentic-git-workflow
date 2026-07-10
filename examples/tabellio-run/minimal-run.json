@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "tabellio-run/v0.1",
+  "runId": "example-run-001",
+  "status": "active",
+  "repository": {
+    "id": "example/tabellio",
+    "baseRef": "refs/heads/main",
+    "baseName": "main",
+    "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "workspace": {
+    "branch": "agent/example-run-001"
+  },
+  "actor": {
+    "type": "agent",
+    "id": "codex"
+  },
+  "task": {
+    "summary": "Demonstrate local agent-run state."
+  },
+  "notesRef": "refs/notes/tabellio/context",
+  "checkpoints": [],
+  "headCommit": null,
+  "validation": null,
+  "context": null,
+  "completedAt": null,
+  "promotedAt": null,
+  "createdAt": "2026-07-09T00:00:00.000Z",
+  "updatedAt": "2026-07-09T00:00:00.000Z"
+}

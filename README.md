@@ -41,6 +41,7 @@ The native engine runs through the installed `git` executable. It never construc
 | `NativeGitStore` | Reads commits and diffs, manages worktrees, previews merges, and updates refs safely |
 | `WorkspaceManager` | Gives each agent run a contained worktree path |
 | Context packet | Binds task, actor, exact commits, changed files, checkpoints, and merge status |
+| Agent-run CLI | Orchestrates start, checkpoint, validation, status, and safe promotion |
 
 ## Review Questions
 
@@ -140,10 +141,29 @@ node scripts/write-tabellio-evidence-envelope.mjs \
   --out tabellio-pr-evidence.json
 ```
 
+Run the local agent lifecycle:
+
+```bash
+node scripts/tabellio-run.mjs start \
+  --run-id run-42 \
+  --repo . \
+  --base main \
+  --task-summary "Add deterministic import validation"
+
+# Edit and commit inside the returned workspace path, then:
+node scripts/tabellio-run.mjs checkpoint --run-id run-42 --repo . --summary "Implementation committed"
+node scripts/tabellio-run.mjs finish --run-id run-42 --repo . -- npm test
+node scripts/tabellio-run.mjs promote --run-id run-42 --repo .
+```
+
+See [Agent run lifecycle](docs/agent-run-lifecycle.md) for state and failure behavior.
+
 Package scripts:
 
 ```bash
 npm run check
+npm run tabellio:run -- status --run-id run-42
+npm run tabellio:run:example:check
 npm run tabellio:context:capture
 npm run tabellio:context:check
 npm run tabellio:evidence:write
@@ -170,6 +190,7 @@ The external-action checker fails when an action is marked `attempted: true` wit
 
 - [Getting started](docs/getting-started.md)
 - [Agentic tooling stack](docs/tooling-stack.md)
+- [Agent run lifecycle](docs/agent-run-lifecycle.md)
 - [Workflow model](docs/workflow-model.md)
 - [Native Git foundation](docs/native-git-foundation.md)
 - [Evidence schema](docs/evidence-schema.md)

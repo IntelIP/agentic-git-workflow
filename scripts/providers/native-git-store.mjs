@@ -1,7 +1,7 @@
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
-import { runGit } from "../lib/git-process.mjs";
+import { runGit, withPreparedRefUpdate } from "../lib/git-process.mjs";
 import { RepositoryStore } from "../lib/repository-store.mjs";
 
 export class NativeGitStore extends RepositoryStore {
@@ -89,10 +89,20 @@ export class NativeGitStore extends RepositoryStore {
     };
   }
 
-  async createWorkspace({ path, branch, startPoint }) {
-    requiredString(branch, "branch");
+  async validateBranch(branch) {
     validateBranchName(branch);
     await this.#git(["check-ref-format", "--branch", branch]);
+    return branch;
+  }
+
+  async hasRef(ref) {
+    validateFullRef(ref, "ref", "refs/");
+    const result = await this.#git(["show-ref", "--verify", "--quiet", ref], [0, 1]);
+    return result.exitCode === 0;
+  }
+
+  async createWorkspace({ path, branch, startPoint }) {
+    await this.validateBranch(branch);
     const workspacePath = await this.#validateWorkspacePath(path);
     const startCommit = await this.resolveRef(startPoint);
     await this.#git(["worktree", "add", "--no-track", "-b", branch, workspacePath, startCommit]);
@@ -119,6 +129,29 @@ export class NativeGitStore extends RepositoryStore {
     if (result.exitCode === 0) return result.stdout.trimEnd();
     if (result.stderr.includes("no note found")) return null;
     throw new Error(`Unable to read Git note from ${notesRef}: ${result.stderr.trim()}`);
+  }
+
+  async writeNote(revision, { notesRef = "refs/notes/tabellio/context", note }) {
+    validateFullRef(notesRef, "notesRef", "refs/notes/");
+    requiredString(note, "note");
+    await this.#git(["check-ref-format", notesRef]);
+    const commit = await this.resolveRef(revision);
+    await this.#git([
+      "-c", "user.name=Tabellio",
+      "-c", "user.email=tabellio@example.invalid",
+      "notes", `--ref=${notesRef.slice("refs/notes/".length)}`,
+      "add", "-m", note, commit,
+    ]);
+    return { notesRef, commit };
+  }
+
+  async isAncestor(ancestorRevision, descendantRevision) {
+    const [ancestorCommit, descendantCommit] = await Promise.all([
+      this.resolveRef(ancestorRevision),
+      this.resolveRef(descendantRevision),
+    ]);
+    const result = await this.#git(["merge-base", "--is-ancestor", ancestorCommit, descendantCommit], [0, 1]);
+    return result.exitCode === 0;
   }
 
   async previewMerge({ base, head }) {
@@ -168,6 +201,69 @@ export class NativeGitStore extends RepositoryStore {
     return { ref, oldCommit: expectedOldCommit, newCommit };
   }
 
+  async fastForwardRef({ ref, newRevision, expectedOldCommit }) {
+    validateFullRef(ref, "ref", "refs/heads/");
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(expectedOldCommit ?? "")) {
+      throw new TypeError("expectedOldCommit must be an immutable Git object ID.");
+    }
+    const newCommit = await this.resolveRef(newRevision);
+    if (newCommit.length !== expectedOldCommit.length) {
+      throw new TypeError("expectedOldCommit must use the repository object format.");
+    }
+    const currentCommit = await this.resolveRef(ref);
+    if (currentCommit === newCommit) {
+      return { ref, oldCommit: expectedOldCommit, newCommit, mode: "already-applied" };
+    }
+    if (currentCommit !== expectedOldCommit) {
+      throw new RefConflictError({ ref, expected: expectedOldCommit, actual: currentCommit });
+    }
+    if (!(await this.isAncestor(currentCommit, newCommit))) {
+      throw new Error(`Ref ${ref} cannot fast-forward from ${currentCommit} to ${newCommit}.`);
+    }
+
+    const worktreePath = await this.#checkedOutWorktree(ref);
+    if (!worktreePath) {
+      const result = await this.compareAndSwapRef({ ref, newRevision: newCommit, expectedOldCommit });
+      return { ...result, mode: "ref-cas" };
+    }
+
+    const [unstaged, staged, symbolicRef] = await Promise.all([
+      runGit({ args: ["diff", "--quiet"], cwd: worktreePath, acceptableExitCodes: [0, 1] }),
+      runGit({ args: ["diff", "--cached", "--quiet"], cwd: worktreePath, acceptableExitCodes: [0, 1] }),
+      runGit({ args: ["symbolic-ref", "-q", "HEAD"], cwd: worktreePath, acceptableExitCodes: [0, 1] }),
+    ]);
+    if (unstaged.exitCode !== 0 || staged.exitCode !== 0) {
+      throw new Error(`Checked-out target ${ref} has tracked changes; promotion stopped.`);
+    }
+    if (symbolicRef.stdout.trim() !== ref) {
+      throw new Error(`Checked-out target ${ref} changed worktree state during promotion.`);
+    }
+
+    let worktreeUpdated = false;
+    try {
+      await withPreparedRefUpdate({
+        cwd: worktreePath,
+        ref,
+        newCommit,
+        expectedOldCommit,
+      }, async () => {
+        await runGit({ args: ["read-tree", "-u", "-m", expectedOldCommit, newCommit], cwd: worktreePath });
+        worktreeUpdated = true;
+      });
+    } catch (error) {
+      const actual = await this.resolveRef(ref);
+      if (worktreeUpdated && actual === expectedOldCommit) {
+        await runGit({
+          args: ["read-tree", "-u", "-m", newCommit, expectedOldCommit],
+          cwd: worktreePath,
+        }).catch(() => {});
+      }
+      if (actual !== expectedOldCommit) throw new RefConflictError({ ref, expected: expectedOldCommit, actual });
+      throw error;
+    }
+    return { ref, oldCommit: expectedOldCommit, newCommit, mode: "worktree-fast-forward" };
+  }
+
   async #git(args, acceptableExitCodes = [0]) {
     return runGit({
       args,
@@ -175,6 +271,11 @@ export class NativeGitStore extends RepositoryStore {
       gitDir: this.gitDir,
       acceptableExitCodes,
     });
+  }
+
+  async #checkedOutWorktree(ref) {
+    const result = await this.#git(["worktree", "list", "--porcelain", "-z"]);
+    return parseWorktreeList(result.stdout).find((worktree) => worktree.branch === ref)?.path ?? null;
   }
 
   async #validateWorkspacePath(path) {
@@ -275,6 +376,20 @@ function parseMergeTree(value) {
     conflictFiles: [...new Set(conflictFiles)].sort(),
     messages,
   };
+}
+
+function parseWorktreeList(value) {
+  return value.split("\0\0").filter(Boolean).map((record) => {
+    const worktree = {};
+    for (const field of record.split("\0").filter(Boolean)) {
+      const separator = field.indexOf(" ");
+      const key = separator === -1 ? field : field.slice(0, separator);
+      const entry = separator === -1 ? true : field.slice(separator + 1);
+      if (key === "worktree") worktree.path = entry;
+      if (key === "branch") worktree.branch = entry;
+    }
+    return worktree;
+  }).filter((worktree) => typeof worktree.path === "string");
 }
 
 async function nearestExistingPath(path) {

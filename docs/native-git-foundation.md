@@ -52,6 +52,8 @@ agent or CLI
 7. Optionally write a v0.1 evidence envelope bound to that packet.
 8. Only an explicit higher-level action may update a target ref.
 
+The [agent-run lifecycle](agent-run-lifecycle.md) provides that higher-level local workflow. It keeps validation and promotion separate, then uses the frozen base commit as the compare-and-swap expectation.
+
 ## Example
 
 ```bash
@@ -75,4 +77,4 @@ The packet contains repository identity, not `/srv/git/product.git`. Local paths
 
 ## Current Boundary
 
-The foundation manages local Git state. It does not authenticate to a remote, host repositories, open pull requests, merge a PR, deploy code, or execute protected external actions. GitHub can remain code storage and review transport without becoming Tabellio's workflow database.
+The foundation manages local Git state. It does not authenticate to a remote, host repositories, open pull requests, deploy code, or execute protected external actions. Its explicit `promote` command can fast-forward a local target ref after validation; GitHub can remain code storage and review transport without becoming Tabellio's workflow database.

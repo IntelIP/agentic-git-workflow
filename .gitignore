@@ -1,4 +1,5 @@
 node_modules/
+.tabellio/
 agentic-pr-evidence.json
 tabellio-pr-evidence.json
 tabellio-context.json

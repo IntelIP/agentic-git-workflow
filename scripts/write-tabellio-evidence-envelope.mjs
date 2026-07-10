@@ -8,6 +8,7 @@ import { canonicalJson, readContextPacket } from "./lib/context-packet.mjs";
 const args = parseArgs(process.argv.slice(2));
 const outPath = args.out ?? "tabellio-pr-evidence.json";
 const absoluteOutPath = resolve(outPath);
+const recordedOutPath = basename(absoluteOutPath);
 const absoluteContextPath = args.context ? resolve(args.context) : null;
 const recordedContextPath = absoluteContextPath
   ? relative(dirname(absoluteOutPath), absoluteContextPath) || basename(absoluteContextPath)
@@ -17,8 +18,10 @@ const now = new Date().toISOString();
 const changedFiles = context ? context.changeSet.files.map((file) => file.path).sort() : getChangedFiles();
 const requiredValidationCommand = env("TABELLIO_REQUIRED_VALIDATION_COMMAND");
 const requiredValidationStatus = normalizeStatus(env("TABELLIO_REQUIRED_VALIDATION_STATUS") || "skipped");
+const requiredValidationExitCode = normalizeExitCode(env("TABELLIO_REQUIRED_VALIDATION_EXIT_CODE"));
 const validationCommand = env("TABELLIO_VALIDATION_COMMAND");
 const validationStatus = normalizeStatus(env("TABELLIO_VALIDATION_STATUS") || "skipped");
+const validationExitCode = normalizeExitCode(env("TABELLIO_VALIDATION_EXIT_CODE"));
 const writerCommand = env("TABELLIO_WRITER_COMMAND") || `node ${process.argv[1] || "scripts/write-tabellio-evidence-envelope.mjs"}`;
 const sha = context?.refs.head.commit || env("GITHUB_SHA") || git(["rev-parse", "HEAD"]) || "unknown";
 const baseRef = context?.refs.base.name || env("GITHUB_BASE_REF") || git(["rev-parse", "--abbrev-ref", "HEAD"]) || "main";
@@ -79,7 +82,7 @@ const evidence = {
   artifacts: [
     {
       name: "Tabellio evidence envelope",
-      path: outPath,
+      path: recordedOutPath,
       hashScope: "canonical-json-without-this-artifact-sha256",
     },
     ...(context ? [{
@@ -172,16 +175,16 @@ function normalizeStatus(value) {
 function buildCommandsRun() {
   const commands = [];
   const seen = new Set();
-  for (const [command, status] of [
-    [requiredValidationCommand, requiredValidationStatus],
-    [validationCommand, validationStatus],
+  for (const [command, status, explicitExitCode] of [
+    [requiredValidationCommand, requiredValidationStatus, requiredValidationExitCode],
+    [validationCommand, validationStatus, validationExitCode],
   ]) {
     if (!command || seen.has(command)) continue;
     seen.add(command);
     commands.push({
       command,
       status,
-      ...(status === "passed" ? { exitCode: 0 } : status === "failed" ? { exitCode: 1 } : {}),
+      ...(status === "passed" ? { exitCode: 0 } : status === "failed" ? { exitCode: explicitExitCode ?? 1 } : {}),
       completedAt: now,
     });
   }
@@ -191,6 +194,12 @@ function buildCommandsRun() {
     exitCode: 0,
     completedAt: now,
   }];
+}
+
+function normalizeExitCode(value) {
+  if (!/^-?\d+$/.test(value)) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 function readPullRequestNumber() {

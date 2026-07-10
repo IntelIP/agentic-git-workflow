@@ -32,6 +32,8 @@ Check script syntax:
 ```bash
 node --check scripts/check-tabellio-evidence-envelope.mjs
 node --check scripts/check-tabellio-external-actions.mjs
+node --check scripts/check-tabellio-run.mjs
+node --check scripts/tabellio-run.mjs
 node --check scripts/write-tabellio-evidence-envelope.mjs
 ```
 

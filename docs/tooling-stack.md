@@ -56,6 +56,8 @@ The product opportunity is the control plane tying those objects together:
 
 Included:
 
+- local agent-run lifecycle and state machine
+- explicit fast-forward compare-and-swap promotion
 - native Git repository provider
 - contained per-run worktrees
 - Git-note checkpoint reading

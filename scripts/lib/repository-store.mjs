@@ -14,6 +14,16 @@ export class RepositoryStore {
     throw new Error("RepositoryStore.getDiff must be implemented.");
   }
 
+  /** @param {string} branch */
+  async validateBranch(_branch) {
+    throw new Error("RepositoryStore.validateBranch must be implemented.");
+  }
+
+  /** @param {string} ref */
+  async hasRef(_ref) {
+    throw new Error("RepositoryStore.hasRef must be implemented.");
+  }
+
   /** @param {{path: string, branch: string, startPoint: string}} options */
   async createWorkspace(_options) {
     throw new Error("RepositoryStore.createWorkspace must be implemented.");
@@ -29,6 +39,16 @@ export class RepositoryStore {
     throw new Error("RepositoryStore.readNote must be implemented.");
   }
 
+  /** @param {string} revision @param {{notesRef?: string, note: string}} options */
+  async writeNote(_revision, _options) {
+    throw new Error("RepositoryStore.writeNote must be implemented.");
+  }
+
+  /** @param {string} ancestorRevision @param {string} descendantRevision */
+  async isAncestor(_ancestorRevision, _descendantRevision) {
+    throw new Error("RepositoryStore.isAncestor must be implemented.");
+  }
+
   /** @param {{base: string, head: string}} options */
   async previewMerge(_options) {
     throw new Error("RepositoryStore.previewMerge must be implemented.");
@@ -37,5 +57,10 @@ export class RepositoryStore {
   /** @param {{ref: string, newRevision: string, expectedOldCommit?: string | null}} options */
   async compareAndSwapRef(_options) {
     throw new Error("RepositoryStore.compareAndSwapRef must be implemented.");
+  }
+
+  /** @param {{ref: string, newRevision: string, expectedOldCommit: string}} options */
+  async fastForwardRef(_options) {
+    throw new Error("RepositoryStore.fastForwardRef must be implemented.");
   }
 }

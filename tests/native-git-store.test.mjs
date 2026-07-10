@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { GitCommandError, runGit } from "../scripts/lib/git-process.mjs";
+import { GitCommandError, runGit, withPreparedRefUpdate } from "../scripts/lib/git-process.mjs";
 import { WorkspaceManager } from "../scripts/lib/workspace-manager.mjs";
 import { RefConflictError, NativeGitStore } from "../scripts/providers/native-git-store.mjs";
 import { createFixture, identityEnv } from "./helpers/git-fixture.mjs";
@@ -85,6 +85,36 @@ test("compare-and-swap rejects a stale ref update", async (t) => {
     }),
     RefConflictError,
   );
+});
+
+test("prepared ref update locks the expected commit while synchronizing a checked-out worktree", async (t) => {
+  const fixture = await createFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  await runGit({ args: ["switch", "-c", "agent/prepared-ref"], cwd: fixture.seed });
+  await writeFile(join(fixture.seed, "PREPARED.md"), "prepared\n");
+  await runGit({ args: ["add", "-A"], cwd: fixture.seed });
+  await runGit({ args: ["commit", "-m", "prepared ref update"], cwd: fixture.seed, env: identityEnv() });
+  const newCommit = await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed }).then((result) => result.stdout.trim());
+  await runGit({ args: ["switch", "main"], cwd: fixture.seed });
+
+  await withPreparedRefUpdate({
+    cwd: fixture.seed,
+    ref: "refs/heads/main",
+    newCommit,
+    expectedOldCommit: fixture.mainCommit,
+  }, async () => {
+    const concurrent = await runGit({
+      args: ["update-ref", "refs/heads/main", newCommit, fixture.mainCommit],
+      cwd: fixture.seed,
+      acceptableExitCodes: [0, 128],
+    });
+    assert.equal(concurrent.exitCode, 128);
+    assert.match(concurrent.stderr, /cannot lock ref/);
+    await runGit({ args: ["read-tree", "-u", "-m", fixture.mainCommit, newCommit], cwd: fixture.seed });
+  });
+
+  assert.equal(await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed }).then((result) => result.stdout.trim()), newCommit);
+  assert.equal(await runGit({ args: ["status", "--porcelain"], cwd: fixture.seed }).then((result) => result.stdout), "");
 });
 
 test("worktree paths cannot escape the managed root", async (t) => {

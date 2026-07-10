@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { captureContext, localRepositoryId } from "../scripts/lib/capture-context.mjs";
+import { validateAgentRunState } from "../scripts/lib/agent-run.mjs";
 import { contextDigest, createContextPacket, validateContextPacket } from "../scripts/lib/context-packet.mjs";
 import { runGit } from "../scripts/lib/git-process.mjs";
 import { createFixture } from "./helpers/git-fixture.mjs";
@@ -64,6 +65,19 @@ test("runtime context validation rejects schema-disallowed properties", () => {
   packet.repository.unexpected = "rejected";
   packet.integrity.digest = contextDigest(packet);
   assert.throws(() => validateContextPacket(packet), /unsupported properties: unexpected/);
+});
+
+test("runtime agent-run validation rejects path leaks and unsupported properties", async () => {
+  const state = JSON.parse(await readFile(`${projectRoot}/examples/tabellio-run/minimal-run.json`, "utf8"));
+  validateAgentRunState(state);
+  state.repository.id = "C/\\Users\\agent\\private-repository";
+  assert.throws(() => validateAgentRunState(state), /must not expose a local filesystem path/);
+  state.repository.id = "example/repository";
+  state.unexpected = true;
+  assert.throws(() => validateAgentRunState(state), /unsupported properties: unexpected/);
+  delete state.unexpected;
+  state.status = "completed";
+  assert.throws(() => validateAgentRunState(state), /require headCommit, validation, and context/);
 });
 
 test("context creation rejects undefined fields and impossible object IDs", () => {
@@ -233,12 +247,12 @@ test("file-byte integrity requires a SHA-256 digest", async (t) => {
   );
 });
 
-test("GitHub adapter checks out and records immutable PR commits", async () => {
+test("GitHub adapter checks out immutable PR commits and runs the full repository gate", async () => {
   const workflow = await readFile(`${projectRoot}/.github/workflows/tabellio-evidence.yml`, "utf8");
   assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
   assert.match(workflow, /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \|\| github\.sha \}\}/);
   assert.match(workflow, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
-  assert.match(workflow, /name: Test Tabellio[\s\S]*run: npm test/);
+  assert.match(workflow, /name: Check Tabellio[\s\S]*run: npm run check/);
 });
 
 test("adoption docs do not pin the pre-context release", async () => {

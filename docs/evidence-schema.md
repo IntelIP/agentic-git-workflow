@@ -7,6 +7,7 @@ Schema files:
 - `schemas/evidence-envelope.schema.json`
 - `schemas/external-action-policy.schema.json`
 - `schemas/context-packet.schema.json`
+- `schemas/agent-run-state.schema.json`
 
 ## Required Envelope Fields
 
@@ -95,6 +96,7 @@ This policy validates declared intent and results. It does not monitor operating
 node scripts/check-tabellio-evidence-envelope.mjs --evidence tabellio-pr-evidence.json
 node scripts/check-tabellio-external-actions.mjs --evidence tabellio-pr-evidence.json
 node scripts/check-tabellio-context.mjs --context tabellio-context.json
+node scripts/check-tabellio-run.mjs --state examples/tabellio-run/minimal-run.json
 ```
 
 Generate and validate:

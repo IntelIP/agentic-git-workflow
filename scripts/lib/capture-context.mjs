@@ -1,11 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { createContextPacket } from "./context-packet.mjs";
-
-export function localRepositoryId(repoPath) {
-  const name = repoPath.replaceAll("\\", "/").split("/").filter(Boolean).at(-1);
-  return `local/${name ?? "repository"}`;
-}
+export { localRepositoryId } from "./repository-identity.mjs";
 
 export async function captureContext({
   store,
@@ -19,18 +15,24 @@ export async function captureContext({
   actor,
   taskSummary,
   createdAt,
+  checkpointCommits = [],
 }) {
-  const [baseCommit, headCommit] = await Promise.all([
+  const [baseCommit, headCommit, ...frozenCheckpointCommits] = await Promise.all([
     store.resolveRef(baseRevision),
     store.resolveRef(headRevision),
+    ...checkpointCommits.map((commit) => store.resolveRef(commit)),
   ]);
   const mergePreview = await store.previewMerge({ base: baseCommit, head: headCommit });
   if (mergePreview.baseCommit !== baseCommit || mergePreview.headCommit !== headCommit) {
     throw new Error("Merge preview did not use the frozen base and head commits.");
   }
-  const [diff, note] = await Promise.all([
+  const noteCommits = [...new Set([...frozenCheckpointCommits, headCommit])];
+  const [diff, notes] = await Promise.all([
     store.getDiff(mergePreview.mergeBase, headCommit),
-    store.readNote(headCommit, { notesRef }),
+    Promise.all(noteCommits.map(async (commit) => ({
+      commit,
+      note: await store.readNote(commit, { notesRef }),
+    }))),
   ]);
   if (diff.baseCommit !== mergePreview.mergeBase || diff.headCommit !== headCommit) {
     throw new Error("Change set did not use merge-base and the frozen head commit.");
@@ -54,7 +56,9 @@ export async function captureContext({
     changeSet: {
       files: diff.files,
     },
-    checkpoints: note ? [checkpointFromNote({ note, notesRef, commit: headCommit })] : [],
+    checkpoints: notes
+      .filter(({ note }) => note !== null)
+      .map(({ note, commit }) => checkpointFromNote({ note, notesRef, commit })),
     mergePreview: {
       clean: mergePreview.clean,
       tree: mergePreview.tree,

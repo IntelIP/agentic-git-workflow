@@ -65,10 +65,10 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Test Tabellio
+      - name: Check Tabellio
         id: tabellio_tests
         if: ${{ github.repository == 'IntelIP/Tabellio' }}
-        run: npm test
+        run: npm run check
 
       - name: Optional validation command
         id: validation
@@ -135,7 +135,7 @@ jobs:
           BASE_NAME: ${{ github.base_ref || github.ref_name }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           HEAD_NAME: ${{ github.head_ref || github.ref_name }}
-          TABELLIO_REQUIRED_VALIDATION_COMMAND: ${{ github.repository == 'IntelIP/Tabellio' && 'npm test' || '' }}
+          TABELLIO_REQUIRED_VALIDATION_COMMAND: ${{ github.repository == 'IntelIP/Tabellio' && 'npm run check' || '' }}
           TABELLIO_REQUIRED_VALIDATION_STATUS: ${{ steps.tabellio_tests.outcome || 'skipped' }}
           TABELLIO_VALIDATION_COMMAND: ${{ inputs.validation_command || '' }}
           TABELLIO_VALIDATION_STATUS: ${{ steps.validation.outcome || 'skipped' }}
