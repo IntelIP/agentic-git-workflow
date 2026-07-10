@@ -13,6 +13,7 @@
   "bin": {
     "tabellio-run": "scripts/tabellio-run.mjs",
     "tabellio-stack": "scripts/tabellio-stack.mjs",
+    "tabellio-stack-operation": "scripts/tabellio-stack-operation.mjs",
     "tabellio-ledger": "scripts/tabellio-ledger.mjs",
     "tabellio-forge": "scripts/tabellio-forge.mjs"
   },
@@ -45,6 +46,8 @@
     "tabellio:stack": "node scripts/tabellio-stack.mjs",
     "tabellio:stack:check": "node scripts/check-tabellio-stack.mjs --stack tabellio-stack.json",
     "tabellio:stack:example:check": "node scripts/check-tabellio-stack.mjs --stack examples/tabellio-stack/minimal-stack.json",
+    "tabellio:stack:operation": "node scripts/tabellio-stack-operation.mjs",
+    "tabellio:stack:operation:example:check": "node scripts/check-tabellio-stack-operation.mjs --intent examples/tabellio-stack-operation/minimal-intent.json --approval examples/tabellio-stack-operation/minimal-approval.json --at 2026-07-10T12:02:00.000Z",
     "tabellio:ledger": "node scripts/tabellio-ledger.mjs",
     "tabellio:ledger:check": "node scripts/check-tabellio-ledger.mjs --ledger tabellio-ledger.json",
     "tabellio:ledger:example:check": "node scripts/check-tabellio-ledger.mjs --ledger examples/tabellio-ledger/minimal-ledger.json",
@@ -56,7 +59,7 @@
     "tabellio:evidence:write": "node scripts/write-tabellio-evidence-envelope.mjs --out tabellio-pr-evidence.json",
     "tabellio:evidence:check": "node scripts/check-tabellio-evidence-envelope.mjs --evidence tabellio-pr-evidence.json",
     "tabellio:external-actions:check": "node scripts/check-tabellio-external-actions.mjs --evidence tabellio-pr-evidence.json",
-    "check": "npm test && npm run tabellio:run:example:check && npm run tabellio:stack:example:check && npm run tabellio:ledger:example:check && npm run tabellio:context:example:check && npm run tabellio:evidence:example:check && node scripts/check-tabellio-external-actions.mjs --evidence examples/tabellio-evidence/minimal-evidence.json"
+    "check": "npm test && npm run tabellio:run:example:check && npm run tabellio:stack:example:check && npm run tabellio:stack:operation:example:check && npm run tabellio:ledger:example:check && npm run tabellio:context:example:check && npm run tabellio:evidence:example:check && node scripts/check-tabellio-external-actions.mjs --evidence examples/tabellio-evidence/minimal-evidence.json"
   },
   "engines": {
     "node": ">=20"

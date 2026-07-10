@@ -81,6 +81,7 @@ GitHub remains an optional storage, CI, and review surface. Entire is the defaul
 | `schemas/` | Evidence and external-action JSON schemas |
 | `scripts/providers/native-git-store.mjs` | Standard Git storage provider |
 | `scripts/providers/git-spice-stack-manager.mjs` | Read-only git-spice stack adapter |
+| `scripts/providers/git-spice-operations.mjs` | Approval-gated git-spice submit, update, sync, and merge adapter |
 | `scripts/providers/entire-ledger-provider.mjs` | Metadata-only Entire checkpoint adapter |
 | `scripts/providers/forgejo-provider.mjs` | Read-only Forgejo repository and review adapter |
 | `infra/forgejo/` | Disposable localhost Forgejo integration lab |
@@ -172,6 +173,7 @@ npm run tabellio:run -- status --run-id run-42
 npm run tabellio:run:example:check
 npm run tabellio:stack -- --repo . --repo-id IntelIP/Tabellio --out tabellio-stack.json
 npm run tabellio:stack:check
+npm run tabellio:stack:operation:example:check
 npm run tabellio:ledger -- --repo . --repo-id IntelIP/Tabellio --base main --head HEAD --out tabellio-ledger.json
 npm run tabellio:ledger:check
 npm run tabellio:forge -- version --base-url http://127.0.0.1:3300 --token-file .tabellio/forgejo/credentials/admin-token
@@ -202,6 +204,7 @@ The external-action checker fails when an action is marked `attempted: true` wit
 - [Getting started](docs/getting-started.md)
 - [Agentic tooling stack](docs/tooling-stack.md)
 - [Agent run lifecycle](docs/agent-run-lifecycle.md)
+- [Approved stack operations](docs/stack-operations.md)
 - [Workflow model](docs/workflow-model.md)
 - [Native Git foundation](docs/native-git-foundation.md)
 - [Evidence schema](docs/evidence-schema.md)

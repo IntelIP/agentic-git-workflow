@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:stack-operation:v0.1",
+  "title": "Tabellio Stack Operation Intent",
+  "type": "object",
+  "required": ["schemaVersion", "operation", "repository", "branch", "parameters", "createdAt", "integrity"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "tabellio-stack-operation/v0.1" },
+    "operation": { "enum": ["submit", "update", "sync", "merge"] },
+    "repository": {
+      "type": "object",
+      "required": ["id", "headCommit", "refsDigest"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "headCommit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+        "refsDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "branch": { "type": "string", "minLength": 1 },
+    "parameters": { "type": "object" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "integrity": {
+      "type": "object",
+      "required": ["algorithm", "digest"],
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "operation": { "const": "submit" } } },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "required": ["draft", "title", "body"],
+            "additionalProperties": false,
+            "properties": {
+              "draft": { "type": "boolean" },
+              "title": { "type": "string", "minLength": 1 },
+              "body": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "update" } } },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "required": ["draft"],
+            "additionalProperties": false,
+            "properties": { "draft": { "type": ["boolean", "null"] } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "sync" } } },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "required": ["restack"],
+            "additionalProperties": false,
+            "properties": { "restack": { "enum": ["none", "aboves", "upstack"] } }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "merge" } } },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "required": ["method", "readyTimeout", "mergeTimeout"],
+            "additionalProperties": false,
+            "properties": {
+              "method": { "enum": ["merge", "squash", "rebase"] },
+              "readyTimeout": { "type": "string", "pattern": "^(?:0|[1-9][0-9]*(?:ms|s|m|h))$" },
+              "mergeTimeout": { "type": "string", "pattern": "^(?:0|[1-9][0-9]*(?:ms|s|m|h))$" }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
