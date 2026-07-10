@@ -13,7 +13,8 @@
   "bin": {
     "tabellio-run": "scripts/tabellio-run.mjs",
     "tabellio-stack": "scripts/tabellio-stack.mjs",
-    "tabellio-ledger": "scripts/tabellio-ledger.mjs"
+    "tabellio-ledger": "scripts/tabellio-ledger.mjs",
+    "tabellio-forge": "scripts/tabellio-forge.mjs"
   },
   "bugs": {
     "url": "https://github.com/IntelIP/Tabellio/issues"
@@ -47,6 +48,7 @@
     "tabellio:ledger": "node scripts/tabellio-ledger.mjs",
     "tabellio:ledger:check": "node scripts/check-tabellio-ledger.mjs --ledger tabellio-ledger.json",
     "tabellio:ledger:example:check": "node scripts/check-tabellio-ledger.mjs --ledger examples/tabellio-ledger/minimal-ledger.json",
+    "tabellio:forge": "node scripts/tabellio-forge.mjs",
     "tabellio:context:capture": "node scripts/capture-tabellio-context.mjs --out tabellio-context.json",
     "tabellio:context:check": "node scripts/check-tabellio-context.mjs --context tabellio-context.json",
     "tabellio:context:example:check": "node scripts/check-tabellio-context.mjs --context examples/tabellio-context/minimal-context.json",

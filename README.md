@@ -82,6 +82,8 @@ GitHub remains an optional storage, CI, and review surface. Entire is the defaul
 | `scripts/providers/native-git-store.mjs` | Standard Git storage provider |
 | `scripts/providers/git-spice-stack-manager.mjs` | Read-only git-spice stack adapter |
 | `scripts/providers/entire-ledger-provider.mjs` | Metadata-only Entire checkpoint adapter |
+| `scripts/providers/forgejo-provider.mjs` | Read-only Forgejo repository and review adapter |
+| `infra/forgejo/` | Disposable localhost Forgejo integration lab |
 | `scripts/lib/` | Git process, repository contract, worktree, and context primitives |
 | `scripts/` | Dependency-free capture, writer, and validators |
 | `examples/` | Minimal valid evidence fixture and consumer workflow example |
@@ -172,6 +174,7 @@ npm run tabellio:stack -- --repo . --repo-id IntelIP/Tabellio --out tabellio-sta
 npm run tabellio:stack:check
 npm run tabellio:ledger -- --repo . --repo-id IntelIP/Tabellio --base main --head HEAD --out tabellio-ledger.json
 npm run tabellio:ledger:check
+npm run tabellio:forge -- version --base-url http://127.0.0.1:3300 --token-file .tabellio/forgejo/credentials/admin-token
 npm run tabellio:context:capture
 npm run tabellio:context:check
 npm run tabellio:evidence:write

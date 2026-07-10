@@ -6,6 +6,9 @@ All notable changes to Tabellio are recorded here.
 
 ### Added
 
+- Read-only Forgejo provider for repository, pull request, review, comment, and commit-status reads.
+- Disposable localhost Forgejo 15.0.3 lab with idempotent bootstrap and seeded integration fixture.
+- `tabellio-forge` CLI with file-backed or environment-backed token loading and redacted failures.
 - Mandatory-by-default Entire ledger provider with metadata-only checkpoint export and context binding.
 - Provider-neutral `tabellio-ledger/v0.1` schema, CLI, validator, example, and tests.
 - Read-only git-spice stack adapter with provider-neutral `tabellio-stack/v0.1` snapshots.

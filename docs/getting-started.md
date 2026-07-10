@@ -35,6 +35,23 @@ node scripts/check-tabellio-stack.mjs --stack tabellio-stack.json
 
 The adapter uses documented JSON output and disables change-request status and comment queries. Submission and merging remain explicit external actions handled separately.
 
+## Run The Forgejo Lab
+
+Docker users can prove the forge adapter without GitHub:
+
+```bash
+node scripts/dev/forgejo-lab.mjs up
+node scripts/dev/forgejo-lab.mjs bootstrap
+node scripts/dev/forgejo-lab.mjs seed
+node scripts/tabellio-forge.mjs pulls \
+  --base-url http://127.0.0.1:3300 \
+  --owner tabellio-admin \
+  --repo tabellio-lab \
+  --token-file .tabellio/forgejo/credentials/admin-token
+```
+
+The lab is disposable and localhost-only. Generated secrets and Forgejo data remain below ignored `.tabellio/forgejo/`. Stop the container with `node scripts/dev/forgejo-lab.mjs down`.
+
 ## Add The Reusable Workflow
 
 Create `.github/workflows/tabellio.yml` in the consumer repository:

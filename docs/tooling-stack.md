@@ -14,7 +14,7 @@ The main idea: agentic Git should be built around more than a patch. It should p
 | Checkpoint ledger | [Entire Checkpoints](https://entire.io/) and [Entire CLI](https://github.com/entireio/cli) | Links commits to agent sessions, prompts, transcript context, token usage, and attribution | Required default through `EntireLedgerProvider`; metadata normalized as `tabellio-ledger/v0.1` |
 | Evidence gate | Tabellio | Writes and validates the PR evidence envelope and external-action policy | Core product surface |
 | Stacked review | [git-spice](https://abhinav.github.io/git-spice/) | Keeps dependent change requests small, ordered, reviewable, and resubmittable across Forgejo, Gitea, GitLab, Bitbucket, or GitHub | Read through `GitSpiceStackManager` into `tabellio-stack/v0.1` |
-| Forge and CI | Forgejo, Gitea, GitLab, Bitbucket, GitHub, or another Git remote | Optionally hosts review, checks, artifacts, and merge state | Adapter boundary; not required by native core |
+| Forge and CI | Forgejo, Gitea, GitLab, Bitbucket, GitHub, or another Git remote | Optionally hosts review, checks, artifacts, and merge state | Read-only Forgejo API adapter implemented; not required by native core |
 | Repo hygiene | [OpenSSF Scorecard](https://securityscorecards.dev/), [SARIF](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html), and static checks | Adds public health and automated review signals | Recorded as checks or artifacts |
 
 ## Tool Tags
@@ -71,10 +71,12 @@ Included:
 - local writer and validators
 - PR template and docs
 - OpenSSF Scorecard signal
+- disposable Forgejo 15.0.3 lab bound to localhost
+- read-only Forgejo provider for repositories, pull requests, reviews, comments, and commit statuses
 
 Not included yet:
 
-- remote repository transport or hosting service
+- production Forgejo deployment or remote repository transport
 - transcript indexing or storage outside Entire
 - remote git-spice submission, review mutation, and stack merge
 - Codex review automation
@@ -106,3 +108,9 @@ Tabellio calls `entire checkpoint explain --json` and stores normalized metadata
 Entire remains the source of truth for transcripts, rewind, and resume. Tabellio stores checkpoint IDs, commit bindings, summaries, token totals, and integrity digests for orchestration and review.
 
 This repository disables automatic checkpoint pushes until a private Forgejo destination exists. Commit trailers remain shareable; transcript-bearing checkpoint data stays local during migration.
+
+## Forgejo Boundary
+
+`ForgejoProvider` reads the documented Forgejo v1 API. It normalizes repository identity, pull requests, reviews, inline comments, issue comments, and commit status without exposing the access token. The CLI accepts tokens only through a file or environment variable; URLs containing credentials are rejected.
+
+The disposable lab pins Forgejo 15.0.3, binds HTTP and SSH to localhost, disables registration and Actions, and stores all state below ignored `.tabellio/forgejo/`. The lab proves API compatibility; it is not production infrastructure. Write and merge operations remain a later approval-gated adapter slice.
