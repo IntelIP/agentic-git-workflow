@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
@@ -19,7 +20,10 @@ test("native store reads Git state and isolates worktrees", async (t) => {
   assert.deepEqual(await store.listFiles("refs/heads/feature"), ["README.md"]);
 
   const diff = await store.getDiff("refs/heads/main", "refs/heads/feature");
-  assert.deepEqual(diff.files, [{ status: "M", path: "README.md" }]);
+  assert.deepEqual(diff.files, [
+    { status: "D", path: "BASE_ONLY.md" },
+    { status: "M", path: "README.md" },
+  ]);
 
   const workspace = await manager.create({
     runId: "run-1",
@@ -131,4 +135,24 @@ test("NUL-delimited reads preserve unusual Git paths", async (t) => {
   const store = await NativeGitStore.open(fixture.bare);
   assert((await store.listFiles("refs/heads/feature")).includes(unusualPath));
   assert((await store.getDiff("refs/heads/main", "refs/heads/feature")).files.some((file) => file.path === unusualPath));
+});
+
+test("compare-and-swap creates refs in SHA-256 repositories", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "tabellio-sha256-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const repo = join(root, "repository");
+  await runGit({ args: ["init", "--object-format=sha256", "--initial-branch=main", repo] });
+  await runGit({
+    args: ["commit", "--allow-empty", "-m", "base"],
+    cwd: repo,
+    env: identityEnv(),
+  });
+  const store = await NativeGitStore.open(repo);
+  const result = await store.compareAndSwapRef({
+    ref: "refs/heads/agent/sha256",
+    newRevision: "HEAD",
+  });
+
+  assert.equal(result.newCommit.length, 64);
+  assert.equal(await store.resolveRef("refs/heads/agent/sha256"), result.newCommit);
 });

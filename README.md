@@ -101,14 +101,14 @@ permissions:
 
 jobs:
   evidence:
-    uses: IntelIP/Tabellio/.github/workflows/tabellio-evidence.yml@v0.1.0
+    uses: IntelIP/Tabellio/.github/workflows/tabellio-evidence.yml@main
     with:
       # Replace with the repository's normal validation command.
       validation_command: npm test
-      toolkit_ref: v0.1.0
+      toolkit_ref: main
 ```
 
-`toolkit_ref` is required when the consumer repository does not vendor the Tabellio scripts. In consumer repositories, setting it forces the workflow to use the pinned Tabellio toolkit instead of PR-controlled local scripts. Pin it to the same release tag or SHA as the reusable workflow. Before the first release tag exists, use `main` instead of `v0.1.0`.
+`toolkit_ref` is required when the consumer repository does not vendor the Tabellio scripts. The example uses `main` while native context capture is unreleased. For production, pin both references to the same release tag or immutable commit SHA containing this feature.
 
 Validate the bundled fixture:
 

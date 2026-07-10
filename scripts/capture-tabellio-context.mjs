@@ -2,50 +2,31 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { createContextPacket } from "./lib/context-packet.mjs";
+import { captureContext } from "./lib/capture-context.mjs";
 import { NativeGitStore } from "./providers/native-git-store.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const repoPath = resolve(args.repo ?? process.cwd());
 const outPath = resolve(args.out ?? "tabellio-context.json");
-const baseRef = args.base ?? "main";
-const headRef = args.head ?? "HEAD";
+const baseRevision = args.base ?? "main";
+const headRevision = args.head ?? "HEAD";
 const notesRef = args.notesRef ?? "refs/notes/tabellio/context";
 const store = await NativeGitStore.open(repoPath);
 
-const [diff, mergePreview, note] = await Promise.all([
-  store.getDiff(baseRef, headRef),
-  store.previewMerge({ base: baseRef, head: headRef }),
-  store.readNote(headRef, { notesRef }),
-]);
-
-const packet = createContextPacket({
+const packet = await captureContext({
+  store,
+  baseRevision,
+  headRevision,
+  baseName: args.baseName ?? baseRevision,
+  headName: args.headName ?? headRevision,
+  notesRef,
   runId: args.runId ?? `local-${randomUUID()}`,
-  repository: {
-    id: args.repoId ?? await repositoryId(store),
-    storage: "native-git",
-  },
+  repositoryId: args.repoId ?? await repositoryId(store),
   actor: {
     type: args.actorType ?? "agent",
     id: args.actor ?? process.env.USER ?? "local-agent",
   },
-  task: {
-    summary: args.taskSummary ?? "Context captured from native Git state.",
-  },
-  refs: {
-    base: { name: baseRef, commit: diff.baseCommit },
-    head: { name: headRef, commit: diff.headCommit },
-    mergeBase: { name: "merge-base", commit: mergePreview.mergeBase },
-  },
-  changeSet: {
-    files: diff.files,
-  },
-  checkpoints: note ? [checkpointFromNote({ note, notesRef, commit: diff.headCommit })] : [],
-  mergePreview: {
-    clean: mergePreview.clean,
-    tree: mergePreview.tree,
-    conflictFiles: mergePreview.conflictFiles,
-  },
+  taskSummary: args.taskSummary ?? "Context captured from native Git state.",
 });
 
 await mkdir(dirname(outPath), { recursive: true });
@@ -76,30 +57,15 @@ function hashedRemote(remote) {
   return `remote/${createHash("sha256").update(remote).digest("hex").slice(0, 16)}`;
 }
 
-function checkpointFromNote({ note, notesRef, commit }) {
-  const checkpoint = {
-    ref: notesRef,
-    commit,
-    digest: createHash("sha256").update(note).digest("hex"),
-  };
-  try {
-    const parsed = JSON.parse(note);
-    if (typeof parsed.summary === "string" && parsed.summary.trim()) {
-      checkpoint.summary = parsed.summary.trim().slice(0, 500);
-    }
-  } catch {
-    // Note content stays private; only its digest is captured.
-  }
-  return checkpoint;
-}
-
 function parseArgs(argv) {
   const parsed = {};
   const aliases = new Map([
     ["--repo", "repo"],
     ["--repo-id", "repoId"],
     ["--base", "base"],
+    ["--base-name", "baseName"],
     ["--head", "head"],
+    ["--head-name", "headName"],
     ["--out", "out"],
     ["--run-id", "runId"],
     ["--task-summary", "taskSummary"],

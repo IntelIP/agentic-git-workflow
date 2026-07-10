@@ -52,7 +52,7 @@ The product opportunity is the control plane tying those objects together:
 - `MergeGate`: what must pass before merge
 - `ReleaseIntent`: what protected side effects require approval
 
-## Current v0.1.0 Scope
+## Current Unreleased Scope
 
 Included:
 

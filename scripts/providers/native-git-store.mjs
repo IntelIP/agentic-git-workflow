@@ -4,8 +4,6 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { runGit } from "../lib/git-process.mjs";
 import { RepositoryStore } from "../lib/repository-store.mjs";
 
-const ZERO_OID = "0000000000000000000000000000000000000000";
-
 export class NativeGitStore extends RepositoryStore {
   constructor({ repoPath, gitDir = null, isBare = false, workspaceRoot = null }) {
     super();
@@ -155,7 +153,10 @@ export class NativeGitStore extends RepositoryStore {
     if (expectedOldCommit !== null && !/^[0-9a-f]{40,64}$/.test(expectedOldCommit)) {
       throw new TypeError("expectedOldCommit must be an immutable Git object ID.");
     }
-    const expected = expectedOldCommit ?? ZERO_OID;
+    if (expectedOldCommit !== null && expectedOldCommit.length !== newCommit.length) {
+      throw new TypeError("expectedOldCommit must use the repository object format.");
+    }
+    const expected = expectedOldCommit ?? "0".repeat(newCommit.length);
 
     try {
       await this.#git(["update-ref", ref, newCommit, expected]);

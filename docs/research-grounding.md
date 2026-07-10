@@ -79,4 +79,4 @@ The agent is optional. The evidence contract is the product.
 
 ## Boundary
 
-Current v0.1.0 remains a structured context, evidence, and review workflow, not a formal supply-chain security implementation or remote Git hosting service.
+Current unreleased design remains a structured context, evidence, and review workflow, not a formal supply-chain security implementation or remote Git hosting service.

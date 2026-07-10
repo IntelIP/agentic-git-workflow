@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://intelip.github.io/tabellio/schemas/context-packet.schema.json",
+  "$id": "https://raw.githubusercontent.com/IntelIP/Tabellio/main/schemas/context-packet.schema.json",
   "title": "Tabellio native Git context packet",
   "type": "object",
   "additionalProperties": false,

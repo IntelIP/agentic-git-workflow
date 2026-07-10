@@ -34,6 +34,19 @@ export async function readContextPacket(path) {
 
 export function validateContextPacket(value, { verifyIntegrity = true } = {}) {
   if (!isObject(value)) throw new Error("Context packet must be an object.");
+  exactKeys(value, [
+    "schemaVersion",
+    "runId",
+    "repository",
+    "actor",
+    "task",
+    "refs",
+    "changeSet",
+    "checkpoints",
+    "mergePreview",
+    "createdAt",
+    "integrity",
+  ], "context packet");
   equals(value.schemaVersion, CONTEXT_SCHEMA_VERSION, "schemaVersion");
   requiredString(value.runId, "runId");
   requiredString(value.createdAt, "createdAt");
@@ -42,6 +55,7 @@ export function validateContextPacket(value, { verifyIntegrity = true } = {}) {
   }
 
   requireObject(value.repository, "repository");
+  exactKeys(value.repository, ["id", "storage"], "repository");
   requiredString(value.repository.id, "repository.id");
   if (/^(?:\/|file:|[A-Za-z]:[\\/])/.test(value.repository.id)) {
     throw new Error("repository.id must not expose a local filesystem path.");
@@ -49,32 +63,40 @@ export function validateContextPacket(value, { verifyIntegrity = true } = {}) {
   oneOf(value.repository.storage, ["native-git"], "repository.storage");
 
   requireObject(value.actor, "actor");
+  exactKeys(value.actor, ["type", "id"], "actor");
   oneOf(value.actor.type, ["human", "agent", "ci", "system"], "actor.type");
   requiredString(value.actor.id, "actor.id");
 
   requireObject(value.task, "task");
+  exactKeys(value.task, ["summary"], "task");
   requiredString(value.task.summary, "task.summary");
 
   requireObject(value.refs, "refs");
+  exactKeys(value.refs, ["base", "head", "mergeBase"], "refs");
   for (const key of ["base", "head", "mergeBase"]) {
     requireObject(value.refs[key], `refs.${key}`);
+    exactKeys(value.refs[key], ["name", "commit"], `refs.${key}`);
     requiredString(value.refs[key].name, `refs.${key}.name`);
     oid(value.refs[key].commit, `refs.${key}.commit`);
   }
 
   requireObject(value.changeSet, "changeSet");
+  exactKeys(value.changeSet, ["files"], "changeSet");
   if (!Array.isArray(value.changeSet.files)) throw new Error("changeSet.files must be an array.");
   value.changeSet.files.forEach((file, index) => {
     requireObject(file, `changeSet.files[${index}]`);
+    exactKeys(file, ["status", "path", "previousPath"], `changeSet.files[${index}]`);
     if (typeof file.status !== "string" || !/^(?:[ADMTUXB]|[RC][0-9]{1,3})$/.test(file.status)) {
       throw new Error(`changeSet.files[${index}].status must be a Git name-status code.`);
     }
     requiredString(file.path, `changeSet.files[${index}].path`);
+    if (file.previousPath !== undefined) requiredString(file.previousPath, `changeSet.files[${index}].previousPath`);
   });
 
   if (!Array.isArray(value.checkpoints)) throw new Error("checkpoints must be an array.");
   value.checkpoints.forEach((checkpoint, index) => {
     requireObject(checkpoint, `checkpoints[${index}]`);
+    exactKeys(checkpoint, ["ref", "commit", "digest", "summary"], `checkpoints[${index}]`);
     requiredString(checkpoint.ref, `checkpoints[${index}].ref`);
     oid(checkpoint.commit, `checkpoints[${index}].commit`);
     oid(checkpoint.digest, `checkpoints[${index}].digest`, 64);
@@ -85,6 +107,7 @@ export function validateContextPacket(value, { verifyIntegrity = true } = {}) {
   });
 
   requireObject(value.mergePreview, "mergePreview");
+  exactKeys(value.mergePreview, ["clean", "tree", "conflictFiles"], "mergePreview");
   if (typeof value.mergePreview.clean !== "boolean") throw new Error("mergePreview.clean must be a boolean.");
   if (!Array.isArray(value.mergePreview.conflictFiles)) throw new Error("mergePreview.conflictFiles must be an array.");
   value.mergePreview.conflictFiles.forEach((file, index) => requiredString(file, `mergePreview.conflictFiles[${index}]`));
@@ -92,6 +115,7 @@ export function validateContextPacket(value, { verifyIntegrity = true } = {}) {
 
   if (verifyIntegrity) {
     requireObject(value.integrity, "integrity");
+    exactKeys(value.integrity, ["algorithm", "scope", "digest"], "integrity");
     equals(value.integrity.algorithm, "sha256", "integrity.algorithm");
     equals(value.integrity.scope, CONTEXT_INTEGRITY_SCOPE, "integrity.scope");
     oid(value.integrity.digest, "integrity.digest", 64);
@@ -128,6 +152,11 @@ function requiredString(value, path) {
 
 function requireObject(value, path) {
   if (!isObject(value)) throw new Error(`${path} must be an object.`);
+}
+
+function exactKeys(value, allowed, path) {
+  const unexpected = Object.keys(value).filter((key) => !allowed.includes(key));
+  if (unexpected.length > 0) throw new Error(`${path} contains unsupported properties: ${unexpected.join(", ")}.`);
 }
 
 function oid(value, path, length = null) {

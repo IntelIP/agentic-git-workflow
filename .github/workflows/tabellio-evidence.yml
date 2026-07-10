@@ -57,11 +57,17 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      - name: Test Tabellio
+        if: ${{ github.repository == 'IntelIP/Tabellio' }}
+        run: npm test
 
       - name: Optional validation command
         id: validation
@@ -105,15 +111,13 @@ jobs:
         if: ${{ always() && steps.toolkit.outcome == 'success' }}
         shell: bash
         run: |
-          base_ref="HEAD"
-          if [ -n "${GITHUB_BASE_REF}" ]; then
-            base_ref="origin/${GITHUB_BASE_REF}"
-          fi
           node "${TOOLKIT_PATH}/scripts/capture-tabellio-context.mjs" \
             --repo "${GITHUB_WORKSPACE}" \
             --repo-id "${GITHUB_REPOSITORY}" \
-            --base "${base_ref}" \
-            --head HEAD \
+            --base "${BASE_SHA}" \
+            --base-name "${BASE_NAME}" \
+            --head "${HEAD_SHA}" \
+            --head-name "${HEAD_NAME}" \
             --run-id "${GITHUB_RUN_ID}" \
             --task-summary "Tabellio context captured for ${GITHUB_WORKFLOW}." \
             --actor "${GITHUB_ACTOR}" \
@@ -126,6 +130,10 @@ jobs:
           TOOLKIT_PATH: ${{ steps.toolkit.outputs.path }}
           EVIDENCE_PATH: ${{ inputs.evidence_path || 'tabellio-pr-evidence.json' }}
           CONTEXT_PATH: ${{ inputs.context_path || 'tabellio-context.json' }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          BASE_NAME: ${{ github.base_ref || github.ref_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          HEAD_NAME: ${{ github.head_ref || github.ref_name }}
           TABELLIO_VALIDATION_COMMAND: ${{ inputs.validation_command || '' }}
           TABELLIO_VALIDATION_STATUS: ${{ steps.validation.outcome || 'skipped' }}
           TABELLIO_WRITER_COMMAND: node ${{ steps.toolkit.outputs.path }}/scripts/write-tabellio-evidence-envelope.mjs

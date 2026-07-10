@@ -9,8 +9,9 @@ permissions:
 
 jobs:
   evidence:
-    uses: IntelIP/Tabellio/.github/workflows/tabellio-evidence.yml@v0.1.0
+    # Native context capture is unreleased. Pin both refs to its release tag or commit SHA for production.
+    uses: IntelIP/Tabellio/.github/workflows/tabellio-evidence.yml@main
     with:
       # Replace with the repository's normal validation command.
       validation_command: npm test
-      toolkit_ref: v0.1.0
+      toolkit_ref: main

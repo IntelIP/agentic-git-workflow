@@ -26,6 +26,7 @@ export async function createFixture() {
 
   await runGit({ args: ["switch", "main"], cwd: seed });
   await writeFile(join(seed, "README.md"), "main\n");
+  await writeFile(join(seed, "BASE_ONLY.md"), "base branch only\n");
   await commitAll(seed, "main change");
   const mainCommit = await head(seed);
   await runGit({ args: ["push", "origin", "main"], cwd: seed });

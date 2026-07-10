@@ -4,7 +4,8 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import test from "node:test";
 
-import { createContextPacket, validateContextPacket } from "../scripts/lib/context-packet.mjs";
+import { captureContext } from "../scripts/lib/capture-context.mjs";
+import { contextDigest, createContextPacket, validateContextPacket } from "../scripts/lib/context-packet.mjs";
 import { createFixture } from "./helpers/git-fixture.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -35,6 +36,78 @@ test("context integrity rejects tampering", () => {
     }),
     /must not expose a local filesystem path/,
   );
+});
+
+test("runtime context validation rejects schema-disallowed properties", () => {
+  const oid = "a".repeat(40);
+  const packet = createContextPacket({
+    runId: "run-schema",
+    repository: { id: "example/repository", storage: "native-git" },
+    actor: { type: "agent", id: "codex" },
+    task: { summary: "schema parity" },
+    refs: {
+      base: { name: "main", commit: oid },
+      head: { name: "feature", commit: oid },
+      mergeBase: { name: "merge-base", commit: oid },
+    },
+    changeSet: { files: [] },
+    mergePreview: { clean: true, tree: oid, conflictFiles: [] },
+  });
+  packet.repository.unexpected = "rejected";
+  packet.integrity.digest = contextDigest(packet);
+  assert.throws(() => validateContextPacket(packet), /unsupported properties: unexpected/);
+});
+
+test("context capture freezes refs and diffs merge-base to head", async () => {
+  const baseCommit = "a".repeat(40);
+  const headCommit = "b".repeat(40);
+  const mergeBase = "c".repeat(40);
+  const tree = "d".repeat(40);
+  const calls = [];
+  const store = {
+    async resolveRef(revision) {
+      calls.push(["resolveRef", revision]);
+      return revision === "main" ? baseCommit : headCommit;
+    },
+    async previewMerge(options) {
+      calls.push(["previewMerge", options]);
+      assert.deepEqual(options, { base: baseCommit, head: headCommit });
+      return { baseCommit, headCommit, mergeBase, clean: true, tree, conflictFiles: [] };
+    },
+    async getDiff(base, head) {
+      calls.push(["getDiff", base, head]);
+      assert.equal(base, mergeBase);
+      assert.equal(head, headCommit);
+      return { baseCommit: base, headCommit: head, files: [{ status: "M", path: "src/index.mjs" }] };
+    },
+    async readNote(revision) {
+      calls.push(["readNote", revision]);
+      assert.equal(revision, headCommit);
+      return null;
+    },
+  };
+
+  const packet = await captureContext({
+    store,
+    baseRevision: "main",
+    headRevision: "feature",
+    baseName: "main",
+    headName: "feature",
+    runId: "run-frozen",
+    repositoryId: "example/repository",
+    actor: { type: "agent", id: "codex" },
+    taskSummary: "freeze refs",
+    createdAt: "2026-07-09T00:00:00.000Z",
+  });
+
+  assert.equal(packet.refs.base.commit, baseCommit);
+  assert.equal(packet.refs.head.commit, headCommit);
+  assert.equal(packet.refs.mergeBase.commit, mergeBase);
+  assert.deepEqual(packet.changeSet.files, [{ status: "M", path: "src/index.mjs" }]);
+  assert.deepEqual(calls.filter(([name]) => name === "resolveRef"), [
+    ["resolveRef", "main"],
+    ["resolveRef", "feature"],
+  ]);
 });
 
 test("capture CLI binds native Git context into evidence", async (t) => {
@@ -85,6 +158,25 @@ test("policy checks reject omitted approval booleans", async (t) => {
       return output.blockers.some((blocker) => blocker.includes(".approved must be a boolean"));
     },
   );
+});
+
+test("GitHub adapter checks out and records immutable PR commits", async () => {
+  const workflow = await readFile(`${projectRoot}/.github/workflows/tabellio-evidence.yml`, "utf8");
+  assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(workflow, /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \|\| github\.sha \}\}/);
+  assert.match(workflow, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(workflow, /name: Test Tabellio[\s\S]*run: npm test/);
+});
+
+test("adoption docs do not pin the pre-context release", async () => {
+  const [readme, gettingStarted, consumerExample] = await Promise.all([
+    readFile(`${projectRoot}/README.md`, "utf8"),
+    readFile(`${projectRoot}/docs/getting-started.md`, "utf8"),
+    readFile(`${projectRoot}/examples/github-actions/tabellio-consumer.yml`, "utf8"),
+  ]);
+  assert.doesNotMatch(readme, /tabellio-evidence\.yml@v0\.1\.0|toolkit_ref: v0\.1\.0/);
+  assert.doesNotMatch(gettingStarted, /tabellio-evidence\.yml@v0\.1\.0|toolkit_ref: v0\.1\.0/);
+  assert.doesNotMatch(consumerExample, /tabellio-evidence\.yml@v0\.1\.0|toolkit_ref: v0\.1\.0/);
 });
 
 async function runNode(script, args) {

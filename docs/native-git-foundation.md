@@ -43,8 +43,8 @@ agent or CLI
 
 ## Context Lifecycle
 
-1. Resolve base and head names to commits.
-2. Compute the changed-file set.
+1. Resolve base and head names once to immutable commits.
+2. Compute the agent changed-file set from merge-base to head.
 3. Read an optional checkpoint note from `refs/notes/tabellio/context`.
 4. Preview the merge without mutating a ref or worktree.
 5. Write canonical `tabellio-context/v0.1` JSON with integrity digest.
