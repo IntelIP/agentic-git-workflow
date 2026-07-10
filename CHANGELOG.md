@@ -24,6 +24,7 @@ All notable changes to Tabellio are recorded here.
 - Context serialization rejects undefined fields and impossible object-ID lengths.
 - Timed-out Git commands now fail instead of appearing successful.
 - Required repository validation commands now appear in generated evidence.
+- Windows local remote paths are hashed before entering context identity.
 
 ## 0.1.0 - 2026-07-08
 

@@ -57,7 +57,7 @@ export function validateContextPacket(value, { verifyIntegrity = true } = {}) {
   requireObject(value.repository, "repository");
   exactKeys(value.repository, ["id", "storage"], "repository");
   requiredString(value.repository.id, "repository.id");
-  if (/^(?:\/|file:|[A-Za-z]:[\\/])/.test(value.repository.id)) {
+  if (/^(?:\/|file:|[A-Za-z]:[\\/])/.test(value.repository.id) || value.repository.id.includes("\\")) {
     throw new Error("repository.id must not expose a local filesystem path.");
   }
   oneOf(value.repository.storage, ["native-git"], "repository.storage");

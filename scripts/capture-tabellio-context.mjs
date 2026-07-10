@@ -40,6 +40,9 @@ async function repositoryId(nativeStore) {
 }
 
 function normalizeRemote(remote) {
+  if (/^[A-Za-z]:[\\/]/.test(remote) || remote.startsWith("/") || remote.startsWith("\\\\")) {
+    return hashedRemote(remote);
+  }
   if (remote.includes("://")) {
     try {
       const parsed = new URL(remote);

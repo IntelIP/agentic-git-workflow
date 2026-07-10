@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { captureContext, localRepositoryId } from "../scripts/lib/capture-context.mjs";
 import { contextDigest, createContextPacket, validateContextPacket } from "../scripts/lib/context-packet.mjs";
+import { runGit } from "../scripts/lib/git-process.mjs";
 import { createFixture } from "./helpers/git-fixture.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -33,6 +34,13 @@ test("context integrity rejects tampering", () => {
     () => createContextPacket({
       ...packet,
       repository: { id: "/private/repository.git", storage: "native-git" },
+    }),
+    /must not expose a local filesystem path/,
+  );
+  assert.throws(
+    () => createContextPacket({
+      ...packet,
+      repository: { id: "C/\\Users\\agent\\secret-product", storage: "native-git" },
     }),
     /must not expose a local filesystem path/,
   );
@@ -82,6 +90,27 @@ test("context creation rejects undefined fields and impossible object IDs", () =
 test("local repository IDs never expose Windows or POSIX parent paths", () => {
   assert.equal(localRepositoryId("C:\\Users\\agent\\repository"), "local/repository");
   assert.equal(localRepositoryId("/Users/agent/repository"), "local/repository");
+});
+
+test("capture CLI hashes Windows local origin paths", async (t) => {
+  const fixture = await createFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const contextPath = `${fixture.root}/windows-origin-context.json`;
+  await runGit({
+    args: ["config", "remote.origin.url", "C:\\Users\\agent\\secret-product.git"],
+    cwd: fixture.bare,
+  });
+
+  await runNode("scripts/capture-tabellio-context.mjs", [
+    "--repo", fixture.bare,
+    "--base", "refs/heads/main",
+    "--head", "refs/heads/feature",
+    "--run-id", "run-private-origin",
+    "--out", contextPath,
+  ]);
+  const packet = JSON.parse(await readFile(contextPath, "utf8"));
+  assert.match(packet.repository.id, /^remote\/[0-9a-f]{16}$/);
+  assert.doesNotMatch(JSON.stringify(packet), /Users|secret-product/);
 });
 
 test("context capture freezes refs and diffs merge-base to head", async () => {
