@@ -173,6 +173,42 @@ test("agent-run finish rejects validation that changes branch HEAD", async (t) =
   assert.notEqual(await runGit({ args: ["rev-parse", "HEAD"], cwd: started.paths.workspace }).then((result) => result.stdout.trim()), validatedHead);
 });
 
+test("agent-run finish rejects a workspace switched away from its run branch", async (t) => {
+  const fixture = await createFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const runRoot = join(fixture.root, "switched-workspace-runs");
+  const common = ["--repo", fixture.bare, "--run-root", runRoot, "--run-id", "run-switched-workspace"];
+  const started = await runCli([
+    "start", ...common,
+    "--repo-id", "example/agent-run",
+    "--task-summary", "reject a different checked-out branch",
+  ]);
+  await runGit({ args: ["switch", "-c", "other/workspace"], cwd: started.paths.workspace });
+
+  const blocked = await runCliFailure(["finish", ...common, "--", process.execPath, "-e", "process.exit(0)"]);
+  assert.match(blocked.error, /must have refs\/heads\/agent\/run-switched-workspace checked out/);
+  assert.equal((await runCli(["status", ...common])).state.status, "active");
+});
+
+test("agent-run finish records validation that switches the workspace branch as failed", async (t) => {
+  const fixture = await createFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const runRoot = join(fixture.root, "validation-switch-runs");
+  const common = ["--repo", fixture.bare, "--run-root", runRoot, "--run-id", "run-validation-switch"];
+  const started = await runCli([
+    "start", ...common,
+    "--repo-id", "example/agent-run",
+    "--task-summary", "record validation branch switches",
+  ]);
+  await writeFile(join(started.paths.workspace, "AGENT.md"), "agent\n");
+  await commitAll(started.paths.workspace, "agent work");
+
+  const failed = await runCliFailure(["finish", ...common, "--", "git", "switch", "-c", "validation/other"]);
+  assert.equal(failed.state.status, "validation_failed");
+  assert.equal(failed.state.validation.error, "Validation changed the checked-out workspace branch.");
+  assert.equal(failed.state.validation.exitCode, 1);
+});
+
 test("agent-run start validates branch before creating durable state", async (t) => {
   const fixture = await createFixture();
   t.after(() => rm(fixture.root, { recursive: true, force: true }));

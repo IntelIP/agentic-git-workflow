@@ -79,6 +79,6 @@ Promotion fails if the target branch moved, the run branch changed after validat
 - No GitHub API, remote authentication, hosting, deployment, or provider action.
 - No shell command construction.
 - Checkpoints require a clean committed workspace and use Git notes.
-- Validation must leave both the workspace and run branch HEAD unchanged.
+- Checkpoint and finish require the run branch to remain checked out; validation must leave both that checkout and the run branch HEAD unchanged.
 - Promotion requires passed validation and an exact expected-old-commit compare-and-swap, including checked-out targets.
 - Worktree or branch cleanup remains explicit and is not performed by lifecycle commands.

@@ -99,7 +99,7 @@ export class AgentRunManager {
       const state = await this.#readState(runId);
       requireStatus(state, ["active", "validation_failed"]);
       requiredString(summary, "summary");
-      await this.#requireCleanWorkspace(runId);
+      await this.#requireRunWorkspace(state);
       const headCommit = await this.store.resolveRef(branchRef(state.workspace.branch));
       await this.#requireRunAncestor(state, headCommit);
       if (state.checkpoints.some((checkpoint) => checkpoint.commit === headCommit)) {
@@ -143,7 +143,7 @@ export class AgentRunManager {
         throw new Error("validation command arguments must be non-empty strings.");
       }
 
-      await this.#requireCleanWorkspace(runId);
+      await this.#requireRunWorkspace(state);
       const headCommit = await this.store.resolveRef(branchRef(state.workspace.branch));
       await this.#requireRunAncestor(state, headCommit);
       for (const checkpoint of state.checkpoints) {
@@ -160,6 +160,11 @@ export class AgentRunManager {
         validation.status = "failed";
         validation.exitCode = 1;
         validation.error = "Validation left the agent workspace dirty.";
+      }
+      if (await workspaceBranch(workspacePath) !== branchRef(state.workspace.branch)) {
+        validation.status = "failed";
+        validation.exitCode = 1;
+        validation.error = "Validation changed the checked-out workspace branch.";
       }
       const postValidationHead = await this.store.resolveRef(branchRef(state.workspace.branch));
       if (postValidationHead !== headCommit) {
@@ -252,9 +257,15 @@ export class AgentRunManager {
     }
   }
 
-  async #requireCleanWorkspace(runId) {
-    if (!(await workspaceIsClean(this.#workspacePath(runId)))) {
-      throw new Error(`Run ${runId} workspace must be clean; commit or discard changes first.`);
+  async #requireRunWorkspace(state) {
+    const workspacePath = this.#workspacePath(state.runId);
+    const expectedBranch = branchRef(state.workspace.branch);
+    const actualBranch = await workspaceBranch(workspacePath);
+    if (actualBranch !== expectedBranch) {
+      throw new Error(`Run ${state.runId} workspace must have ${expectedBranch} checked out; found ${actualBranch ?? "detached HEAD"}.`);
+    }
+    if (!(await workspaceIsClean(workspacePath))) {
+      throw new Error(`Run ${state.runId} workspace must be clean; commit or discard changes first.`);
     }
   }
 
@@ -465,6 +476,15 @@ function branchRef(branch) {
 async function workspaceIsClean(path) {
   const result = await runGit({ args: ["status", "--porcelain=v1", "-z"], cwd: path });
   return result.stdout === "";
+}
+
+async function workspaceBranch(path) {
+  const result = await runGit({
+    args: ["symbolic-ref", "-q", "HEAD"],
+    cwd: path,
+    acceptableExitCodes: [0, 1],
+  });
+  return result.exitCode === 0 ? result.stdout.trim() : null;
 }
 
 function runValidation(command, cwd) {
