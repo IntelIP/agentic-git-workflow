@@ -33,7 +33,7 @@ node scripts/tabellio-stack.mjs \
 node scripts/check-tabellio-stack.mjs --stack tabellio-stack.json
 ```
 
-The adapter uses documented JSON output and disables change-request status and comment queries. Submission and merging remain explicit external actions handled separately.
+The snapshot adapter uses documented JSON output and disables change-request status and comment queries. Approved write operations use the separate flow in [Approved stack operations](stack-operations.md).
 
 ## Run The Forgejo Lab
 

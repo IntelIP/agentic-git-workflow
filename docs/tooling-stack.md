@@ -73,12 +73,13 @@ Included:
 - OpenSSF Scorecard signal
 - disposable Forgejo 15.0.3 lab bound to localhost
 - read-only Forgejo provider for repositories, pull requests, reviews, comments, and commit statuses
+- approval-gated git-spice submit, update, sync, and merge operations with one-use receipts
 
 Not included yet:
 
 - production Forgejo deployment or remote repository transport
 - transcript indexing or storage outside Entire
-- remote git-spice submission, review mutation, and stack merge
+- general review-thread mutation and signed approvals
 - Codex review automation
 - signed evidence
 - formal SLSA or in-toto compliance
@@ -97,7 +98,7 @@ Not included yet:
 
 Tabellio invokes the installed `git-spice` executable with prompts and remote status lookups disabled. It consumes documented JSON output from `git-spice log short --json`, normalizes that output, and excludes local worktree paths.
 
-Tabellio does not read or modify git-spice's internal `refs/spice/data` layout. Remote submission and merge remain outside this read-only adapter because they push branches and mutate forge state.
+Tabellio does not read or modify git-spice's internal `refs/spice/data` layout. Read-only snapshots and approval-gated write operations use separate adapters. Submit, update, sync, and merge require an integrity-bound intent plus a short-lived, one-use approval receipt.
 
 git-spice is GPL-3.0-or-later and is not bundled or linked into the Apache-2.0 Tabellio package. Operators install the separate executable. Modifications or redistribution of git-spice must follow its license.
 

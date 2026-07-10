@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "tabellio-stack-approval/v0.1",
+  "id": "example-approval-001",
+  "intentDigest": "b51ef3bfd9a7aa4af5b0b576ed68b37c43ace8beb6d19db2b5ab8dde21f1c96a",
+  "approved": true,
+  "approvedBy": "example-reviewer",
+  "approvedAt": "2026-07-10T12:01:00.000Z",
+  "expiresAt": "2026-07-10T13:01:00.000Z",
+  "reason": "Example approval for validator tests."
+}

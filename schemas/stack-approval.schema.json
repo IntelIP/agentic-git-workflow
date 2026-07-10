@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:stack-approval:v0.1",
+  "title": "Tabellio Stack Operation Approval",
+  "type": "object",
+  "required": ["schemaVersion", "id", "intentDigest", "approved", "approvedBy", "approvedAt", "expiresAt", "reason"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "tabellio-stack-approval/v0.1" },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "intentDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "approved": { "const": true },
+    "approvedBy": { "type": "string", "minLength": 1 },
+    "approvedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "reason": { "type": "string", "minLength": 1 }
+  }
+}

@@ -6,6 +6,9 @@ All notable changes to Tabellio are recorded here.
 
 ### Added
 
+- Approval-gated git-spice submit, update, sync, and merge operations.
+- Integrity-bound operation intents, short-lived approvals, one-use receipts, and branch-set race checks.
+- File-backed Forgejo API and Git HTTPS authentication without credentials in remote URLs or command arguments.
 - Read-only Forgejo provider for repository, pull request, review, comment, and commit-status reads.
 - Disposable localhost Forgejo 15.0.3 lab with idempotent bootstrap and seeded integration fixture.
 - `tabellio-forge` CLI with file-backed or environment-backed token loading and redacted failures.

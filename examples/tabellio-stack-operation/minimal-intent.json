@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "tabellio-stack-operation/v0.1",
+  "operation": "update",
+  "repository": {
+    "id": "example/tabellio",
+    "headCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "refsDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "branch": "agent/example",
+  "parameters": {
+    "draft": null
+  },
+  "createdAt": "2026-07-10T12:00:00.000Z",
+  "integrity": {
+    "algorithm": "sha256",
+    "digest": "b51ef3bfd9a7aa4af5b0b576ed68b37c43ace8beb6d19db2b5ab8dde21f1c96a"
+  }
+}
