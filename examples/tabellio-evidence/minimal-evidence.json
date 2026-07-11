@@ -7,7 +7,7 @@
     "headRef": "tabellio/example-evidence",
     "sha": "0000000000000000000000000000000000000000",
     "pullRequest": "1",
-    "pullRequestUrl": "https://github.com/example/tabellio/pull/1"
+    "pullRequestUrl": "https://forge.example.test/example/tabellio/pulls/1"
   },
   "actor": {
     "type": "agent",
@@ -16,7 +16,7 @@
   "agentRuntime": {
     "name": "codex",
     "model": "gpt-5",
-    "tooling": ["git", "github-actions"]
+    "tooling": ["git", "forgejo", "tabellio-validate"]
   },
   "taskSource": {
     "type": "chat",

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "tabellio-platform/v0.1",
+  "canonicalForge": {
+    "provider": "forgejo",
+    "urlEnv": "TABELLIO_FORGE_URL",
+    "apiUrlEnv": "TABELLIO_FORGE_API_URL",
+    "tokenFileEnv": "TABELLIO_FORGE_TOKEN_FILE"
+  },
+  "git": {
+    "stackManager": "git-spice",
+    "codeRef": "refs/heads/main",
+    "controlRefs": [
+      "refs/tabellio/reviews",
+      "refs/tabellio/validations",
+      "refs/heads/entire/checkpoints/v1"
+    ]
+  },
+  "ledger": {
+    "provider": "entire",
+    "checkpointRef": "refs/heads/entire/checkpoints/v1"
+  },
+  "validation": {
+    "runner": "tabellio-validate",
+    "manifest": "tabellio.validation.json",
+    "resultRef": "refs/tabellio/validations"
+  },
+  "reviews": {
+    "provider": "forgejo",
+    "stateRef": "refs/tabellio/reviews"
+  },
+  "transition": {
+    "codeStorage": "current-origin",
+    "runtimeRequired": false
+  }
+}

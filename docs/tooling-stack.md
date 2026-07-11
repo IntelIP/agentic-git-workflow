@@ -12,10 +12,11 @@ The main idea: agentic Git should be built around more than a patch. It should p
 | Coding runtime | [OpenAI Codex](https://openai.com/codex/) or another coding agent | Produces the branch, diff, and validation attempts | Captured as `actor`, `agentRuntime`, and `commandsRun` |
 | Git substrate | Standard Git CLI, bare repositories, and worktrees | Stores repositories, branches, commits, patches, and agent-created code state | Implemented by `NativeGitStore` |
 | Checkpoint ledger | [Entire Checkpoints](https://entire.io/) and [Entire CLI](https://github.com/entireio/cli) | Links commits to agent sessions, prompts, transcript context, token usage, and attribution | Required default through `EntireLedgerProvider`; metadata normalized as `tabellio-ledger/v0.1` |
-| Evidence gate | Tabellio | Writes and validates the PR evidence envelope and external-action policy | Core product surface |
+| Evidence gate | Tabellio | Writes and validates the change evidence envelope and external-action policy | Core product surface |
 | Stacked review | [git-spice](https://abhinav.github.io/git-spice/) | Keeps dependent change requests small, ordered, reviewable, and resubmittable across Forgejo, Gitea, GitLab, Bitbucket, or GitHub | Read through `GitSpiceStackManager` into `tabellio-stack/v0.1` |
-| Forge and CI | Forgejo, Gitea, GitLab, Bitbucket, GitHub, or another Git remote | Optionally hosts review, checks, artifacts, and merge state | Read-only Forgejo API adapter implemented; not required by native core |
-| Repo hygiene | [OpenSSF Scorecard](https://securityscorecards.dev/), [SARIF](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html), and static checks | Adds public health and automated review signals | Recorded as checks or artifacts |
+| Canonical forge | Forgejo | Hosts code, change requests, comments, reviews, and commit status | Forgejo API adapter; no hosted workflow dependency |
+| Validation workers | Local agents or operator-managed workers | Run committed argv manifests against exact commits | Durable results under `refs/tabellio/validations` |
+| Control-ref transport | Standard Git protocol | Shares review, validation, and Entire state | Approval-gated and fast-forward-only |
 
 ## Tool Tags
 
@@ -36,8 +37,9 @@ task source
   -> commits and Entire checkpoints
   -> immutable context packet
   -> read-only merge preview
-  -> evidence envelope
-  -> optional forge review and checks
+  -> exact-commit validation result
+  -> Forgejo review and checks
+  -> approved control-ref publication
   -> explicit compare-and-swap merge or release gate
 ```
 
@@ -65,21 +67,21 @@ Included:
 - deterministic merge preview
 - compare-and-swap ref updates
 - integrity-protected context packet
-- GitHub Actions evidence workflow
 - evidence JSON envelope
 - default-deny external-action policy
 - local writer and validators
-- PR template and docs
-- OpenSSF Scorecard signal
+- provider-neutral change-request template and docs
 - disposable Forgejo 15.0.3 lab bound to localhost
 - read-only Forgejo provider for repositories, pull requests, reviews, comments, and commit statuses
 - approval-gated git-spice submit, update, sync, restack, and merge operations with one-use receipts
 - Git-native review ledger with Forgejo feedback, provider-neutral agent findings, triage, fixes, and readiness state
 - provider-neutral exact-commit validation runner with durable results on `refs/tabellio/validations`
+- canonical Forgejo platform contract
+- approval-gated fast-forward transport for review, validation, and Entire refs
 
 Not included yet:
 
-- production Forgejo deployment or remote repository transport
+- production Forgejo deployment
 - transcript indexing or storage outside Entire
 - forge comment publication, general review-thread mutation, and signed approvals
 - Codex review automation
@@ -114,6 +116,6 @@ This repository disables automatic checkpoint pushes until a private Forgejo des
 
 ## Forgejo Boundary
 
-`ForgejoProvider` reads the documented Forgejo v1 API. It normalizes repository identity, pull requests, reviews, inline comments, issue comments, and commit status without exposing the access token. The CLI accepts tokens only through a file or environment variable; URLs containing credentials are rejected.
+`ForgejoProvider` reads the documented Forgejo v1 API. It normalizes repository identity, change requests, reviews, inline comments, issue comments, and commit status without exposing the access token. The CLI accepts tokens only through a file or environment variable; URLs containing credentials are rejected.
 
-The disposable lab pins Forgejo 15.0.3, binds HTTP and SSH to localhost, disables registration and Actions, and stores all state below ignored `.tabellio/forgejo/`. The lab proves API compatibility; it is not production infrastructure. Write and merge operations remain a later approval-gated adapter slice.
+The disposable lab pins Forgejo 15.0.3, binds HTTP and SSH to localhost, disables registration and bundled job execution, and stores all state below ignored `.tabellio/forgejo/`. The lab proves API compatibility; it is not production infrastructure. git-spice performs approval-gated change-request writes. Standard Git performs approval-gated control-ref transport.

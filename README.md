@@ -2,9 +2,8 @@
 
 ![Tabellio product overview](docs/assets/tabellio-hero.svg)
 
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/IntelIP/Tabellio/badge)](https://scorecard.dev/viewer/?uri=github.com/IntelIP/Tabellio)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-CI-2088FF?logo=githubactions&logoColor=white)](https://github.com/features/actions)
+[![Forgejo](https://img.shields.io/badge/Forgejo-canonical%20forge-FB923C?logo=forgejo&logoColor=white)](https://forgejo.org/)
 [![JSON Schema](https://img.shields.io/badge/JSON%20Schema-evidence%20contract-0B6BFF)](https://json-schema.org/)
 [![SARIF](https://img.shields.io/badge/SARIF-code%20scanning-2563EB)](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
 [![git-spice](https://img.shields.io/badge/git--spice-stacked%20review-B45309)](https://abhinav.github.io/git-spice/)
@@ -13,7 +12,7 @@
 
 Provider-neutral Git context and evidence for agentic development.
 
-Tabellio gives coding agents a deterministic Git foundation: standard Git repositories, isolated worktrees, immutable commit IDs, merge previews, compare-and-swap ref updates, and context packets tied to the exact diff. GitHub can store and review the result, but Tabellio's core does not need a GitHub API or a proprietary code-storage service.
+Tabellio gives coding agents a deterministic Git foundation: standard Git repositories, isolated worktrees, immutable commit IDs, merge previews, compare-and-swap ref updates, and context packets tied to the exact diff. Forgejo is the canonical review adapter. Any Git remote may store code; no GitHub API or hosted workflow runtime is required.
 
 ## What It Adds
 
@@ -59,25 +58,22 @@ AI-assisted pull requests should not depend on reviewer trust alone. Tabellio gi
 | Layer | Tooling | Role |
 | --- | --- | --- |
 | Runtime | [Node.js 20+](https://nodejs.org/) | Runs the local writer and validators |
-| CI | [GitHub Actions](https://github.com/features/actions) | Hosts the reusable pull request evidence workflow |
+| Validation | `tabellio-validate` on any trusted worker | Runs an exact committed command manifest and stores results on a Git ref |
 | Evidence contract | [JSON Schema](https://json-schema.org/) | Validates the evidence envelope and external-action policy |
-| Security signal | [OpenSSF Scorecard](https://securityscorecards.dev/) | Publishes a non-gating public repository health signal |
-| Code scanning output | [SARIF](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) | Carries Scorecard output into GitHub code scanning |
-| Review surface | [GitHub Pull Requests](https://github.com/features/code-review) | Shows checks, artifacts, and reviewer context |
+| Review surface | [Forgejo](https://forgejo.org/) | Hosts repositories, change requests, comments, reviews, and commit status |
 | Stacked review | [git-spice](https://abhinav.github.io/git-spice/) | Host-agnostic stack engine for small dependent change requests |
 | Checkpoint ledger | [Entire](https://entire.io/) and [Entire CLI](https://github.com/entireio/cli) | Required default for agent session and checkpoint context |
 | Git substrate | Standard Git CLI, bare repositories, and worktrees | Stores repositories, branches, commits, patches, and agent-created code state |
-| Agent review | [OpenAI Codex](https://openai.com/codex/) | Optional review layer when configured |
+| Agent review | [OpenAI Codex](https://openai.com/codex/) | Produces provider-neutral findings imported into the durable review ledger |
 | Prior art | [SLSA](https://slsa.dev/) and [in-toto](https://in-toto.io/) | Inspiration for provenance and supply-chain evidence, without a compliance claim |
 
-GitHub remains an optional storage, CI, and review surface. Entire is the default ledger; git-spice and Codex remain separate integration layers.
+The current public origin may remain a code-storage mirror during migration. It is not a runtime dependency. Entire is the required checkpoint ledger; git-spice manages stacks; Forgejo hosts review; Tabellio owns validation and durable control refs.
 
 ## Core Files
 
 | Path | Purpose |
 | --- | --- |
-| `.github/workflows/tabellio-evidence.yml` | Optional GitHub adapter for context and evidence |
-| `.github/workflows/scorecard.yml` | Non-gating OpenSSF Scorecard scan |
+| `tabellio.platform.json` | Canonical forge, stack, ledger, validation, review, and control-ref contract |
 | `schemas/` | Evidence and external-action JSON schemas |
 | `scripts/providers/native-git-store.mjs` | Standard Git storage provider |
 | `scripts/providers/git-spice-stack-manager.mjs` | Read-only git-spice stack adapter |
@@ -87,37 +83,26 @@ GitHub remains an optional storage, CI, and review surface. Entire is the defaul
 | `scripts/lib/git-json-ledger.mjs` | Versioned, compare-and-swap JSON state on standard Git refs |
 | `scripts/lib/review-cycle.mjs` | Durable forge and agent review/fix state machine |
 | `scripts/lib/validation-runner.mjs` | Exact-commit, shell-free validation with bounded evidence logs |
+| `scripts/lib/control-ref-transport.mjs` | Approval-gated, fast-forward-only sharing of review, validation, and Entire refs |
 | `infra/forgejo/` | Disposable localhost Forgejo integration lab |
 | `scripts/lib/` | Git process, repository contract, worktree, and context primitives |
 | `scripts/` | Dependency-free capture, writer, and validators |
-| `examples/` | Minimal valid evidence fixture and consumer workflow example |
+| `examples/` | Minimal valid context, evidence, review, validation, stack, and ledger fixtures |
 | `templates/` | Pull request checklist for evidence-backed review |
 | `docs/` | Setup, schema, workflow model, Codex review, tooling stack, and research grounding |
 
 ## Quick Start
 
-Add Tabellio to another repository:
+Enable the required ledger, initialize stacks, and validate the canonical platform contract:
 
-```yaml
-name: Tabellio Evidence
-
-on:
-  pull_request:
-
-permissions:
-  contents: read
-  actions: read
-
-jobs:
-  evidence:
-    uses: IntelIP/Tabellio/.github/workflows/tabellio-evidence.yml@main
-    with:
-      # Replace with the repository's normal validation command.
-      validation_command: npm test
-      toolkit_ref: main
+```bash
+entire enable --agent codex --project
+git-spice repo init
+npm run tabellio:platform:check
+node scripts/tabellio-validate.mjs run --repo . --commit HEAD --manifest tabellio.validation.json
 ```
 
-`toolkit_ref` is required when the consumer repository does not vendor the Tabellio scripts. The example uses `main` while native context capture is unreleased. For production, pin both references to the same release tag or immutable commit SHA containing this feature.
+Configure `TABELLIO_FORGE_URL`, `TABELLIO_FORGE_API_URL`, and `TABELLIO_FORGE_TOKEN_FILE` for Forgejo operations. Tokens stay in owner-readable files and never enter remote URLs or command arguments.
 
 Validate the bundled fixture:
 

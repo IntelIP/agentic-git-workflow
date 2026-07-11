@@ -10,7 +10,7 @@ Tabellio captures provider-neutral Git context and can attach a machine-readable
 - git-spice 0.18 or later for optional stack snapshots; Forgejo support requires 0.30 or later
 - Entire CLI 0.7.7 or later for mandatory checkpoint metadata export
 
-GitHub and GitHub Actions are required only for the optional reusable workflow below.
+Forgejo 15 or later is the canonical review host. Any standard Git remote may remain a code mirror. No hosted workflow runtime is required.
 
 Enable Entire for Codex before creating agent commits:
 
@@ -52,43 +52,43 @@ node scripts/tabellio-forge.mjs pulls \
 
 The lab is disposable and localhost-only. Generated secrets and Forgejo data remain below ignored `.tabellio/forgejo/`. Stop the container with `node scripts/dev/forgejo-lab.mjs down`.
 
-## Add The Reusable Workflow
+## Configure The Platform
 
-Create `.github/workflows/tabellio.yml` in the consumer repository:
+`tabellio.platform.json` makes the operating model explicit: Forgejo review, git-spice stacks, Entire checkpoints, local validation, and durable control refs.
 
-```yaml
-name: Tabellio Evidence
-
-on:
-  pull_request:
-
-permissions:
-  contents: read
-  actions: read
-
-jobs:
-  evidence:
-    uses: IntelIP/Tabellio/.github/workflows/tabellio-evidence.yml@main
-    with:
-      # Replace with the repository's normal validation command.
-      validation_command: npm test
-      toolkit_ref: main
+```bash
+npm run tabellio:platform:check
+export TABELLIO_FORGE_URL=https://forge.example.test
+export TABELLIO_FORGE_API_URL=https://forge.example.test/api/v1
+export TABELLIO_FORGE_TOKEN_FILE=$HOME/.config/tabellio/forgejo-token
 ```
 
-`toolkit_ref` is required when the consumer repository does not vendor the Tabellio scripts. The example uses `main` while native context capture is unreleased. For production, pin both references to the same release tag or immutable commit SHA containing this feature.
+Run `tabellio-validate` from any trusted worker. The runner checks out the exact revision in an isolated worktree, executes only argv arrays committed in `tabellio.validation.json`, bounds captured output, and writes the result to `refs/tabellio/validations`.
 
-## What The Workflow Does
+```bash
+node scripts/tabellio-validate.mjs run \
+  --repo . \
+  --repo-id example/repository \
+  --commit HEAD \
+  --manifest tabellio.validation.json
+```
 
-1. Checks out the pull request repository.
-2. Runs Tabellio's unit tests when the workflow runs in the Tabellio repository.
-3. Runs the optional consumer validation command before adding fallback toolkit files.
-4. Uses local Tabellio scripts when the repository vendors them.
-5. Otherwise checks out the Tabellio toolkit at `toolkit_ref`.
-6. Captures and validates `tabellio-context.json` from immutable Git commits.
-7. Writes `tabellio-pr-evidence.json` bound to the context packet.
-8. Validates the evidence envelope.
-9. Checks the default-deny external action policy.
-10. Uploads both artifacts.
+The worker can be a local agent, a scheduled service, or a Forgejo runner. Tabellio's contract stays identical.
+
+## Share Control State
+
+Review cycles, validation results, and Entire checkpoints use standard Git refs. Publishing or fetching them requires an integrity-bound plan and short-lived approval:
+
+```bash
+node scripts/tabellio-control-ref.mjs plan \
+  --operation publish \
+  --remote forgejo \
+  --repo-id example/repository \
+  --token-file "$TABELLIO_FORGE_TOKEN_FILE" \
+  --out /tmp/control-ref-intent.json
+```
+
+Create a matching `tabellio-control-ref-approval/v0.1` document after reviewing the exact local and remote OIDs, then execute it once with `tabellio-control-ref.mjs execute`. Multi-ref publication is atomic. Non-fast-forward publication, divergence, changed refs, expired approvals, and reused approvals fail closed.
 
 ## Local Validation
 
@@ -105,9 +105,9 @@ node scripts/check-tabellio-evidence-envelope.mjs --evidence /tmp/tabellio-pr-ev
 node scripts/check-tabellio-external-actions.mjs --evidence /tmp/tabellio-pr-evidence.json
 ```
 
-From a consumer repository that does not vendor the scripts, use the GitHub Actions workflow as the integration point.
+From a repository that does not vendor Tabellio, install the package on the trusted worker and run the same commands there.
 
-## Pull Request Copy
+## Change Request Copy
 
 Add the Tabellio checklist to the repository PR template:
 
@@ -122,7 +122,7 @@ Add the Tabellio checklist to the repository PR template:
 - [ ] No protected side effect attempted without explicit approval
 ```
 
-The full template lives at `templates/pull_request_template.md`.
+The full provider-neutral template lives at `templates/pull_request_template.md`.
 
 ## Protected Side Effects
 
@@ -139,12 +139,12 @@ These action classes are default-deny:
 
 If any class is marked `attempted: true`, it must also be marked `approved: true`.
 
-## First Adoption PR
+## First Adoption Change
 
 Keep the first PR small:
 
-1. Add the workflow file.
-2. Add the PR template checklist.
-3. Open a test pull request.
-4. Confirm `Tabellio evidence` passes.
-5. Confirm the uploaded artifact contains `tabellio-pr-evidence.json`.
+1. Add `tabellio.platform.json` and `tabellio.validation.json`.
+2. Enable Entire and initialize git-spice.
+3. Open a test change request on Forgejo.
+4. Run exact-head validation and sync the durable review cycle.
+5. Publish canonical control refs with an approved one-use operation.

@@ -249,23 +249,24 @@ test("file-byte integrity requires a SHA-256 digest", async (t) => {
   );
 });
 
-test("GitHub adapter checks out immutable PR commits and runs the full repository gate", async () => {
-  const workflow = await readFile(`${projectRoot}/.github/workflows/tabellio-evidence.yml`, "utf8");
-  assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
-  assert.match(workflow, /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \|\| github\.sha \}\}/);
-  assert.match(workflow, /HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
-  assert.match(workflow, /name: Check Tabellio[\s\S]*run: npm run check/);
-});
-
-test("adoption docs do not pin the pre-context release", async () => {
-  const [readme, gettingStarted, consumerExample] = await Promise.all([
+test("core runtime and adoption docs do not require GitHub Actions", async () => {
+  const [readme, gettingStarted, writer, packageMetadata] = await Promise.all([
     readFile(`${projectRoot}/README.md`, "utf8"),
     readFile(`${projectRoot}/docs/getting-started.md`, "utf8"),
-    readFile(`${projectRoot}/examples/github-actions/tabellio-consumer.yml`, "utf8"),
+    readFile(`${projectRoot}/scripts/write-tabellio-evidence-envelope.mjs`, "utf8"),
+    readFile(`${projectRoot}/package.json`, "utf8"),
   ]);
-  assert.doesNotMatch(readme, /tabellio-evidence\.yml@v0\.1\.0|toolkit_ref: v0\.1\.0/);
-  assert.doesNotMatch(gettingStarted, /tabellio-evidence\.yml@v0\.1\.0|toolkit_ref: v0\.1\.0/);
-  assert.doesNotMatch(consumerExample, /tabellio-evidence\.yml@v0\.1\.0|toolkit_ref: v0\.1\.0/);
+  for (const content of [readme, gettingStarted, writer, packageMetadata]) {
+    assert.doesNotMatch(content, /GITHUB_|GitHub Actions|github-actions/);
+  }
+});
+
+test("provider-neutral schema identifiers keep external references resolvable", async () => {
+  const [evidenceSchema, policySchema] = await Promise.all([
+    readFile(`${projectRoot}/schemas/evidence-envelope.schema.json`, "utf8").then(JSON.parse),
+    readFile(`${projectRoot}/schemas/external-action-policy.schema.json`, "utf8").then(JSON.parse),
+  ]);
+  assert.equal(evidenceSchema.properties.externalActionPolicy.$ref, policySchema.$id);
 });
 
 test("required repository validation is recorded in evidence", async (t) => {
@@ -277,6 +278,20 @@ test("required repository validation is recorded in evidence", async (t) => {
   });
   const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
   assert(evidence.commandsRun.some((command) => command.command === "npm test" && command.status === "passed"));
+});
+
+test("local evidence fallback does not enumerate unrelated untracked paths", async (t) => {
+  const fixture = await createFixture();
+  const evidencePath = `${fixture.root}/evidence.json`;
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  await writeFile(`${fixture.seed}/private-untracked-name.txt`, "not part of the change\n");
+  await execFileAsync(process.execPath, [`${projectRoot}/scripts/write-tabellio-evidence-envelope.mjs`, "--out", evidencePath], {
+    cwd: fixture.seed,
+    encoding: "utf8",
+    env: { ...process.env, USER: "tabellio-test" },
+  });
+  const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+  assert.equal(evidence.changedFiles.includes("private-untracked-name.txt"), false);
 });
 
 async function runNode(script, args, env = {}) {

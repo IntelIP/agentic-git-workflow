@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/IntelIP/Tabellio/main/schemas/agent-run-state.schema.json",
+  "$id": "urn:tabellio:schema:agent-run-state:v0.1",
   "title": "Tabellio Agent Run State",
   "type": "object",
   "additionalProperties": false,

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/IntelIP/Tabellio/main/schemas/evidence-envelope.schema.json",
+  "$id": "urn:tabellio:schema:evidence-envelope:v0.1",
   "title": "Tabellio Evidence Envelope",
   "type": "object",
   "required": [
@@ -141,7 +141,7 @@
       }
     },
     "externalActionPolicy": {
-      "$ref": "external-action-policy.schema.json"
+      "$ref": "urn:tabellio:schema:external-action-policy:v0.1"
     },
     "context": {
       "type": "object",

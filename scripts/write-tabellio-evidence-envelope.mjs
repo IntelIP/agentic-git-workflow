@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 
 import { canonicalJson, readContextPacket } from "./lib/context-packet.mjs";
@@ -23,11 +23,11 @@ const validationCommand = env("TABELLIO_VALIDATION_COMMAND");
 const validationStatus = normalizeStatus(env("TABELLIO_VALIDATION_STATUS") || "skipped");
 const validationExitCode = normalizeExitCode(env("TABELLIO_VALIDATION_EXIT_CODE"));
 const writerCommand = env("TABELLIO_WRITER_COMMAND") || `node ${process.argv[1] || "scripts/write-tabellio-evidence-envelope.mjs"}`;
-const sha = context?.refs.head.commit || env("GITHUB_SHA") || git(["rev-parse", "HEAD"]) || "unknown";
-const baseRef = context?.refs.base.name || env("GITHUB_BASE_REF") || git(["rev-parse", "--abbrev-ref", "HEAD"]) || "main";
-const headRef = context?.refs.head.name || env("GITHUB_HEAD_REF") || git(["rev-parse", "--abbrev-ref", "HEAD"]) || "HEAD";
-const repo = context?.repository.id || env("GITHUB_REPOSITORY") || basename(git(["rev-parse", "--show-toplevel"]) || process.cwd());
-const runId = context?.runId || env("GITHUB_RUN_ID") || `local-${sha.slice(0, 12)}-${Date.now()}`;
+const sha = context?.refs.head.commit || env("TABELLIO_HEAD_COMMIT") || git(["rev-parse", "HEAD"]) || "unknown";
+const baseRef = context?.refs.base.name || env("TABELLIO_BASE_REF") || "main";
+const headRef = context?.refs.head.name || env("TABELLIO_HEAD_REF") || git(["rev-parse", "--abbrev-ref", "HEAD"]) || "HEAD";
+const repo = context?.repository.id || env("TABELLIO_REPOSITORY") || basename(git(["rev-parse", "--show-toplevel"]) || process.cwd());
+const runId = context?.runId || env("TABELLIO_RUN_ID") || `local-${sha.slice(0, 12)}-${Date.now()}`;
 
 const evidence = {
   schemaVersion: "tabellio-evidence/v0.1",
@@ -37,17 +37,17 @@ const evidence = {
     baseRef,
     headRef,
     sha,
-    pullRequest: env("GITHUB_EVENT_NAME") === "pull_request" ? readPullRequestNumber() : "",
-    pullRequestUrl: readPullRequestUrl(),
+    pullRequest: env("TABELLIO_CHANGE_REQUEST"),
+    pullRequestUrl: env("TABELLIO_CHANGE_REQUEST_URL"),
   },
   actor: {
-    type: context?.actor.type || (env("GITHUB_ACTOR") ? "ci" : "agent"),
-    id: context?.actor.id || env("GITHUB_ACTOR") || env("USER") || "local-agent",
+    type: context?.actor.type || env("TABELLIO_ACTOR_TYPE") || "agent",
+    id: context?.actor.id || env("TABELLIO_ACTOR") || env("USER") || "local-agent",
   },
   agentRuntime: {
     name: env("TABELLIO_RUNTIME_NAME") || "unspecified",
     model: env("TABELLIO_RUNTIME_MODEL") || "",
-    tooling: splitCsv(env("TABELLIO_RUNTIME_TOOLING") || "git,github-actions,node"),
+    tooling: splitCsv(env("TABELLIO_RUNTIME_TOOLING") || "git,node,tabellio"),
   },
   taskSource: {
     type: env("TABELLIO_TASK_SOURCE_TYPE") || "manual",
@@ -117,26 +117,22 @@ function getChangedFiles() {
   const explicit = env("TABELLIO_CHANGED_FILES");
   if (explicit) return splitCsv(explicit);
 
-  const base = env("GITHUB_BASE_REF");
+  const base = env("TABELLIO_BASE_REF");
   if (base) {
-    const mergeBase = git(["merge-base", `origin/${base}`, "HEAD"]);
-    if (mergeBase) {
-      const files = git(["diff", "--name-only", `${mergeBase}...HEAD`]);
-      if (files) return files.split("\n").filter(Boolean).sort();
+    for (const candidate of [base, `origin/${base}`]) {
+      const mergeBase = git(["merge-base", candidate, "HEAD"]);
+      if (mergeBase) {
+        const files = git(["diff", "--name-only", `${mergeBase}...HEAD`]);
+        if (files) return files.split("\n").filter(Boolean).sort();
+      }
     }
   }
 
   const stagedOrWorking = splitLines(git(["diff", "--name-only", "HEAD"]));
-  const untracked = filterFallbackToolkitFiles(splitLines(git(["ls-files", "--others", "--exclude-standard"])));
-  const localFiles = [...stagedOrWorking, ...untracked];
-  if (localFiles.length > 0) return [...new Set(localFiles)].sort();
+  if (stagedOrWorking.length > 0) return [...new Set(stagedOrWorking)].sort();
 
   const lastCommit = git(["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "HEAD"]);
   return splitLines(lastCommit).sort();
-}
-
-function filterFallbackToolkitFiles(files) {
-  return files.filter((file) => file !== ".tabellio/toolkit" && !file.startsWith(".tabellio/toolkit/"));
 }
 
 function defaultActionClasses() {
@@ -200,28 +196,6 @@ function normalizeExitCode(value) {
   if (!/^-?\d+$/.test(value)) return null;
   const parsed = Number.parseInt(value, 10);
   return Number.isSafeInteger(parsed) ? parsed : null;
-}
-
-function readPullRequestNumber() {
-  const eventPath = env("GITHUB_EVENT_PATH");
-  if (!eventPath || !existsSync(eventPath)) return "";
-  try {
-    const event = JSON.parse(readFileSync(eventPath, "utf8"));
-    return event.pull_request?.number ? String(event.pull_request.number) : "";
-  } catch {
-    return "";
-  }
-}
-
-function readPullRequestUrl() {
-  const eventPath = env("GITHUB_EVENT_PATH");
-  if (!eventPath || !existsSync(eventPath)) return "";
-  try {
-    const event = JSON.parse(readFileSync(eventPath, "utf8"));
-    return event.pull_request?.html_url ?? "";
-  } catch {
-    return "";
-  }
 }
 
 function git(args) {

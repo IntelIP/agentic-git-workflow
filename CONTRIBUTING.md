@@ -37,13 +37,12 @@ node --check scripts/tabellio-run.mjs
 node --check scripts/write-tabellio-evidence-envelope.mjs
 ```
 
-Check the reusable workflow syntax before release:
+Validate the canonical platform and exact-commit manifest before release:
 
 ```bash
-actionlint
+npm run tabellio:platform:check
+node scripts/check-tabellio-validation.mjs --manifest tabellio.validation.json
 ```
-
-Install `actionlint` from the official `rhysd/actionlint` release or a trusted package manager before running this command.
 
 ## Pull Requests
 
@@ -71,8 +70,8 @@ Ask for extra review when changing:
 - required action classes
 - default-deny behavior
 - approval handling
-- CI workflow permissions
-- SARIF or security reporting
+- control-ref allow lists and approval checks
+- forge credentials or validation worker isolation
 
 ## Documentation Style
 
@@ -96,6 +95,6 @@ Before tagging a release:
 - update `CHANGELOG.md`
 - confirm README examples use the intended release tag
 - run local checks
-- run workflow syntax validation
-- confirm the latest `main` Scorecard run passes
-- create the GitHub release from a clean `main` commit
+- run an exact-head `tabellio-validate` pass
+- confirm the durable review cycle is ready
+- tag from a clean canonical Forgejo `main` commit
