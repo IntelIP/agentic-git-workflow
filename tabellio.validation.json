@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "tabellio-validation/v0.1",
+  "id": "tabellio-default",
+  "failFast": true,
+  "requireEntireCheckpoint": true,
+  "commands": [
+    {
+      "id": "repository-check",
+      "argv": ["npm", "run", "check"],
+      "cwd": ".",
+      "timeoutMs": 1200000,
+      "required": true
+    }
+  ]
+}

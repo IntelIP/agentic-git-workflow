@@ -75,6 +75,7 @@ Included:
 - read-only Forgejo provider for repositories, pull requests, reviews, comments, and commit statuses
 - approval-gated git-spice submit, update, sync, restack, and merge operations with one-use receipts
 - Git-native review ledger with Forgejo feedback, provider-neutral agent findings, triage, fixes, and readiness state
+- provider-neutral exact-commit validation runner with durable results on `refs/tabellio/validations`
 
 Not included yet:
 

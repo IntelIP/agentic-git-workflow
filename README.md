@@ -86,6 +86,7 @@ GitHub remains an optional storage, CI, and review surface. Entire is the defaul
 | `scripts/providers/forgejo-provider.mjs` | Read-only Forgejo repository and review adapter |
 | `scripts/lib/git-json-ledger.mjs` | Versioned, compare-and-swap JSON state on standard Git refs |
 | `scripts/lib/review-cycle.mjs` | Durable forge and agent review/fix state machine |
+| `scripts/lib/validation-runner.mjs` | Exact-commit, shell-free validation with bounded evidence logs |
 | `infra/forgejo/` | Disposable localhost Forgejo integration lab |
 | `scripts/lib/` | Git process, repository contract, worktree, and context primitives |
 | `scripts/` | Dependency-free capture, writer, and validators |
@@ -177,6 +178,7 @@ npm run tabellio:stack -- --repo . --repo-id IntelIP/Tabellio --out tabellio-sta
 npm run tabellio:stack:check
 npm run tabellio:stack:operation:example:check
 npm run tabellio:review:example:check
+npm run tabellio:validate:example:check
 npm run tabellio:ledger -- --repo . --repo-id IntelIP/Tabellio --base main --head HEAD --out tabellio-ledger.json
 npm run tabellio:ledger:check
 npm run tabellio:forge -- version --base-url http://127.0.0.1:3300 --token-file .tabellio/forgejo/credentials/admin-token
@@ -209,6 +211,7 @@ The external-action checker fails when an action is marked `attempted: true` wit
 - [Agent run lifecycle](docs/agent-run-lifecycle.md)
 - [Approved stack operations](docs/stack-operations.md)
 - [Durable review and fix loop](docs/review-loop.md)
+- [Provider-neutral validation](docs/validation-runner.md)
 - [Workflow model](docs/workflow-model.md)
 - [Native Git foundation](docs/native-git-foundation.md)
 - [Evidence schema](docs/evidence-schema.md)

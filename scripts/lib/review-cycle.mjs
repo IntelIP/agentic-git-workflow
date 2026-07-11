@@ -2,14 +2,16 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { runGit } from "./git-process.mjs";
 import { digestObject } from "./stack-operation.mjs";
+import { latestValidationResult } from "./validation-runner.mjs";
 
 export const REVIEW_CYCLE_SCHEMA_VERSION = "tabellio-review-cycle/v0.1";
 export const AGENT_REVIEW_SCHEMA_VERSION = "tabellio-agent-review/v0.1";
 
 export class ReviewCycleManager {
-  constructor({ store, ledger, provider, repositoryId, owner, repo }) {
+  constructor({ store, ledger, validationLedger = null, provider, repositoryId, owner, repo }) {
     this.store = store;
     this.ledger = ledger;
+    this.validationLedger = validationLedger;
     this.provider = provider;
     this.repositoryId = repositoryId;
     this.owner = owner;
@@ -24,14 +26,19 @@ export class ReviewCycleManager {
       this.provider.listReviews({ owner: this.owner, repo: this.repo, number }),
       this.provider.listIssueComments({ owner: this.owner, repo: this.repo, number }),
     ]);
-    const [reviewComments, checks] = await Promise.all([
+    const [reviewComments, forgeChecks, localValidation] = await Promise.all([
       this.provider.listReviewComments({ owner: this.owner, repo: this.repo, number, reviews }),
       this.provider.commitStatus({
         owner: this.owner,
         repo: this.repo,
         commit: changeRequest.source.commit,
       }),
+      this.validationLedger ? latestValidationResult(this.validationLedger, changeRequest.source.commit) : null,
     ]);
+    if (localValidation && localValidation.repository.id !== this.repositoryId) {
+      throw new Error("Local validation repository does not match the review cycle.");
+    }
+    const checks = mergeChecks(forgeChecks, localValidation);
     const record = await this.#read(number);
     const existing = record.value;
     if (existing) validateReviewCycle(existing);
@@ -469,13 +476,32 @@ function deriveStatus(cycle) {
   if (live.some((item) => item.disposition === "pending")) return "needs_triage";
   if (live.some((item) => item.disposition === "actionable" && item.resolution === "open")) return "changes_requested";
   if (cycle.fixes.some((fix) => fix.published !== true)) return "update_required";
-  if (["pending", "running"].includes(cycle.checks.state)) return "validating";
+  if (["none", "pending", "running"].includes(cycle.checks.state)) return "validating";
   return "ready";
 }
 
 function cycleDigest(value) {
   const { integrity: _integrity, ...unsigned } = value;
   return digestObject(unsigned);
+}
+
+function mergeChecks(forgeChecks, localValidation) {
+  if (!localValidation) return forgeChecks;
+  const localStatus = {
+    id: `validation:${localValidation.runId}`,
+    context: `tabellio/${localValidation.suite.id}`,
+    state: localValidation.status === "passed" ? "success" : "failure",
+    description: `Provider-neutral validation ${localValidation.status}.`,
+    targetUrl: null,
+    createdAt: localValidation.startedAt,
+    updatedAt: localValidation.completedAt,
+  };
+  const statuses = [...forgeChecks.statuses, localStatus];
+  let state = forgeChecks.state;
+  if (localStatus.state === "failure" || ["error", "failure", "failed"].includes(forgeChecks.state)) state = "failure";
+  else if (["pending", "running"].includes(forgeChecks.state)) state = forgeChecks.state;
+  else state = "success";
+  return { commit: forgeChecks.commit, state, total: statuses.length, statuses };
 }
 
 function cycleId(repositoryId, owner, repo, number) {
