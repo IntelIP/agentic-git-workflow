@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "tabellio-validation-result/v0.1",
+  "runId": "validation-example-001",
+  "repository": { "id": "example/tabellio" },
+  "revision": {
+    "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mergeBase": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "headCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "suite": {
+    "id": "tabellio-default",
+    "manifestPath": "tabellio.validation.json",
+    "manifestDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "runner": { "id": "example-runner", "runtime": "node-v20.0.0" },
+  "status": "passed",
+  "checkpoints": ["checkpoint-example-001"],
+  "commands": [{
+    "id": "repository-check",
+    "argv": ["npm", "run", "check"],
+    "cwd": ".",
+    "required": true,
+    "status": "passed",
+    "exitCode": 0,
+    "signal": null,
+    "durationMs": 1000,
+    "stdout": {
+      "bytes": 14,
+      "digest": "0c7f9ceb9b131d26399e998396e479d5d9e46d67c2819faef8d2ea184e63424b",
+      "tail": "checks passed\n",
+      "truncated": false
+    },
+    "stderr": {
+      "bytes": 0,
+      "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tail": "",
+      "truncated": false
+    },
+    "startedAt": "2026-07-10T12:00:00.000Z",
+    "completedAt": "2026-07-10T12:00:01.000Z",
+    "error": null
+  }],
+  "startedAt": "2026-07-10T12:00:00.000Z",
+  "completedAt": "2026-07-10T12:00:01.000Z",
+  "integrity": {
+    "algorithm": "sha256",
+    "digest": "e0bf535d574ca275855e3fee7cccc4512785eaa9f4041975459d898145a4338f"
+  }
+}

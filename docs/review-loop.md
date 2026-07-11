@@ -24,7 +24,7 @@ Review status is deterministic:
 | `changes_requested` | Actionable feedback remains open |
 | `update_required` | Fix exists locally but is not in the remote PR head |
 | `blocked` | A remote check failed or the forge reports the change as non-mergeable |
-| `validating` | Checks are pending or running |
+| `validating` | No validation result exists yet, or checks are pending/running |
 | `ready` | Feedback is handled, fixes are published, and checks are clear |
 | `merged` / `closed` | Forge terminal state |
 
@@ -41,7 +41,7 @@ node scripts/tabellio-review.mjs sync \
   --actor review-sync-agent
 ```
 
-Sync imports reviews, inline review comments, issue comments, and commit checks. Missing provider items are retained as stale evidence rather than silently deleted.
+Sync imports reviews, inline review comments, issue comments, forge commit checks, and the newest provider-neutral Tabellio validation for the PR head. Missing provider items are retained as stale evidence rather than silently deleted. A PR with no validation remains `validating`.
 
 ## Import A Codex Review
 

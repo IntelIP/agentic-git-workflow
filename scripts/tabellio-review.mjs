@@ -17,6 +17,10 @@ try {
     repoPath: store.repoPath,
     ref: options.ledgerRef ?? "refs/tabellio/reviews",
   });
+  const validationLedger = await GitJsonLedger.open({
+    repoPath: store.repoPath,
+    ref: options.validationLedgerRef ?? "refs/tabellio/validations",
+  });
   let provider = null;
   if (options.command === "sync") {
     const token = (await readFile(resolve(options.tokenFile), "utf8")).trim();
@@ -26,6 +30,7 @@ try {
   const manager = new ReviewCycleManager({
     store,
     ledger,
+    validationLedger,
     provider,
     repositoryId,
     owner: options.owner,
@@ -84,7 +89,7 @@ function parseArgs(args) {
     if (Object.hasOwn(values, key)) throw new Error(`Duplicate option: ${flag}.`);
     values[key] = value;
   }
-  const common = ["repo", "repoId", "owner", "forgeRepo", "number", "actor", "ledgerRef"];
+  const common = ["repo", "repoId", "owner", "forgeRepo", "number", "actor", "ledgerRef", "validationLedgerRef"];
   const allowed = {
     sync: [...common, "baseUrl", "tokenFile"],
     status: common,

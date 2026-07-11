@@ -8,6 +8,7 @@ import {
   validateReviewCycle,
 } from "../scripts/lib/review-cycle.mjs";
 import { runGit } from "../scripts/lib/git-process.mjs";
+import { digestObject } from "../scripts/lib/stack-operation.mjs";
 import { NativeGitStore } from "../scripts/providers/native-git-store.mjs";
 import { createFixture, identityEnv } from "./helpers/git-fixture.mjs";
 
@@ -145,6 +146,39 @@ test("review cycle persists forge and agent feedback through triage and checkpoi
   assert.equal(worktree.stdout, "");
 });
 
+test("review readiness consumes only the latest validation for the exact PR head", async (t) => {
+  const fixture = await createFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const store = await NativeGitStore.open(fixture.seed);
+  const ledger = await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/reviews" });
+  const validationLedger = await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/validations" });
+  const provider = emptyProvider(fixture);
+  const manager = new ReviewCycleManager({
+    store,
+    ledger,
+    validationLedger,
+    provider,
+    repositoryId: "example/repository",
+    owner: "acme",
+    repo: "project",
+  });
+
+  let result = await manager.sync({ number: 7, actor: "sync-agent", now: new Date(timestamp) });
+  assert.equal(result.cycle.status, "validating");
+  const passed = validationResult(fixture.featureCommit, "validation-pass", "passed", "2026-07-10T20:01:00.000Z");
+  let current = await validationLedger.read(`commits/${fixture.featureCommit}/${passed.runId}.json`);
+  await validationLedger.write(`commits/${fixture.featureCommit}/${passed.runId}.json`, passed, { expectedVersion: current.version });
+  result = await manager.sync({ number: 7, actor: "sync-agent", now: new Date("2026-07-10T20:02:00.000Z") });
+  assert.equal(result.cycle.status, "ready");
+  assert.equal(result.cycle.checks.statuses[0].context, "tabellio/test-suite");
+
+  const failed = validationResult(fixture.featureCommit, "validation-fail", "failed", "2026-07-10T20:03:00.000Z");
+  current = await validationLedger.read(`commits/${fixture.featureCommit}/${failed.runId}.json`);
+  await validationLedger.write(`commits/${fixture.featureCommit}/${failed.runId}.json`, failed, { expectedVersion: current.version });
+  result = await manager.sync({ number: 7, actor: "sync-agent", now: new Date("2026-07-10T20:04:00.000Z") });
+  assert.equal(result.cycle.status, "blocked");
+});
+
 function fakeProvider(fixture) {
   let checkState = "failure";
   let headCommit = fixture.featureCommit;
@@ -236,4 +270,64 @@ function fakeProvider(fixture) {
       };
     },
   };
+}
+
+function emptyProvider(fixture) {
+  return {
+    async changeRequest() {
+      return {
+        id: "21",
+        number: 7,
+        title: "Agent change",
+        state: "open",
+        draft: false,
+        mergeable: true,
+        source: { branch: "feature", commit: fixture.featureCommit },
+        target: { branch: "main", commit: fixture.mainCommit },
+        author: "agent",
+        webUrl: "https://forgejo.example.test/acme/project/pulls/7",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+    },
+    async listReviews() { return []; },
+    async listReviewComments() { return []; },
+    async listIssueComments() { return []; },
+    async commitStatus() {
+      return { commit: fixture.featureCommit, state: "none", total: 0, statuses: [] };
+    },
+  };
+}
+
+function validationResult(commit, runId, status, completedAt) {
+  const commandStatus = status === "passed" ? "passed" : "failed";
+  const value = {
+    schemaVersion: "tabellio-validation-result/v0.1",
+    runId,
+    repository: { id: "example/repository" },
+    revision: { baseCommit: "a".repeat(40), mergeBase: "a".repeat(40), headCommit: commit },
+    suite: { id: "test-suite", manifestPath: "tabellio.validation.json", manifestDigest: "c".repeat(64) },
+    runner: { id: "test", runtime: "node-test" },
+    status,
+    checkpoints: ["checkpoint-001"],
+    commands: [{
+      id: "tests",
+      argv: ["npm", "test"],
+      cwd: ".",
+      required: true,
+      status: commandStatus,
+      exitCode: status === "passed" ? 0 : 1,
+      signal: null,
+      durationMs: 1,
+      stdout: { bytes: 0, digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", tail: "", truncated: false },
+      stderr: { bytes: 0, digest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", tail: "", truncated: false },
+      startedAt: "2026-07-10T20:00:00.000Z",
+      completedAt,
+      error: null,
+    }],
+    startedAt: "2026-07-10T20:00:00.000Z",
+    completedAt,
+  };
+  value.integrity = { algorithm: "sha256", digest: digestObject(value) };
+  return value;
 }

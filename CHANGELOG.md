@@ -6,6 +6,9 @@ All notable changes to Tabellio are recorded here.
 
 ### Added
 
+- Provider-neutral exact-commit validation runner with committed argv manifests and no shell execution.
+- Bounded SHA-256 output evidence, detached worktree cleanup, and durable results on `refs/tabellio/validations`.
+- Local validation results integrated into durable review readiness.
 - Git-native JSON ledger on compare-and-swap refs for durable control-plane state.
 - Durable review cycles covering Forgejo feedback, provider-neutral agent findings, triage, checks, fixes, and readiness.
 - Entire-checkpoint-bound fix records with commit remapping across git-spice restacks.
