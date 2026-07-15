@@ -29,7 +29,7 @@ test("git-spice adapter produces provider-neutral stack snapshots", async (t) =>
       down: { name: "main" },
       ups: [{ name: "feature-2" }],
       worktree: "/private/worktree/path",
-      change: { id: "#12", url: "https://forgejo.example.test/org/repo/pulls/12" },
+      change: { id: "#12", url: "https://github.com/org/repo/pull/12" },
       push: { ahead: 1, behind: 0, needsPush: true },
     },
   ]);

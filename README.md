@@ -79,12 +79,11 @@ AI-assisted pull requests should not depend on reviewer trust alone. Tabellio gi
 | `scripts/providers/git-spice-stack-manager.mjs` | Read-only git-spice stack adapter |
 | `scripts/providers/git-spice-operations.mjs` | Approval-gated git-spice submit, update, sync, restack, and merge adapter |
 | `scripts/providers/entire-ledger-provider.mjs` | Metadata-only Entire checkpoint adapter |
-| `scripts/providers/forgejo-provider.mjs` | Legacy migration-only Forgejo adapter; not a canonical service |
+| `scripts/providers/github-provider.mjs` | Read-only GitHub pull-request, review, comment, status, and check adapter |
 | `scripts/lib/git-json-ledger.mjs` | Versioned, compare-and-swap JSON state on standard Git refs |
-| `scripts/lib/review-cycle.mjs` | Durable forge and agent review/fix state machine |
+| `scripts/lib/review-cycle.mjs` | Durable GitHub and agent review/fix state machine |
 | `scripts/lib/validation-runner.mjs` | Exact-commit, shell-free validation with bounded evidence logs |
 | `scripts/lib/control-ref-transport.mjs` | Approval-gated, fast-forward-only sharing of review, validation, and Entire refs |
-| `infra/forgejo/` | Legacy disposable adapter fixture scheduled for removal |
 | `scripts/lib/` | Git process, repository contract, worktree, and context primitives |
 | `scripts/` | Dependency-free capture, writer, and validators |
 | `examples/` | Minimal valid context, evidence, review, validation, stack, and ledger fixtures |
@@ -166,7 +165,6 @@ npm run tabellio:review:example:check
 npm run tabellio:validate:example:check
 npm run tabellio:ledger -- --repo . --repo-id IntelIP/Tabellio --base main --head HEAD --out tabellio-ledger.json
 npm run tabellio:ledger:check
-npm run tabellio:forge -- version --base-url http://127.0.0.1:3300 --token-file .tabellio/forgejo/credentials/admin-token
 npm run tabellio:context:capture
 npm run tabellio:context:check
 npm run tabellio:evidence:write

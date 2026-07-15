@@ -22,7 +22,7 @@ Every agent change range must contain at least one `Entire-Checkpoint` commit tr
 
 ## Capture A Stack
 
-Initialize git-spice in a normal working repository, then capture its local stack graph without contacting the forge:
+Initialize git-spice in a normal working repository, then capture its local stack graph without contacting GitHub:
 
 ```bash
 git-spice repo init
@@ -34,23 +34,6 @@ node scripts/check-tabellio-stack.mjs --stack tabellio-stack.json
 ```
 
 The snapshot adapter uses documented JSON output and disables change-request status and comment queries. Approved write operations use the separate flow in [Approved stack operations](stack-operations.md).
-
-## Legacy Forgejo Adapter Lab
-
-Docker users can still exercise the migration-only Forgejo adapter:
-
-```bash
-node scripts/dev/forgejo-lab.mjs up
-node scripts/dev/forgejo-lab.mjs bootstrap
-node scripts/dev/forgejo-lab.mjs seed
-node scripts/tabellio-forge.mjs pulls \
-  --base-url http://127.0.0.1:3300 \
-  --owner tabellio-admin \
-  --repo tabellio-lab \
-  --token-file .tabellio/forgejo/credentials/admin-token
-```
-
-The lab is disposable, localhost-only, and not part of the target platform. Generated secrets and Forgejo data remain below ignored `.tabellio/forgejo/`. Stop the container with `node scripts/dev/forgejo-lab.mjs down`.
 
 ## Configure The Platform
 

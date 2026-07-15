@@ -4,7 +4,7 @@ Codex review is a provider-neutral review producer. It inspects the diff and evi
 
 ## Local Preflight
 
-Run review against the exact Forgejo change-request head:
+Run review against the exact GitHub pull-request head:
 
 ```bash
 CODEX_HOME=/tmp/codex-review-home codex review --base main

@@ -15,7 +15,7 @@ import { createFixture, identityEnv } from "./helpers/git-fixture.mjs";
 
 const timestamp = "2026-07-10T20:00:00.000Z";
 
-test("review cycle persists forge and agent feedback through triage and checkpoint-bound fixes", async (t) => {
+test("review cycle persists GitHub and agent feedback through triage and checkpoint-bound fixes", async (t) => {
   const fixture = await createFixture();
   t.after(() => rm(fixture.root, { recursive: true, force: true }));
   const store = await NativeGitStore.open(fixture.seed);
@@ -218,7 +218,7 @@ function fakeProvider(fixture) {
         source: { branch: "feature", commit: headCommit },
         target: { branch: "main", commit: fixture.mainCommit },
         author: "agent",
-        webUrl: "https://forgejo.example.test/acme/project/pulls/7",
+        webUrl: "https://github.com/acme/project/pull/7",
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -234,7 +234,7 @@ function fakeProvider(fixture) {
         author: "reviewer",
         submittedAt: timestamp,
         updatedAt: timestamp,
-        webUrl: "https://forgejo.example.test/acme/project/pulls/7#review-31",
+        webUrl: "https://github.com/acme/project/pull/7#pullrequestreview-31",
       }];
     },
     async listReviewComments() {
@@ -249,7 +249,7 @@ function fakeProvider(fixture) {
         resolvedBy: null,
         createdAt: timestamp,
         updatedAt: timestamp,
-        webUrl: "https://forgejo.example.test/acme/project/pulls/7#comment-41",
+        webUrl: "https://github.com/acme/project/pull/7#discussion_r41",
       }];
     },
     async listIssueComments() {
@@ -259,7 +259,7 @@ function fakeProvider(fixture) {
         author: "reviewer",
         createdAt: timestamp,
         updatedAt: timestamp,
-        webUrl: "https://forgejo.example.test/acme/project/pulls/7#comment-42",
+        webUrl: "https://github.com/acme/project/pull/7#issuecomment-42",
       }];
     },
     async commitStatus() {
@@ -273,7 +273,7 @@ function fakeProvider(fixture) {
           context: "tests",
           state: "failure",
           description: "Tests failed",
-          targetUrl: "https://forgejo.example.test/checks/51",
+          targetUrl: "https://github.com/acme/project/actions/runs/51",
           createdAt: timestamp,
           updatedAt: timestamp,
         }] : [{
@@ -281,7 +281,7 @@ function fakeProvider(fixture) {
           context: "tests",
           state: "success",
           description: "Tests passed",
-          targetUrl: "https://forgejo.example.test/checks/52",
+          targetUrl: "https://github.com/acme/project/actions/runs/52",
           createdAt: timestamp,
           updatedAt: timestamp,
         }],
@@ -303,7 +303,7 @@ function emptyProvider(fixture) {
         source: { branch: "feature", commit: fixture.featureCommit },
         target: { branch: "main", commit: fixture.mainCommit },
         author: "agent",
-        webUrl: "https://forgejo.example.test/acme/project/pulls/7",
+        webUrl: "https://github.com/acme/project/pull/7",
         createdAt: timestamp,
         updatedAt: timestamp,
       };

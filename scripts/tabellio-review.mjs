@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { GitJsonLedger } from "./lib/git-json-ledger.mjs";
 import { repositoryIdentity } from "./lib/repository-identity.mjs";
 import { ReviewCycleManager } from "./lib/review-cycle.mjs";
-import { ForgejoProvider } from "./providers/forgejo-provider.mjs";
+import { GitHubProvider } from "./providers/github-provider.mjs";
 import { NativeGitStore } from "./providers/native-git-store.mjs";
 
 try {
@@ -23,9 +23,14 @@ try {
   });
   let provider = null;
   if (options.command === "sync") {
-    const token = (await readFile(resolve(options.tokenFile), "utf8")).trim();
-    if (!token) throw new Error("--token-file is empty.");
-    provider = new ForgejoProvider({ baseUrl: options.baseUrl, token });
+    const token = options.tokenFile
+      ? (await readFile(resolve(options.tokenFile), "utf8")).trim()
+      : process.env.GITHUB_TOKEN?.trim();
+    if (!token) throw new Error("--token-file or GITHUB_TOKEN is required for sync.");
+    provider = new GitHubProvider({
+      baseUrl: options.apiUrl ?? process.env.GITHUB_API_URL,
+      token,
+    });
   }
   const manager = new ReviewCycleManager({
     store,
@@ -34,7 +39,7 @@ try {
     provider,
     repositoryId,
     owner: options.owner,
-    repo: options.forgeRepo,
+    repo: options.remoteRepo,
   });
   let result;
   if (options.command === "sync") {
@@ -89,20 +94,19 @@ function parseArgs(args) {
     if (Object.hasOwn(values, key)) throw new Error(`Duplicate option: ${flag}.`);
     values[key] = value;
   }
-  const common = ["repo", "repoId", "owner", "forgeRepo", "number", "actor", "ledgerRef", "validationLedgerRef"];
+  const common = ["repo", "repoId", "owner", "remoteRepo", "number", "actor", "ledgerRef", "validationLedgerRef"];
   const allowed = {
-    sync: [...common, "baseUrl", "tokenFile"],
+    sync: [...common, "apiUrl", "tokenFile"],
     status: common,
     triage: [...common, "feedbackId", "disposition", "reason"],
     fix: [...common, "feedbackIds", "commit", "checkpoint", "summary"],
     import: [...common, "input"],
   }[command];
   for (const key of Object.keys(values)) if (!allowed.includes(key)) throw new Error(`Unsupported option: --${key}.`);
-  for (const key of ["owner", "forgeRepo", "number"]) if (!values[key]) throw new Error(`--${key} is required.`);
+  for (const key of ["owner", "remoteRepo", "number"]) if (!values[key]) throw new Error(`--${key} is required.`);
   const number = Number(values.number);
   if (!Number.isInteger(number) || number <= 0) throw new Error("--number must be a positive integer.");
   const actor = values.actor ?? process.env.USER ?? "local-agent";
-  if (command === "sync") for (const key of ["baseUrl", "tokenFile"]) if (!values[key]) throw new Error(`--${key} is required for sync.`);
   if (command === "triage") for (const key of ["feedbackId", "disposition", "reason"]) if (!values[key]) throw new Error(`--${key} is required for triage.`);
   if (command === "fix") for (const key of ["feedbackIds", "commit", "checkpoint", "summary"]) if (!values[key]) throw new Error(`--${key} is required for fix.`);
   if (command === "import" && !values.input) throw new Error("--input is required for import.");

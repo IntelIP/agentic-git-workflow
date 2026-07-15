@@ -35,7 +35,7 @@ test("approved git-spice operations execute exact safe argument sets and consume
     repoPath: fixture.seed,
     stateRoot: join(toolRoot, "receipts"),
     binary,
-    env: { FORGEJO_TOKEN: "secret-token", CAPTURE_PATH: capturePath },
+    env: { GITHUB_TOKEN: "secret-token", CAPTURE_PATH: capturePath },
   });
   assert.ok(!JSON.stringify(operations).includes("secret-token"));
   const refsDigest = await repositoryRefsDigest(fixture.seed);
@@ -83,7 +83,7 @@ test("approved git-spice operations execute exact safe argument sets and consume
     assert.equal(result.status, "succeeded");
     const captured = JSON.parse(await readFile(capturePath, "utf8"));
     assert.deepEqual(captured.args, item.expected);
-    assert.equal(captured.hasForgejoToken, true);
+    assert.equal(captured.hasGitHubToken, true);
     assert.equal(captured.hasTargetLock, true);
     assert.deepEqual(operationArgs(intent), item.expected);
     await assert.rejects(
@@ -162,7 +162,7 @@ test("failed execution consumes approval and stores only a safe error", async (t
     repoPath: fixture.seed,
     stateRoot,
     binary,
-    env: { FORGEJO_TOKEN: "secret-token" },
+    env: { GITHUB_TOKEN: "secret-token" },
   });
   const refsDigest = await repositoryRefsDigest(fixture.seed);
   const intent = createStackOperationIntent({
@@ -211,7 +211,7 @@ import { execFileSync } from "node:child_process";
 const capture = process.env.CAPTURE_PATH;
 let hasTargetLock = false;
 try { execFileSync("git", ["rev-parse", "--verify", "refs/tabellio/locks/stack-write-operation"], { stdio: "ignore" }); hasTargetLock = true; } catch {}
-if (capture) writeFileSync(capture, JSON.stringify({ args: process.argv.slice(2), hasForgejoToken: Boolean(process.env.FORGEJO_TOKEN), hasTargetLock }));
+if (capture) writeFileSync(capture, JSON.stringify({ args: process.argv.slice(2), hasGitHubToken: Boolean(process.env.GITHUB_TOKEN), hasTargetLock }));
 ${fail ? 'process.stderr.write("simulated failure private review context secret-token\\n"); process.exit(2);' : "process.exit(0);"}
 `;
   await writeFile(binary, source);

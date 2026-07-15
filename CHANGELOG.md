@@ -10,14 +10,12 @@ All notable changes to Tabellio are recorded here.
 - Bounded SHA-256 output evidence, detached worktree cleanup, and durable results on `refs/tabellio/validations`.
 - Local validation results integrated into durable review readiness.
 - Git-native JSON ledger on compare-and-swap refs for durable control-plane state.
-- Durable review cycles covering Forgejo feedback, provider-neutral agent findings, triage, checks, fixes, and readiness.
+- Durable review cycles covering GitHub feedback, provider-neutral agent findings, triage, checks, fixes, and readiness.
 - Entire-checkpoint-bound fix records with commit remapping across git-spice restacks.
 - Approval-gated git-spice submit, update, sync, restack, and merge operations.
 - Integrity-bound operation intents, short-lived approvals, one-use receipts, and branch-set race checks.
-- File-backed Forgejo API and Git HTTPS authentication without credentials in remote URLs or command arguments.
-- Read-only Forgejo provider for repository, pull request, review, comment, and commit-status reads.
-- Disposable localhost Forgejo 15.0.3 lab with idempotent bootstrap and seeded integration fixture.
-- `tabellio-forge` CLI with file-backed or environment-backed token loading and redacted failures.
+- File-backed GitHub API and Git HTTPS authentication without credentials in remote URLs or command arguments.
+- Read-only GitHub provider for repository, pull request, review, comment, commit-status, and check-run reads.
 - Mandatory-by-default Entire ledger provider with metadata-only checkpoint export and context binding.
 - Provider-neutral `tabellio-ledger/v0.1` schema, CLI, validator, example, and tests.
 - Read-only git-spice stack adapter with provider-neutral `tabellio-stack/v0.1` snapshots.

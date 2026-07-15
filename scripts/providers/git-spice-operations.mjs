@@ -99,7 +99,7 @@ export class ApprovedGitSpiceOperations {
         return { ...receipt, receiptPath };
       } catch (error) {
         const safeError = new StackOperationExecutionError(intent.operation, error, [
-          this.#env.FORGEJO_TOKEN,
+          this.#env.GITHUB_TOKEN,
           intent.parameters.title,
           intent.parameters.body,
         ]);

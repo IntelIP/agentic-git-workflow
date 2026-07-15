@@ -10,7 +10,7 @@ Supported operations:
 | `update` | `branch submit --update-only` | Pushes and updates an existing change request |
 | `sync` | `repo sync` | Fetches remote state and may remove locally tracked merged branches |
 | `restack` | `branch restack` | Rebases one tracked branch onto its current base |
-| `merge` | `branch merge` | Merges one change request through the forge |
+| `merge` | `branch merge` | Merges one change request through GitHub |
 
 The wrapper never exposes git-spice force push, hook bypass, or stale-base bypass flags. Restack is separate from sync because a normal repository sync does not rewrite every independently stale branch.
 
@@ -58,22 +58,22 @@ node scripts/check-tabellio-stack-operation.mjs \
 
 ## Execute
 
-For a self-hosted Forgejo repository using HTTPS:
+For GitHub using an explicit short-lived token:
 
 ```bash
 node scripts/tabellio-stack-operation.mjs execute \
   --repo . \
   --intent /tmp/stack-intent.json \
   --approval /tmp/stack-approval.json \
-  --token-file /secure/path/forgejo-token \
-  --git-username forgejo-user
+  --token-file /secure/path/github-token \
+  --git-username x-access-token
 ```
 
-The token is supplied to the Forgejo API through `FORGEJO_TOKEN`. Git HTTPS authentication uses an internal askpass process, so the token never enters the remote URL or command arguments. Prefer SSH for Git transport and the operating-system keyring for long-lived production use.
+The token is supplied to git-spice through `GITHUB_TOKEN`. Git HTTPS authentication uses an internal askpass process, so the token never enters the remote URL or command arguments. Prefer `gh` authentication, SSH, or the operating-system keyring for long-lived production use.
 
 Each approved attempt creates a receipt below Git's private common directory. Approval IDs are one-use even when execution fails. Concurrent Tabellio stack writes are locked. Failed receipts retain sanitized diagnostics without PR bodies or token values.
 
-git-spice 0.30 requires an explicit repository opt-in before forge merge:
+git-spice 0.30 requires an explicit repository opt-in before hosted merge:
 
 ```bash
 git config spice.experiment.merge true

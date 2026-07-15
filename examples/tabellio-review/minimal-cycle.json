@@ -1,12 +1,12 @@
 {
-  "schemaVersion": "tabellio-review-cycle/v0.1",
+  "schemaVersion": "tabellio-review-cycle/v0.2",
   "id": "review-example-001",
   "repository": { "id": "example/tabellio" },
-  "provider": { "id": "forgejo", "owner": "example", "repo": "tabellio" },
+  "provider": { "id": "github", "owner": "example", "repo": "tabellio" },
   "changeRequest": {
     "id": "7",
     "number": 7,
-    "url": "https://forgejo.example.test/example/tabellio/pulls/7",
+    "url": "https://github.com/example/tabellio/pull/7",
     "title": "Example agent change",
     "state": "open",
     "draft": false,
@@ -30,7 +30,7 @@
       "context": "tests",
       "state": "success",
       "description": "Checks passed",
-      "targetUrl": "https://forgejo.example.test/checks/51",
+      "targetUrl": "https://github.com/example/tabellio/actions/runs/51",
       "createdAt": "2026-07-10T12:00:00.000Z",
       "updatedAt": "2026-07-10T12:00:00.000Z"
     }]
@@ -46,6 +46,6 @@
   "updatedAt": "2026-07-10T12:00:00.000Z",
   "integrity": {
     "algorithm": "sha256",
-    "digest": "71c327c3342583e5fcb72dc2c1da90c6408300ac69d7d41c497e3b6edc80499d"
+    "digest": "88a01451f8b6e7f9d7df66c89dcc0e44234dcc89f78c18e5fef3ca750341e040"
   }
 }

@@ -55,7 +55,7 @@ node scripts/tabellio-validate.mjs latest --repo . --commit HEAD
 
 ## CI Worker Shape
 
-The runner is deliberately scheduler-agnostic. A Forgejo webhook worker, systemd service, AWS Batch task, Kubernetes Job, Buildkite agent, Woodpecker pipeline, or local Codex worker can invoke the same CLI. The scheduler supplies capacity; Tabellio supplies the immutable validation contract and result ledger.
+The runner is deliberately scheduler-agnostic. A GitHub webhook worker, systemd service, AWS Batch task, Kubernetes Job, Buildkite agent, or local Codex worker can invoke the same CLI. The scheduler supplies capacity; Tabellio supplies the immutable validation contract and result ledger.
 
 Publishing `refs/tabellio/validations` to a remote is a separate approved Git write. Review sync consumes the latest result for the exact PR head and will not reuse a result from an older commit.
 

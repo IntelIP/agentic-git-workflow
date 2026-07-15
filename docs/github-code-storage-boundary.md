@@ -26,4 +26,4 @@ The pull request remains useful but thin. It carries the code diff, a concise ch
 
 ## Migration State
 
-The Forgejo provider and localhost lab remain temporarily as legacy migration fixtures. They are not canonical services and must receive no new production state. A later cleanup PR removes the provider, lab, commands, docs, and package metadata after the external control-state migration is complete.
+Legacy self-hosted collaboration code and local lab infrastructure have been removed. GitHub `origin` is the only code-storage remote in the supported platform contract. Private control state still requires a separately configured external destination.

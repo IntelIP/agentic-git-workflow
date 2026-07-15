@@ -30,7 +30,7 @@
       "checkedOutElsewhere": false,
       "changeRequest": {
         "id": "#12",
-        "url": "https://forgejo.example.test/example/tabellio/pulls/12",
+        "url": "https://github.com/example/tabellio/pull/12",
         "status": null
       },
       "push": {

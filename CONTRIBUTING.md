@@ -97,4 +97,4 @@ Before tagging a release:
 - run local checks
 - run an exact-head `tabellio-validate` pass
 - confirm the durable review cycle is ready
-- tag from a clean canonical Forgejo `main` commit
+- tag from a clean `origin/main` commit

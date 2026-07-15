@@ -4,7 +4,7 @@ import { runGit } from "./git-process.mjs";
 import { digestObject } from "./stack-operation.mjs";
 import { latestValidationResult } from "./validation-runner.mjs";
 
-export const REVIEW_CYCLE_SCHEMA_VERSION = "tabellio-review-cycle/v0.1";
+export const REVIEW_CYCLE_SCHEMA_VERSION = "tabellio-review-cycle/v0.2";
 export const AGENT_REVIEW_SCHEMA_VERSION = "tabellio-agent-review/v0.1";
 const MAX_FEEDBACK_ITEMS = 5_000;
 const MAX_AGENT_FINDINGS = 1_000;
@@ -29,7 +29,7 @@ export class ReviewCycleManager {
       this.provider.listReviews({ owner: this.owner, repo: this.repo, number }),
       this.provider.listIssueComments({ owner: this.owner, repo: this.repo, number }),
     ]);
-    const [reviewComments, forgeChecks, localValidation] = await Promise.all([
+    const [reviewComments, providerChecks, localValidation] = await Promise.all([
       this.provider.listReviewComments({ owner: this.owner, repo: this.repo, number, reviews }),
       this.provider.commitStatus({
         owner: this.owner,
@@ -41,7 +41,7 @@ export class ReviewCycleManager {
     if (localValidation && localValidation.repository.id !== this.repositoryId) {
       throw new Error("Local validation repository does not match the review cycle.");
     }
-    const checks = mergeChecks(forgeChecks, localValidation);
+    const checks = mergeChecks(providerChecks, localValidation);
     const record = await this.#read(number);
     const existing = record.value;
     if (existing) validateReviewCycle(existing);
@@ -62,7 +62,7 @@ export class ReviewCycleManager {
       schemaVersion: REVIEW_CYCLE_SCHEMA_VERSION,
       id: existing?.id ?? cycleId(this.repositoryId, this.owner, this.repo, number),
       repository: { id: this.repositoryId },
-      provider: { id: "forgejo", owner: this.owner, repo: this.repo },
+      provider: { id: "github", owner: this.owner, repo: this.repo },
       changeRequest: {
         id: changeRequest.id,
         number: changeRequest.number,
@@ -215,7 +215,7 @@ export class ReviewCycleManager {
   }
 
   #requireProvider() {
-    if (!this.provider) throw new Error("Review sync requires a forge provider.");
+    if (!this.provider) throw new Error("Review sync requires a change-request provider.");
   }
 
   async #requireCheckpoint(baseCommit, fixCommit, checkpointId) {
@@ -267,7 +267,7 @@ export function validateReviewCycle(value) {
   requiredString(value.repository.id, "repository.id");
   object(value.provider, "provider");
   exactKeys(value.provider, ["id", "owner", "repo"], "provider");
-  equals(value.provider.id, "forgejo", "provider.id");
+  equals(value.provider.id, "github", "provider.id");
   requiredString(value.provider.owner, "provider.owner");
   requiredString(value.provider.repo, "provider.repo");
   validateChangeRequest(value.changeRequest);
@@ -455,7 +455,7 @@ function feedback({
 }) {
   return {
     id,
-    source: "forgejo",
+    source: "github",
     providerId,
     kind,
     author,
@@ -493,8 +493,8 @@ function cycleDigest(value) {
   return digestObject(unsigned);
 }
 
-function mergeChecks(forgeChecks, localValidation) {
-  if (!localValidation) return forgeChecks;
+function mergeChecks(providerChecks, localValidation) {
+  if (!localValidation) return providerChecks;
   const localStatus = {
     id: `validation:${localValidation.runId}`,
     context: `tabellio/${localValidation.suite.id}`,
@@ -504,12 +504,12 @@ function mergeChecks(forgeChecks, localValidation) {
     createdAt: localValidation.startedAt,
     updatedAt: localValidation.completedAt,
   };
-  const statuses = [...forgeChecks.statuses, localStatus];
-  let state = forgeChecks.state;
-  if (localStatus.state === "failure" || ["error", "failure", "failed"].includes(forgeChecks.state)) state = "failure";
-  else if (["pending", "running"].includes(forgeChecks.state)) state = forgeChecks.state;
+  const statuses = [...providerChecks.statuses, localStatus];
+  let state = providerChecks.state;
+  if (localStatus.state === "failure" || ["error", "failure", "failed"].includes(providerChecks.state)) state = "failure";
+  else if (["pending", "running"].includes(providerChecks.state)) state = providerChecks.state;
   else state = "success";
-  return { commit: forgeChecks.commit, state, total: statuses.length, statuses };
+  return { commit: providerChecks.commit, state, total: statuses.length, statuses };
 }
 
 function cycleId(repositoryId, owner, repo, number) {
@@ -517,7 +517,7 @@ function cycleId(repositoryId, owner, repo, number) {
 }
 
 function cyclePath(repositoryId, owner, repo, number) {
-  return `cycles/forgejo-${number}-${createHash("sha256").update(`${repositoryId}\0${owner}\0${repo}`).digest("hex").slice(0, 16)}.json`;
+  return `cycles/github-${number}-${createHash("sha256").update(`${repositoryId}\0${owner}\0${repo}`).digest("hex").slice(0, 16)}.json`;
 }
 
 function event(type, actor, at, detail) {
@@ -550,7 +550,7 @@ function validateFeedback(value, path) {
   object(value, path);
   exactKeys(value, ["id", "source", "providerId", "kind", "author", "title", "body", "path", "line", "commit", "severity", "providerState", "disposition", "resolution", "fixId", "createdAt", "updatedAt"], path);
   requiredString(value.id, `${path}.id`);
-  member(value.source, ["forgejo", "agent"], `${path}.source`);
+  member(value.source, ["github", "agent"], `${path}.source`);
   requiredString(value.providerId, `${path}.providerId`);
   member(value.kind, ["review", "review-comment", "issue-comment", "check", "agent-finding"], `${path}.kind`);
   if (value.author !== null) requiredString(value.author, `${path}.author`);

@@ -62,8 +62,8 @@ async function execute(options) {
   const env = {};
   if (options.tokenFile) {
     const tokenFile = resolve(options.tokenFile);
-    env.FORGEJO_TOKEN = (await readFile(tokenFile, "utf8")).trim();
-    if (!env.FORGEJO_TOKEN) throw new Error("--token-file is empty.");
+    env.GITHUB_TOKEN = (await readFile(tokenFile, "utf8")).trim();
+    if (!env.GITHUB_TOKEN) throw new Error("--token-file is empty.");
     if (options.gitUsername) {
       env.GIT_ASKPASS = askpassPath;
       env.GIT_ASKPASS_REQUIRE = "force";

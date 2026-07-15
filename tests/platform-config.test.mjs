@@ -26,7 +26,7 @@ test("platform v0.3 makes GitHub code-only storage and external control state ex
 test("platform v0.3 rejects provider drift and private-state publication", async () => {
   const config = JSON.parse(await readFile(`${projectRoot}/tabellio.platform.json`, "utf8"));
   assert.throws(
-    () => validatePlatformConfig({ ...config, codeStorage: { ...config.codeStorage, provider: "forgejo" } }),
+    () => validatePlatformConfig({ ...config, codeStorage: { ...config.codeStorage, provider: "gitlab" } }),
     /platform.codeStorage.provider must be "github"/,
   );
   assert.throws(
