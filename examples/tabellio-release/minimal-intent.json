@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "tabellio-release-operation/v0.1",
+  "repository": {
+    "id": "github.com/example/repository",
+    "owner": "example",
+    "name": "repository"
+  },
+  "version": "0.3.0",
+  "tag": "v0.3.0",
+  "revision": {
+    "commit": "dddddddddddddddddddddddddddddddddddddddd",
+    "parent": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "pullRequest": {
+    "number": 42,
+    "headCommit": "ffffffffffffffffffffffffffffffffffffffff",
+    "mergeCommit": "dddddddddddddddddddddddddddddddddddddddd"
+  },
+  "code": {
+    "remote": "origin",
+    "branch": "main"
+  },
+  "control": {
+    "intent": {
+      "schemaVersion": "tabellio-control-ref-operation/v0.1",
+      "operation": "publish",
+      "repository": {
+        "id": "github.com/example/repository"
+      },
+      "remote": "control",
+      "refs": [
+        {
+          "name": "refs/tabellio/reviews",
+          "localOid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "remoteOid": null
+        },
+        {
+          "name": "refs/tabellio/validations",
+          "localOid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "remoteOid": null
+        },
+        {
+          "name": "refs/heads/entire/checkpoints/v1",
+          "localOid": "cccccccccccccccccccccccccccccccccccccccc",
+          "remoteOid": null
+        }
+      ],
+      "createdAt": "2026-07-15T12:00:00.000Z",
+      "integrity": {
+        "algorithm": "sha256",
+        "digest": "4d0cf553f4bf4b9bcc860e1e3ae2f7142359cc9d2d7b5666d3a9b6596f43de6b"
+      }
+    }
+  },
+  "validation": {
+    "runId": "validation-example",
+    "resultVersion": "1111111111111111111111111111111111111111",
+    "status": "passed",
+    "headCommit": "dddddddddddddddddddddddddddddddddddddddd"
+  },
+  "release": {
+    "title": "Tabellio v0.3.0",
+    "notesPath": "docs/releases/v0.3.0.md",
+    "notesDigest": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "createdAt": "2026-07-15T12:00:00.000Z",
+  "integrity": {
+    "algorithm": "sha256",
+    "digest": "de270b5038fa12d0301426fe260652bd4c6cdbe69bc668006a395f10df430726"
+  }
+}

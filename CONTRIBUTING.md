@@ -92,9 +92,12 @@ Avoid:
 
 Before tagging a release:
 
+- run `node scripts/tabellio-preflight.mjs --profile release`
 - update `CHANGELOG.md`
 - confirm README examples use the intended release tag
 - run local checks
 - run an exact-head `tabellio-validate` pass
 - confirm the durable review cycle is ready
 - tag from a clean `origin/main` commit
+
+After the release PR is explicitly merged, use `tabellio-release plan` to run merged-head validation, synchronize the terminal review cycle, and bind exact publishable control refs. Review the generated intent, create a short-lived `tabellio-release-approval/v0.1`, then run `tabellio-release execute` once. The executor publishes control refs, the annotated tag, and the GitHub release. It never merges the pull request.

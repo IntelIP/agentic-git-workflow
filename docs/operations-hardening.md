@@ -34,6 +34,8 @@ Review cycles, validation results, and Entire checkpoints are published together
 
 Automatic Entire session pushes to `origin` remain disabled. The approved control-ref transport publishes `refs/heads/entire/checkpoints/v1` with the review and validation refs only to a separately configured private GitHub repository. Planning and execution reject `origin`.
 
+Release planning is local and credentialed-read-only: it requires clean merged `main`, runs exact-head validation, synchronizes terminal review state, and snapshots the resulting control OIDs. Remote publication requires a separate short-lived release approval. Execution writes an atomic local receipt before each phase and reconciles already-published control refs, tags, and releases during retry. Pull-request merge remains a separate explicit action because an approval cannot safely bind a squash commit that does not exist yet.
+
 ## Production Checklist
 
 - Back up the private GitHub control repository and test restore drills.

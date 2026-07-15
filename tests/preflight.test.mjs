@@ -1,0 +1,101 @@
+import assert from "node:assert/strict";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import test from "node:test";
+
+import { runGit } from "../scripts/lib/git-process.mjs";
+import { runPreflight, validatePreflightResult } from "../scripts/lib/preflight.mjs";
+import { createFixture } from "./helpers/git-fixture.mjs";
+
+test("preflight proves GitHub and Entire readiness without exposing credentials", async (t) => {
+  const fixture = await preparedFixture(t);
+  const result = await runPreflight({
+    repoPath: fixture.seed,
+    profile: "agent",
+    commandRunner: fakeCommands({ trusted: true }),
+    now: new Date("2026-07-15T12:00:00.000Z"),
+  });
+  assert.equal(result.status, "ready");
+  assert.equal(result.checks.every((check) => check.status === "passed"), true);
+  assert.equal(JSON.stringify(result).includes("gho_secret"), false);
+  assert.equal(validatePreflightResult(result), result);
+});
+
+test("preflight fails early with exact Codex hook approval remedy", async (t) => {
+  const fixture = await preparedFixture(t);
+  const result = await runPreflight({
+    repoPath: fixture.seed,
+    commandRunner: fakeCommands({ trusted: false }),
+  });
+  assert.equal(result.status, "blocked");
+  const trust = result.checks.find((check) => check.id === "entire-doctor");
+  assert.equal(trust.status, "blocked");
+  assert.match(trust.resolution, /Open \/hooks in Codex/);
+});
+
+test("release preflight requires clean main equal to origin main", async (t) => {
+  const fixture = await preparedFixture(t);
+  await writeFile(join(fixture.seed, "DIRTY.md"), "dirty\n");
+  const result = await runPreflight({
+    repoPath: fixture.seed,
+    profile: "release",
+    commandRunner: fakeCommands({ trusted: true }),
+  });
+  assert.equal(result.status, "blocked");
+  assert.match(result.checks.find((check) => check.id === "clean-main").detail, /not clean/);
+});
+
+async function preparedFixture(t) {
+  const fixture = await createFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  await runGit({ args: ["remote", "set-url", "origin", "https://github.com/example/repository.git"], cwd: fixture.seed });
+  await runGit({ args: ["remote", "add", "control", "git@github.com:example/repository-control.git"], cwd: fixture.seed });
+  await mkdir(join(fixture.seed, ".codex"), { recursive: true });
+  await writeFile(join(fixture.seed, ".codex", "hooks.json"), JSON.stringify({
+    hooks: { SessionStart: [], UserPromptSubmit: [], Stop: [], PostToolUse: [] },
+  }));
+  await writeFile(join(fixture.seed, "tabellio.platform.json"), JSON.stringify(platform()));
+  return fixture;
+}
+
+function fakeCommands({ trusted }) {
+  const commands = new Map([
+    ["entire:--version", () => result("Entire CLI 0.7.7\n")],
+    ["entire:status", () => result('{"enabled":true,"agents":["Codex"],"active_sessions":[]}\n')],
+    ["entire:doctor", () => result(`Metadata branches: OK\nCodex hook trust: ${trusted ? "OK" : "REVIEW NEEDED"}\n`)],
+    ["gh:auth", () => result("", "Logged in with gho_secret\n")],
+  ]);
+  return async ({ binary, args }) => {
+    const handler = commands.get(`${binary}:${args[0]}`);
+    if (handler) return handler();
+    throw new Error(`Unexpected command: ${binary} ${args.join(" ")}`);
+  };
+}
+
+function result(stdout, stderr = "") {
+  return { stdout, stderr, exitCode: 0, signal: null };
+}
+
+function platform() {
+  return {
+    schemaVersion: "tabellio-platform/v0.3",
+    codeStorage: {
+      provider: "github",
+      remoteName: "origin",
+      publicSurface: "code-and-thin-pr",
+      codeRef: "refs/heads/main",
+      allowedRefPrefixes: ["refs/heads/", "refs/tags/"],
+    },
+    workflow: {
+      stackManager: "git-spice",
+      controlState: "external",
+      controlProvider: "github",
+      controlRemoteName: "control",
+      controlRefs: ["refs/tabellio/reviews", "refs/tabellio/validations", "refs/heads/entire/checkpoints/v1"],
+      publishControlRefsToCodeStorage: false,
+    },
+    ledger: { provider: "entire", storage: "external", checkpointRef: "refs/heads/entire/checkpoints/v1" },
+    validation: { runner: "tabellio-validate", manifest: "tabellio.validation.json", storage: "external", resultRef: "refs/tabellio/validations" },
+    reviews: { provider: "tabellio", storage: "external", stateRef: "refs/tabellio/reviews" },
+  };
+}

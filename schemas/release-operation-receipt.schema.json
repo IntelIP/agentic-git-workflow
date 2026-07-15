@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:release-operation-receipt:v0.1",
+  "title": "Tabellio Release Operation Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "approvalId", "intentDigest", "repository", "version", "status", "phases", "createdAt", "updatedAt", "completedAt"],
+  "properties": {
+    "schemaVersion": { "const": "tabellio-release-operation-receipt/v0.1" },
+    "approvalId": { "type": "string", "minLength": 1 },
+    "intentDigest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "repository": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$" },
+    "status": { "enum": ["pending", "running", "failed", "succeeded"] },
+    "phases": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "startedAt", "completedAt", "evidence", "error"],
+        "properties": {
+          "id": { "enum": ["verify", "control-refs", "tag", "github-release"] },
+          "status": { "enum": ["pending", "running", "failed", "completed"] },
+          "startedAt": { "type": ["string", "null"], "format": "date-time" },
+          "completedAt": { "type": ["string", "null"], "format": "date-time" },
+          "evidence": { "type": ["object", "null"] },
+          "error": { "type": ["string", "null"], "maxLength": 500 }
+        }
+      }
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

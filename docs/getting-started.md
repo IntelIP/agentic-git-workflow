@@ -69,6 +69,39 @@ node scripts/tabellio-control-ref.mjs plan \
 
 `TABELLIO_CONTROL_REMOTE` must name a separately configured private GitHub repository remote. It cannot be `origin`. Create a matching `tabellio-control-ref-approval/v0.1` document after reviewing the exact local and remote OIDs, then execute it once with `tabellio-control-ref.mjs execute`. Multi-ref publication is atomic. Non-fast-forward publication, divergence, changed refs, expired approvals, and reused approvals fail closed.
 
+## Preflight And Release
+
+Run preflight before agent work and again from clean merged `main`:
+
+```bash
+node scripts/tabellio-preflight.mjs --profile agent
+node scripts/tabellio-preflight.mjs --profile release
+```
+
+`entire doctor` must report healthy metadata and trusted Codex hooks. When trust is missing, open `/hooks` in Codex and approve the four repository hooks.
+
+After explicit PR merge, create the exact release plan:
+
+```bash
+node scripts/tabellio-release.mjs plan \
+  --owner example \
+  --remote-repo repository \
+  --number 42 \
+  --version 0.3.0 \
+  --notes docs/releases/v0.3.0.md \
+  --out /tmp/tabellio-release-intent.json
+```
+
+Review the intent and create a short-lived `tabellio-release-approval/v0.1` bound to `integrity.digest`. Then execute:
+
+```bash
+node scripts/tabellio-release.mjs execute \
+  --intent /tmp/tabellio-release-intent.json \
+  --approval /secure/tabellio-release-approval.json
+```
+
+Execution publishes exact private control refs, the annotated tag, and the GitHub release. Merge stays outside this command because the final squash commit must exist before release approval can bind it.
+
 ## Local Validation
 
 From this repository:
