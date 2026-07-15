@@ -58,6 +58,7 @@ test("release executor resumes failed phases without repeating completed work", 
 test("approved release publishes exact control ref, annotated tag, and GitHub release in isolated repos", async (t) => {
   const fixture = await createFixture();
   t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  await configureRepositoryIdentity(fixture.seed);
   const control = join(fixture.root, "control.git");
   await NativeGitStore.createBare(control);
   await runGit({ args: ["remote", "add", "control", control], cwd: fixture.seed });
@@ -207,6 +208,11 @@ function approvalFor(intent, id) {
 
 function digest(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+async function configureRepositoryIdentity(repoPath) {
+  await runGit({ args: ["config", "user.name", "Tabellio Test"], cwd: repoPath });
+  await runGit({ args: ["config", "user.email", "tabellio@example.invalid"], cwd: repoPath });
 }
 
 function mergedProvider({ head, base }) {
