@@ -1,7 +1,7 @@
 {
   "name": "@intelip/tabellio",
   "version": "0.1.0",
-  "description": "Tabellio: provider-neutral Git context and evidence for agentic development.",
+  "description": "Tabellio: GitHub-native context and evidence for agentic development.",
   "type": "module",
   "license": "Apache-2.0",
   "author": "IntelIP",
@@ -17,8 +17,7 @@
     "tabellio-review": "scripts/tabellio-review.mjs",
     "tabellio-validate": "scripts/tabellio-validate.mjs",
     "tabellio-control-ref": "scripts/tabellio-control-ref.mjs",
-    "tabellio-ledger": "scripts/tabellio-ledger.mjs",
-    "tabellio-forge": "scripts/tabellio-forge.mjs"
+    "tabellio-ledger": "scripts/tabellio-ledger.mjs"
   },
   "bugs": {
     "url": "https://github.com/IntelIP/Tabellio/issues"
@@ -60,7 +59,6 @@
     "tabellio:ledger": "node scripts/tabellio-ledger.mjs",
     "tabellio:ledger:check": "node scripts/check-tabellio-ledger.mjs --ledger tabellio-ledger.json",
     "tabellio:ledger:example:check": "node scripts/check-tabellio-ledger.mjs --ledger examples/tabellio-ledger/minimal-ledger.json",
-    "tabellio:forge": "node scripts/tabellio-forge.mjs",
     "tabellio:context:capture": "node scripts/capture-tabellio-context.mjs --out tabellio-context.json",
     "tabellio:context:check": "node scripts/check-tabellio-context.mjs --context tabellio-context.json",
     "tabellio:context:example:check": "node scripts/check-tabellio-context.mjs --context examples/tabellio-context/minimal-context.json",
@@ -89,7 +87,6 @@
     "sarif",
     "stacked-pr",
     "git-spice",
-    "forgejo",
     "entire",
     "codex"
   ]

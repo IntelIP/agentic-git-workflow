@@ -1,33 +1,48 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:tabellio:schema:platform:v0.1",
+  "$id": "urn:tabellio:schema:platform:v0.3",
   "title": "Tabellio Platform Configuration",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "canonicalForge", "git", "ledger", "validation", "reviews", "transition"],
+  "required": ["schemaVersion", "codeStorage", "workflow", "ledger", "validation", "reviews"],
   "properties": {
-    "schemaVersion": { "const": "tabellio-platform/v0.1" },
-    "canonicalForge": {
+    "schemaVersion": { "const": "tabellio-platform/v0.3" },
+    "codeStorage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["provider", "urlEnv", "apiUrlEnv", "tokenFileEnv"],
+      "required": ["provider", "remoteName", "publicSurface", "codeRef", "allowedRefPrefixes"],
       "properties": {
-        "provider": { "const": "forgejo" },
-        "urlEnv": { "const": "TABELLIO_FORGE_URL" },
-        "apiUrlEnv": { "const": "TABELLIO_FORGE_API_URL" },
-        "tokenFileEnv": { "const": "TABELLIO_FORGE_TOKEN_FILE" }
+        "provider": { "const": "github" },
+        "remoteName": { "const": "origin" },
+        "publicSurface": { "const": "code-and-thin-pr" },
+        "codeRef": { "const": "refs/heads/main" },
+        "allowedRefPrefixes": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["refs/heads/", "refs/tags/"] },
+          "allOf": [
+            { "contains": { "const": "refs/heads/" } },
+            { "contains": { "const": "refs/tags/" } }
+          ]
+        }
       }
     },
-    "git": {
+    "workflow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["stackManager", "codeRef", "controlRefs"],
+      "required": ["stackManager", "controlState", "controlProvider", "controlRemoteName", "publishControlRefsToCodeStorage", "controlRefs"],
       "properties": {
         "stackManager": { "const": "git-spice" },
-        "codeRef": { "const": "refs/heads/main" },
+        "controlState": { "const": "external" },
+        "controlProvider": { "const": "github" },
+        "controlRemoteName": { "const": "control" },
+        "publishControlRefsToCodeStorage": { "const": false },
         "controlRefs": {
           "type": "array",
           "minItems": 3,
+          "maxItems": 3,
           "uniqueItems": true,
           "items": { "enum": ["refs/tabellio/reviews", "refs/tabellio/validations", "refs/heads/entire/checkpoints/v1"] },
           "allOf": [
@@ -41,38 +56,32 @@
     "ledger": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["provider", "checkpointRef"],
+      "required": ["provider", "storage", "checkpointRef"],
       "properties": {
         "provider": { "const": "entire" },
+        "storage": { "const": "external" },
         "checkpointRef": { "const": "refs/heads/entire/checkpoints/v1" }
       }
     },
     "validation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["runner", "manifest", "resultRef"],
+      "required": ["runner", "manifest", "storage", "resultRef"],
       "properties": {
         "runner": { "const": "tabellio-validate" },
         "manifest": { "type": "string", "minLength": 1 },
+        "storage": { "const": "external" },
         "resultRef": { "const": "refs/tabellio/validations" }
       }
     },
     "reviews": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["provider", "stateRef"],
+      "required": ["provider", "storage", "stateRef"],
       "properties": {
-        "provider": { "const": "forgejo" },
+        "provider": { "const": "tabellio" },
+        "storage": { "const": "external" },
         "stateRef": { "const": "refs/tabellio/reviews" }
-      }
-    },
-    "transition": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["codeStorage", "runtimeRequired"],
-      "properties": {
-        "codeStorage": { "type": "string", "minLength": 1 },
-        "runtimeRequired": { "const": false }
       }
     }
   }

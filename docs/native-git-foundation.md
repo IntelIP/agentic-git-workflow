@@ -77,4 +77,4 @@ The packet contains repository identity, not `/srv/git/product.git`. Local paths
 
 ## Current Boundary
 
-The foundation manages local Git state. Higher adapters authenticate to Forgejo, manage change requests with git-spice, and share canonical control refs through explicit approved operations. The core still does not host repositories, deploy code, or execute protected external actions.
+The foundation manages local Git state. Higher adapters read GitHub pull-request state, manage change requests with git-spice, and share control refs through explicit approved operations. The core still does not host repositories, deploy code, or execute protected external actions.

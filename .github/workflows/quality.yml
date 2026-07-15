@@ -1,0 +1,81 @@
+name: Quality
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          package-manager-cache: false
+      - name: Run repository checks
+        run: npm run check
+
+  fallow:
+    name: Fallow changed-code
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out full history
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          package-manager-cache: false
+      - name: Install pinned Fallow
+        run: npm install --global fallow@2.89.0
+      - name: Enforce changed-code quality gate
+        env:
+          FALLOW_AGENT_SOURCE: codex
+        run: |
+          fallow audit \
+            --base "origin/${{ github.base_ref }}" \
+            --gate new-only \
+            --format json \
+            --quiet \
+            --explain \
+            > fallow-audit.json 2>/dev/null || true
+          jq '{verdict, attribution, summary}' fallow-audit.json
+          jq -e '.kind == "audit" and .verdict == "pass"' fallow-audit.json >/dev/null
+
+  package:
+    name: Package dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          package-manager-cache: false
+      - name: Validate package contents
+        run: |
+          npm pack --dry-run --json > package-dry-run.json
+          jq '.[0] | {id, size, unpackedSize, entryCount}' package-dry-run.json
+          jq -e '
+            length == 1 and
+            ([.[0].files[].path | select(test("forgejo|change-request-provider"; "i"))] | length == 0)
+          ' package-dry-run.json >/dev/null

@@ -14,10 +14,7 @@ import { runGit } from "../scripts/lib/git-process.mjs";
 test("Entire adapter captures metadata-only checkpoints and binds context", async (t) => {
   const fixture = await createFixture();
   const toolRoot = await mkdtemp(join(tmpdir(), "tabellio-entire-"));
-  t.after(() => Promise.all([
-    rm(fixture.root, { recursive: true, force: true }),
-    rm(toolRoot, { recursive: true, force: true }),
-  ]));
+  t.after(() => removeTestRoots(fixture.root, toolRoot));
   const checkpointId = "abcdef123456";
   await runGit({ args: ["switch", "-c", "agent/entire", "main"], cwd: fixture.seed });
   await writeFile(join(fixture.seed, "ENTIRE.md"), "ledger\n");
@@ -71,10 +68,7 @@ test("Entire adapter captures metadata-only checkpoints and binds context", asyn
 test("mandatory Entire mode rejects a change without checkpoint trailers", async (t) => {
   const fixture = await createFixture();
   const toolRoot = await mkdtemp(join(tmpdir(), "tabellio-entire-empty-"));
-  t.after(() => Promise.all([
-    rm(fixture.root, { recursive: true, force: true }),
-    rm(toolRoot, { recursive: true, force: true }),
-  ]));
+  t.after(() => removeTestRoots(fixture.root, toolRoot));
   const binary = await fakeEntire(toolRoot, checkpointEnvelope("abcdef123456"));
   const provider = await EntireLedgerProvider.open(fixture.seed, { binary });
   const store = await NativeGitStore.open(fixture.seed);
@@ -98,10 +92,7 @@ test("mandatory Entire mode rejects a change without checkpoint trailers", async
 test("Entire adapter rejects partial checkpoint metadata", async (t) => {
   const fixture = await createFixture();
   const toolRoot = await mkdtemp(join(tmpdir(), "tabellio-entire-partial-"));
-  t.after(() => Promise.all([
-    rm(fixture.root, { recursive: true, force: true }),
-    rm(toolRoot, { recursive: true, force: true }),
-  ]));
+  t.after(() => removeTestRoots(fixture.root, toolRoot));
   const checkpointId = "abcdef123456";
   const binary = await fakeEntire(toolRoot, { ...checkpointEnvelope(checkpointId), partial: true });
   const provider = await EntireLedgerProvider.open(fixture.seed, { binary });
@@ -131,11 +122,15 @@ function checkpointEnvelope(checkpointId) {
         cache_read_tokens: 20,
       },
       summary: {
-        intent: "Add provider-neutral checkpoint capture.",
+        intent: "Add GitHub-bound checkpoint capture.",
         outcome: "Checkpoint metadata captured successfully.",
       },
     }],
   };
+}
+
+function removeTestRoots(...roots) {
+  return Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
 }
 
 async function fakeEntire(root, envelope) {

@@ -17,28 +17,27 @@ Tabellio keeps code and control state in standard Git objects, but production sa
 - Agent reviews allow at most 1,000 findings. Review cycles bound feedback, fixes, check statuses, titles, bodies, summaries, event details, and retained event history.
 - Remote control-ref reads and atomic pushes use a 15-minute timeout. Local atomic ref updates use a 30-second timeout.
 
-## Canonical And Mirror Repositories
+## Canonical Code Repository
 
-Forgejo is the canonical merge authority. A secondary Git host may store a mirror, but must receive the exact canonical main commit by fast-forward only:
+GitHub `origin` is the canonical code repository and merge authority:
 
-1. Validate the exact Forgejo change-request head.
+1. Validate the exact pull-request head.
 2. Merge through the approved git-spice operation.
-3. Fetch canonical `main` from Forgejo.
-4. Fast-forward the mirror to that exact object ID.
-5. Verify local `main`, `forgejo/main`, and every mirror `main` resolve to the same object ID.
+3. Fetch canonical `main` from `origin`.
+4. Verify local `main` and `origin/main` resolve to the same object ID.
 
-Never merge the same change independently on two hosts. Independent squash or rebase merges create different histories even when file content matches.
+Do not maintain a second merge authority. Independent squash or rebase merges create different histories even when file content matches.
 
 ## Control-State Publication
 
 Review cycles, validation results, and Entire checkpoints are published together with `git push --atomic`, explicit force-with-lease expectations, and a one-use approval. Publication rejects non-fast-forward updates, divergence, changed local or remote object IDs, expired approvals, and reused approval IDs.
 
-Automatic Entire session pushes remain disabled. The approved control-ref transport publishes `refs/heads/entire/checkpoints/v1` with the review and validation refs, keeping credentials and remote writes inside the same policy boundary.
+Automatic Entire session pushes to `origin` remain disabled. The approved control-ref transport publishes `refs/heads/entire/checkpoints/v1` with the review and validation refs only to a separately configured private GitHub repository. Planning and execution reject `origin`.
 
 ## Production Checklist
 
-- Run Forgejo on durable storage with tested backups and restore drills.
+- Back up the private GitHub control repository and test restore drills.
 - Isolate validation workers for untrusted code; detached worktrees are not sandboxes.
-- Scope forge and Git credentials per repository and keep them out of URLs, arguments, and logs.
+- Scope code-storage and private-control GitHub credentials per repository and keep them out of URLs, arguments, and logs.
 - Monitor failed receipts, stale cross-host locks, validation duration, queue depth, and ref divergence.
 - Reconcile and republish control refs before retrying any divergence failure.

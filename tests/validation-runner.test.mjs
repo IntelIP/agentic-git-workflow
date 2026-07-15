@@ -45,6 +45,16 @@ test("validation runner executes exact committed manifests and stores bounded re
   assert.equal(passed.result.commands[1].status, "passed");
   assert.equal(validateValidationResult(passed.result), passed.result);
   assert.deepEqual(await latestValidationResult(ledger, passingHead), passed.result);
+  const otherRepository = await runner.run({
+    repositoryId: "other/repository",
+    commit: passingHead,
+    base: "main",
+    runnerId: "other-runner",
+    now: new Date("2026-07-10T21:00:00.000Z"),
+  });
+  assert.deepEqual(await latestValidationResult(ledger, passingHead), otherRepository.result);
+  assert.deepEqual(await latestValidationResult(ledger, passingHead, repositoryId), passed.result);
+  assert.equal(await latestValidationResult(ledger, passingHead, "missing/repository"), null);
 
   await writeFile(manifestPath, JSON.stringify(manifest([
     command("fails", [process.execPath, "-e", "process.exit(3)"]),

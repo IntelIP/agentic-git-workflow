@@ -261,7 +261,7 @@ test("core runtime and adoption docs do not require GitHub Actions", async () =>
   }
 });
 
-test("provider-neutral schema identifiers keep external references resolvable", async () => {
+test("stable schema identifiers keep external references resolvable", async () => {
   const [evidenceSchema, policySchema] = await Promise.all([
     readFile(`${projectRoot}/schemas/evidence-envelope.schema.json`, "utf8").then(JSON.parse),
     readFile(`${projectRoot}/schemas/external-action-policy.schema.json`, "utf8").then(JSON.parse),

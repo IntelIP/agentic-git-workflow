@@ -11,14 +11,8 @@ import {
 } from "../scripts/providers/git-spice-stack-manager.mjs";
 import { createFixture } from "./helpers/git-fixture.mjs";
 
-test("git-spice adapter produces provider-neutral stack snapshots", async (t) => {
-  const fixture = await createFixture();
-  const toolRoot = await mkdtemp(join(tmpdir(), "tabellio-git-spice-"));
-  t.after(() => Promise.all([
-    rm(fixture.root, { recursive: true, force: true }),
-    rm(toolRoot, { recursive: true, force: true }),
-  ]));
-  const binary = await fakeGitSpice(toolRoot, [
+test("git-spice adapter produces GitHub stack snapshots", async (t) => {
+  const { manager } = await stackTestFixture(t, [
     { name: "feature-2", current: true, down: { name: "feature-1", needsRestack: true } },
     {
       name: "main",
@@ -29,11 +23,10 @@ test("git-spice adapter produces provider-neutral stack snapshots", async (t) =>
       down: { name: "main" },
       ups: [{ name: "feature-2" }],
       worktree: "/private/worktree/path",
-      change: { id: "#12", url: "https://forgejo.example.test/org/repo/pulls/12" },
+      change: { id: "#12", url: "https://github.com/org/repo/pull/12" },
       push: { ahead: 1, behind: 0, needsPush: true },
     },
   ]);
-  const manager = await GitSpiceStackManager.open(fixture.seed, { binary });
   const snapshot = await manager.snapshot({
     repositoryId: "example/repository",
     capturedAt: "2026-07-10T12:00:00.000Z",
@@ -51,14 +44,7 @@ test("git-spice adapter produces provider-neutral stack snapshots", async (t) =>
 });
 
 test("git-spice adapter rejects malformed JSON output", async (t) => {
-  const fixture = await createFixture();
-  const toolRoot = await mkdtemp(join(tmpdir(), "tabellio-git-spice-invalid-"));
-  t.after(() => Promise.all([
-    rm(fixture.root, { recursive: true, force: true }),
-    rm(toolRoot, { recursive: true, force: true }),
-  ]));
-  const binary = await fakeGitSpice(toolRoot, null);
-  const manager = await GitSpiceStackManager.open(fixture.seed, { binary });
+  const { manager } = await stackTestFixture(t, null);
 
   await assert.rejects(
     manager.snapshot({ repositoryId: "example/repository" }),
@@ -67,14 +53,7 @@ test("git-spice adapter rejects malformed JSON output", async (t) => {
 });
 
 test("git-spice adapter rejects upstream JSON shape drift", async (t) => {
-  const fixture = await createFixture();
-  const toolRoot = await mkdtemp(join(tmpdir(), "tabellio-git-spice-shape-"));
-  t.after(() => Promise.all([
-    rm(fixture.root, { recursive: true, force: true }),
-    rm(toolRoot, { recursive: true, force: true }),
-  ]));
-  const binary = await fakeGitSpice(toolRoot, [{ name: "main", ups: "feature" }]);
-  const manager = await GitSpiceStackManager.open(fixture.seed, { binary });
+  const { manager } = await stackTestFixture(t, [{ name: "main", ups: "feature" }]);
 
   await assert.rejects(
     manager.snapshot({ repositoryId: "example/repository" }),
@@ -124,6 +103,21 @@ function branch(overrides) {
     push: null,
     ...overrides,
   };
+}
+
+async function stackTestFixture(t, branches) {
+  const fixture = await createFixture();
+  const toolRoot = await mkdtemp(join(tmpdir(), "tabellio-git-spice-"));
+  t.after(() => removeTestRoots(fixture.root, toolRoot));
+  const binary = await fakeGitSpice(toolRoot, branches);
+  return {
+    fixture,
+    manager: await GitSpiceStackManager.open(fixture.seed, { binary }),
+  };
+}
+
+function removeTestRoots(...roots) {
+  return Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
 }
 
 async function fakeGitSpice(root, branches) {

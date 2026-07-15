@@ -30,11 +30,12 @@ async function plan(options) {
   const store = await NativeGitStore.open(repoPath);
   const env = credentialEnv(options);
   const refs = options.refs ? options.refs.split(",") : CONTROL_REFS;
+  if (!options.remote) throw new Error("plan requires --remote for an external control-state destination.");
   const intent = createControlRefIntent({
     operation: options.operation,
     repositoryId: await repositoryIdentity(store, options.repoId),
-    remote: options.remote ?? "forgejo",
-    refs: await snapshotControlRefs({ repoPath, remote: options.remote ?? "forgejo", refs, env }),
+    remote: options.remote,
+    refs: await snapshotControlRefs({ repoPath, remote: options.remote, refs, env }),
   });
   await output(intent, options.out);
 }

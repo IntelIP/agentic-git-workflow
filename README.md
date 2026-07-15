@@ -3,16 +3,16 @@
 ![Tabellio product overview](docs/assets/tabellio-hero.svg)
 
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![Forgejo](https://img.shields.io/badge/Forgejo-canonical%20forge-FB923C?logo=forgejo&logoColor=white)](https://forgejo.org/)
+[![GitHub](https://img.shields.io/badge/GitHub-code%20storage-181717?logo=github)](https://github.com/)
 [![JSON Schema](https://img.shields.io/badge/JSON%20Schema-evidence%20contract-0B6BFF)](https://json-schema.org/)
 [![SARIF](https://img.shields.io/badge/SARIF-code%20scanning-2563EB)](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
 [![git-spice](https://img.shields.io/badge/git--spice-stacked%20review-B45309)](https://abhinav.github.io/git-spice/)
 [![Entire](https://img.shields.io/badge/Entire-checkpoint%20ledger-111827)](https://entire.io/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
-Provider-neutral Git context and evidence for agentic development.
+GitHub-native context and evidence for agentic development.
 
-Tabellio gives coding agents a deterministic Git foundation: standard Git repositories, isolated worktrees, immutable commit IDs, merge previews, compare-and-swap ref updates, and context packets tied to the exact diff. Forgejo is the canonical review adapter. Any Git remote may store code; no GitHub API or hosted workflow runtime is required.
+Tabellio gives coding agents a deterministic Git foundation: standard Git repositories, isolated worktrees, immutable commit IDs, merge previews, compare-and-swap ref updates, and context packets tied to the exact diff. GitHub stores code and provides a thin pull-request shell. Tabellio keeps agent transcripts, review state, validation results, and control refs outside that public code-storage boundary.
 
 ## What It Adds
 
@@ -36,7 +36,7 @@ The native engine runs through the installed `git` executable. It never construc
 | Component | Role |
 | --- | --- |
 | `GitProcess` | Executes argument arrays with prompts disabled and typed failures |
-| `RepositoryStore` | Provider-neutral repository contract |
+| `RepositoryStore` | Repository contract for Tabellio's GitHub-backed workflow |
 | `NativeGitStore` | Reads commits and diffs, manages worktrees, previews merges, and updates refs safely |
 | `WorkspaceManager` | Gives each agent run a contained worktree path |
 | Context packet | Binds task, actor, exact commits, changed files, checkpoints, and merge status |
@@ -60,31 +60,30 @@ AI-assisted pull requests should not depend on reviewer trust alone. Tabellio gi
 | Runtime | [Node.js 20+](https://nodejs.org/) | Runs the local writer and validators |
 | Validation | `tabellio-validate` on any trusted worker | Runs an exact committed command manifest and stores results on a Git ref |
 | Evidence contract | [JSON Schema](https://json-schema.org/) | Validates the evidence envelope and external-action policy |
-| Review surface | [Forgejo](https://forgejo.org/) | Hosts repositories, change requests, comments, reviews, and commit status |
-| Stacked review | [git-spice](https://abhinav.github.io/git-spice/) | Host-agnostic stack engine for small dependent change requests |
+| Code storage | [GitHub](https://github.com/) | Stores code refs and tags; provides a thin pull-request shell |
+| Stacked review | [git-spice](https://abhinav.github.io/git-spice/) | Stack engine for small dependent GitHub pull requests |
 | Checkpoint ledger | [Entire](https://entire.io/) and [Entire CLI](https://github.com/entireio/cli) | Required default for agent session and checkpoint context |
 | Git substrate | Standard Git CLI, bare repositories, and worktrees | Stores repositories, branches, commits, patches, and agent-created code state |
-| Agent review | [OpenAI Codex](https://openai.com/codex/) | Produces provider-neutral findings imported into the durable review ledger |
+| Agent review | [OpenAI Codex](https://openai.com/codex/) | Produces findings imported into the durable GitHub review ledger |
 | Prior art | [SLSA](https://slsa.dev/) and [in-toto](https://in-toto.io/) | Inspiration for provenance and supply-chain evidence, without a compliance claim |
 
-The current public origin may remain a code-storage mirror during migration. It is not a runtime dependency. Entire is the required checkpoint ledger; git-spice manages stacks; Forgejo hosts review; Tabellio owns validation and durable control refs.
+`origin` is the canonical GitHub code remote. Entire is the required checkpoint ledger; git-spice manages stacks; Tabellio owns validation and durable review state. Private control refs are external state and are rejected when their destination is `origin`.
 
 ## Core Files
 
 | Path | Purpose |
 | --- | --- |
-| `tabellio.platform.json` | Canonical forge, stack, ledger, validation, review, and control-ref contract |
+| `tabellio.platform.json` | Code-storage boundary, stack, ledger, validation, review, and control-ref contract |
 | `schemas/` | Evidence and external-action JSON schemas |
 | `scripts/providers/native-git-store.mjs` | Standard Git storage provider |
 | `scripts/providers/git-spice-stack-manager.mjs` | Read-only git-spice stack adapter |
 | `scripts/providers/git-spice-operations.mjs` | Approval-gated git-spice submit, update, sync, restack, and merge adapter |
 | `scripts/providers/entire-ledger-provider.mjs` | Metadata-only Entire checkpoint adapter |
-| `scripts/providers/forgejo-provider.mjs` | Read-only Forgejo repository and review adapter |
+| `scripts/providers/github-provider.mjs` | Read-only GitHub pull-request, review, comment, status, and check adapter |
 | `scripts/lib/git-json-ledger.mjs` | Versioned, compare-and-swap JSON state on standard Git refs |
-| `scripts/lib/review-cycle.mjs` | Durable forge and agent review/fix state machine |
+| `scripts/lib/review-cycle.mjs` | Durable GitHub and agent review/fix state machine |
 | `scripts/lib/validation-runner.mjs` | Exact-commit, shell-free validation with bounded evidence logs |
 | `scripts/lib/control-ref-transport.mjs` | Approval-gated, fast-forward-only sharing of review, validation, and Entire refs |
-| `infra/forgejo/` | Disposable localhost Forgejo integration lab |
 | `scripts/lib/` | Git process, repository contract, worktree, and context primitives |
 | `scripts/` | Dependency-free capture, writer, and validators |
 | `examples/` | Minimal valid context, evidence, review, validation, stack, and ledger fixtures |
@@ -102,7 +101,7 @@ npm run tabellio:platform:check
 node scripts/tabellio-validate.mjs run --repo . --commit HEAD --manifest tabellio.validation.json
 ```
 
-Configure `TABELLIO_FORGE_URL`, `TABELLIO_FORGE_API_URL`, and `TABELLIO_FORGE_TOKEN_FILE` for Forgejo operations. Tokens stay in owner-readable files and never enter remote URLs or command arguments.
+Keep `origin` limited to ordinary code branches and tags. Configure a separate private GitHub repository under another remote name before publishing control refs. The transport refuses to target `origin`.
 
 Validate the bundled fixture:
 
@@ -119,7 +118,7 @@ node scripts/check-tabellio-evidence-envelope.mjs --evidence tabellio-pr-evidenc
 node scripts/check-tabellio-external-actions.mjs --evidence tabellio-pr-evidence.json
 ```
 
-Capture provider-neutral context first, then bind evidence to it:
+Capture GitHub-bound context first, then bind evidence to it:
 
 ```bash
 node scripts/capture-tabellio-context.mjs \
@@ -166,7 +165,6 @@ npm run tabellio:review:example:check
 npm run tabellio:validate:example:check
 npm run tabellio:ledger -- --repo . --repo-id IntelIP/Tabellio --base main --head HEAD --out tabellio-ledger.json
 npm run tabellio:ledger:check
-npm run tabellio:forge -- version --base-url http://127.0.0.1:3300 --token-file .tabellio/forgejo/credentials/admin-token
 npm run tabellio:context:capture
 npm run tabellio:context:check
 npm run tabellio:evidence:write
@@ -193,10 +191,11 @@ The external-action checker fails when an action is marked `attempted: true` wit
 
 - [Getting started](docs/getting-started.md)
 - [Agentic tooling stack](docs/tooling-stack.md)
+- [GitHub code-storage boundary](docs/github-code-storage-boundary.md)
 - [Agent run lifecycle](docs/agent-run-lifecycle.md)
 - [Approved stack operations](docs/stack-operations.md)
 - [Durable review and fix loop](docs/review-loop.md)
-- [Provider-neutral validation](docs/validation-runner.md)
+- [Exact-commit validation](docs/validation-runner.md)
 - [Operations hardening](docs/operations-hardening.md)
 - [Workflow model](docs/workflow-model.md)
 - [Native Git foundation](docs/native-git-foundation.md)

@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:tabellio:schema:review-cycle:v0.1",
+  "$id": "urn:tabellio:schema:review-cycle:v0.2",
   "title": "Tabellio Review Cycle",
   "type": "object",
   "required": ["schemaVersion", "id", "repository", "provider", "changeRequest", "status", "round", "feedback", "fixes", "checks", "events", "createdAt", "updatedAt", "integrity"],
   "additionalProperties": false,
   "properties": {
-    "schemaVersion": { "const": "tabellio-review-cycle/v0.1" },
+    "schemaVersion": { "const": "tabellio-review-cycle/v0.2" },
     "id": { "type": "string", "minLength": 1 },
     "repository": {
       "type": "object",
@@ -19,7 +19,7 @@
       "required": ["id", "owner", "repo"],
       "additionalProperties": false,
       "properties": {
-        "id": { "const": "forgejo" },
+        "id": { "const": "github" },
         "owner": { "type": "string", "minLength": 1 },
         "repo": { "type": "string", "minLength": 1 }
       }
@@ -83,7 +83,7 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "source": { "enum": ["forgejo", "agent"] },
+        "source": { "enum": ["github", "agent"] },
         "providerId": { "type": "string", "minLength": 1 },
         "kind": { "enum": ["review", "review-comment", "issue-comment", "check", "agent-finding"] },
         "author": { "$ref": "#/$defs/nullableString" },

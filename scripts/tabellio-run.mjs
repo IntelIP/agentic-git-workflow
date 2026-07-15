@@ -3,6 +3,7 @@
 import { resolve } from "node:path";
 
 import { AgentRunManager } from "./lib/agent-run.mjs";
+import { reportCliError } from "./lib/cli-options.mjs";
 
 try {
   const { command, options, trailing } = parseCommand(process.argv.slice(2));
@@ -52,12 +53,7 @@ try {
   if (!result.ok) process.exitCode = 1;
   console.log(JSON.stringify(result, null, 2));
 } catch (error) {
-  process.exitCode = 1;
-  console.error(JSON.stringify({
-    ok: false,
-    error: error instanceof Error ? error.message : String(error),
-    name: error instanceof Error ? error.name : "Error",
-  }, null, 2));
+  reportCliError(error);
 }
 
 function parseCommand(argv) {

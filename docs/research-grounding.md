@@ -12,7 +12,7 @@ Agentic development should stay Git-native:
 2. Record machine-readable evidence.
 3. Run deterministic checks.
 4. Default-deny external side effects.
-5. Review through a forge or another explicit review surface.
+5. Review through GitHub pull requests.
 6. Merge only after current checks pass.
 
 The agent is optional. The evidence contract is the product.
@@ -43,8 +43,8 @@ The agent is optional. The evidence contract is the product.
 | External action policy | Security review, deployment controls | Prevent hidden deploys, migrations, secret reads, provider reads, and destructive actions |
 | Validation runner | Hermetic build workers, argv manifests | Run exact-commit checks on any trusted worker |
 | Change-request template | Code review practice | Put evidence summary in front of reviewers |
-| Control refs | Git refs, compare-and-swap updates | Share durable review and validation state without a forge database dependency |
-| Tooling stack guide | Standard Git, Entire, git-spice | Keep the core provider-neutral while allowing host-agnostic review and ledger adapters |
+| Control refs | Git refs, compare-and-swap updates | Share durable review and validation state without storing private workflow data in the public code repository |
+| Tooling stack guide | GitHub, Standard Git, Entire, git-spice | Keep one GitHub code and review surface while separating private control state |
 
 ## Claims We Can Make
 
@@ -54,7 +54,7 @@ The agent is optional. The evidence contract is the product.
 - Agent-agnostic Git governance
 - Default-deny external action policy
 - Worker-validated evidence envelope
-- Provider-neutral native Git context engine
+- GitHub-native context and evidence engine
 
 ## Claims We Should Avoid
 

@@ -7,8 +7,8 @@ import { LedgerConflictError } from "./git-json-ledger.mjs";
 import { runGit } from "./git-process.mjs";
 import { digestObject } from "./stack-operation.mjs";
 
-export const VALIDATION_MANIFEST_SCHEMA_VERSION = "tabellio-validation/v0.1";
-export const VALIDATION_RESULT_SCHEMA_VERSION = "tabellio-validation-result/v0.1";
+const VALIDATION_MANIFEST_SCHEMA_VERSION = "tabellio-validation/v0.1";
+const VALIDATION_RESULT_SCHEMA_VERSION = "tabellio-validation-result/v0.1";
 const MAX_OUTPUT_TAIL_BYTES = 16 * 1024;
 
 export class ValidationRunner {
@@ -106,8 +106,9 @@ export class ValidationRunner {
   }
 }
 
-export async function latestValidationResult(ledger, commit) {
+export async function latestValidationResult(ledger, commit, repositoryId = null) {
   oid(commit, "commit");
+  if (repositoryId !== null) requiredString(repositoryId, "repositoryId");
   const prefix = `commits/${commit}`;
   const listed = await ledger.list(prefix);
   let latest = null;
@@ -116,6 +117,7 @@ export async function latestValidationResult(ledger, commit) {
     if (!record.value) continue;
     validateValidationResult(record.value);
     if (record.value.revision.headCommit !== commit) throw new Error(`Validation result ${path} is stored under the wrong commit.`);
+    if (repositoryId !== null && record.value.repository.id !== repositoryId) continue;
     if (!latest || Date.parse(record.value.completedAt) > Date.parse(latest.completedAt)) latest = record.value;
   }
   return latest;

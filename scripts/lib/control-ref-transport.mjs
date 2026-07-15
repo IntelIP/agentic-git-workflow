@@ -2,13 +2,15 @@ import { open, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 
+import { validateOperationApproval } from "./approval-validation.mjs";
 import { runGit } from "./git-process.mjs";
 import { withOperationLock } from "./operation-lock.mjs";
 import { digestObject } from "./stack-operation.mjs";
 
-export const CONTROL_REF_INTENT_VERSION = "tabellio-control-ref-operation/v0.1";
-export const CONTROL_REF_APPROVAL_VERSION = "tabellio-control-ref-approval/v0.1";
+const CONTROL_REF_INTENT_VERSION = "tabellio-control-ref-operation/v0.1";
+const CONTROL_REF_APPROVAL_VERSION = "tabellio-control-ref-approval/v0.1";
 const DEFAULT_REMOTE_TIMEOUT_MS = 15 * 60 * 1000;
+const CODE_STORAGE_REMOTE = "origin";
 export const CONTROL_REFS = [
   "refs/tabellio/reviews",
   "refs/tabellio/validations",
@@ -38,7 +40,7 @@ export function validateControlRefIntent(value) {
   object(value.repository, "intent.repository");
   exact(value.repository, ["id"], "intent.repository");
   string(value.repository.id, "intent.repository.id");
-  remoteName(value.remote);
+  controlRemoteName(value.remote);
   if (!Array.isArray(value.refs) || value.refs.length === 0) throw new Error("intent.refs must be a non-empty array.");
   const names = new Set();
   for (const [index, entry] of value.refs.entries()) {
@@ -63,28 +65,15 @@ export function validateControlRefIntent(value) {
 }
 
 export function validateControlRefApproval(value, intent, { now = new Date() } = {}) {
-  validateControlRefIntent(intent);
-  object(value, "approval");
-  exact(value, ["schemaVersion", "id", "intentDigest", "approved", "approvedBy", "approvedAt", "expiresAt", "reason"], "approval");
-  equals(value.schemaVersion, CONTROL_REF_APPROVAL_VERSION, "approval.schemaVersion");
-  if (typeof value.id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value.id)) throw new Error("approval.id contains unsupported characters.");
-  equals(value.intentDigest, intent.integrity.digest, "approval.intentDigest");
-  equals(value.approved, true, "approval.approved");
-  string(value.approvedBy, "approval.approvedBy");
-  string(value.reason, "approval.reason");
-  date(value.approvedAt, "approval.approvedAt");
-  date(value.expiresAt, "approval.expiresAt");
-  const approvedAt = Date.parse(value.approvedAt);
-  const expiresAt = Date.parse(value.expiresAt);
-  if (approvedAt < Date.parse(intent.createdAt)) throw new Error("approval.approvedAt must not precede the intent.");
-  if (expiresAt <= approvedAt) throw new Error("approval.expiresAt must be later than approval.approvedAt.");
-  if (now.getTime() < approvedAt) throw new Error("approval is not active yet.");
-  if (now.getTime() >= expiresAt) throw new Error("approval has expired.");
-  return value;
+  return validateOperationApproval(value, intent, {
+    schemaVersion: CONTROL_REF_APPROVAL_VERSION,
+    validateIntent: validateControlRefIntent,
+    now,
+  });
 }
 
 export async function snapshotControlRefs({ repoPath, remote, refs, env = {} }) {
-  remoteName(remote);
+  controlRemoteName(remote);
   const unique = [...new Set(refs)];
   if (unique.length === 0 || unique.some((ref) => !CONTROL_REFS.includes(ref))) throw new Error("refs must be a non-empty subset of canonical control refs.");
   return Promise.all(unique.map(async (name) => ({
@@ -294,6 +283,11 @@ function sanitize(value) {
 
 function remoteName(value) {
   if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) throw new Error("intent.remote must be a safe Git remote name.");
+}
+
+function controlRemoteName(value) {
+  remoteName(value);
+  if (value === CODE_STORAGE_REMOTE) throw new Error(`Control refs must not target code-storage remote ${CODE_STORAGE_REMOTE}.`);
 }
 
 function nullableOid(value, path) {

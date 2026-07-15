@@ -6,7 +6,7 @@ export async function repositoryIdentity(store, explicitId = null) {
   return remote ? normalizeRepositoryRemote(remote) : localRepositoryId(store.repoPath);
 }
 
-export function normalizeRepositoryRemote(remote) {
+function normalizeRepositoryRemote(remote) {
   if (/^[A-Za-z]:[\\/]/.test(remote) || remote.startsWith("/") || remote.startsWith("\\\\")) {
     return hashedRemote(remote);
   }

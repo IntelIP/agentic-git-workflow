@@ -2,6 +2,7 @@
 
 import { resolve } from "node:path";
 
+import { reportCliError } from "./lib/cli-options.mjs";
 import { GitJsonLedger } from "./lib/git-json-ledger.mjs";
 import { repositoryIdentity } from "./lib/repository-identity.mjs";
 import { latestValidationResult, ValidationRunner } from "./lib/validation-runner.mjs";
@@ -31,12 +32,7 @@ try {
     if (result === null) process.exitCode = 1;
   }
 } catch (error) {
-  process.exitCode = 1;
-  console.error(JSON.stringify({
-    ok: false,
-    error: error instanceof Error ? error.message : String(error),
-    name: error instanceof Error ? error.name : "Error",
-  }, null, 2));
+  reportCliError(error);
 }
 
 function parseArgs(args) {

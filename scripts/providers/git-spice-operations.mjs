@@ -99,7 +99,7 @@ export class ApprovedGitSpiceOperations {
         return { ...receipt, receiptPath };
       } catch (error) {
         const safeError = new StackOperationExecutionError(intent.operation, error, [
-          this.#env.FORGEJO_TOKEN,
+          this.#env.GITHUB_TOKEN,
           intent.parameters.title,
           intent.parameters.body,
         ]);
@@ -135,7 +135,7 @@ export class ApprovedGitSpiceOperations {
   }
 }
 
-export class StackOperationExecutionError extends Error {
+class StackOperationExecutionError extends Error {
   constructor(operation, cause, secrets = []) {
     const detail = sanitize(cause?.stderr, secrets);
     super(`git-spice ${operation} operation failed${detail ? `: ${detail}` : "."}`);

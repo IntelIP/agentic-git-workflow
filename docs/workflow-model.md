@@ -1,6 +1,6 @@
 # Tabellio Workflow Model
 
-Tabellio turns an agentic coding run into a provider-neutral Git context packet and, when wanted, a reviewable pull request packet.
+Tabellio turns an agentic coding run into a GitHub-bound context packet and, when wanted, a reviewable pull request packet.
 
 ## Core Objects
 
@@ -24,7 +24,7 @@ Tabellio turns an agentic coding run into a provider-neutral Git context packet 
 | Git substrate | Standard Git CLI and bare repositories | Stores repositories, branches, commits, and patch state |
 | Session ledger | Entire; Git notes only for migration | Preserves checkpoint and agent-run context for later review |
 | Evidence gate | Tabellio | Validates commands, checks, changed files, approvals, and side-effect policy |
-| Stacked review | git-spice | Keeps related change requests small, ordered, and reviewable across supported forges |
+| Stacked review | git-spice | Keeps related GitHub pull requests small, ordered, and reviewable |
 | Agent review | Codex review | Adds optional diff and evidence review by an agent |
 
 ## Standard Flow
@@ -58,7 +58,7 @@ Each PR should expose:
 - external actions attempted or blocked
 - evidence artifact path
 
-The context packet is usable without a pull request. A forge is a review and distribution adapter, not Tabellio's source of truth.
+The context packet is usable without a pull request. GitHub is the review and code-distribution surface; Tabellio's evidence remains independently verifiable.
 
 Evidence is not a claim that the work is correct. Evidence is the record reviewers inspect before trusting the work.
 
@@ -113,5 +113,5 @@ Future versions can add:
 - in-toto link metadata
 - OpenTelemetry spans
 - model/tool eval suites
-- remote git-spice submission and merge orchestration
-- forge-specific merge queue metadata
+- automated git-spice submission and merge orchestration for GitHub
+- GitHub merge queue metadata

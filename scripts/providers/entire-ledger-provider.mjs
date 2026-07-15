@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
 import { realpath } from "node:fs/promises";
 
 import { canonicalJson } from "../lib/context-packet.mjs";
+import { ExternalCommandError, runExternalCommand } from "../lib/external-command.mjs";
 import { runGit } from "../lib/git-process.mjs";
 import { LEDGER_SCHEMA_VERSION, LedgerProvider, validateLedgerSnapshot } from "../lib/ledger-provider.mjs";
 
@@ -116,60 +116,32 @@ export class EntireLedgerProvider extends LedgerProvider {
   }
 }
 
-export class EntireCommandError extends Error {
-  constructor({ binary, args, cwd, exitCode, signal, stdout, stderr, cause }) {
-    const unavailable = cause?.code === "ENOENT";
-    super(unavailable
-      ? `${binary} is not installed or not executable.`
-      : `${[binary, ...args].join(" ")} failed with exit code ${exitCode ?? "unknown"}.`);
+class EntireCommandError extends ExternalCommandError {
+  constructor(result) {
+    super(result);
     this.name = "EntireCommandError";
-    this.command = [binary, ...args].join(" ");
-    this.args = args;
-    this.cwd = cwd;
-    this.exitCode = exitCode;
-    this.signal = signal;
-    this.stdout = stdout;
-    this.stderr = stderr;
-    this.cause = cause;
   }
 }
 
-export function runEntire({
+function runEntire({
   binary = "entire",
   args,
   cwd = process.cwd(),
   timeoutMs = DEFAULT_TIMEOUT_MS,
   env = {},
 }) {
-  requiredString(binary, "binary");
-  if (!Array.isArray(args) || args.some((arg) => typeof arg !== "string")) {
-    throw new TypeError("Entire arguments must be an array of strings.");
-  }
-  return new Promise((resolve, reject) => {
-    execFile(binary, args, {
-      cwd,
-      encoding: "utf8",
-      timeout: timeoutMs,
-      maxBuffer: 10 * 1024 * 1024,
-      env: {
-        ...process.env,
-        GIT_TERMINAL_PROMPT: "0",
-        LC_ALL: "C",
-        NO_COLOR: "1",
-        ...env,
-      },
-    }, (error, stdout = "", stderr = "") => {
-      const exitCode = typeof error?.code === "number" ? error.code : error ? null : 0;
-      const result = {
-        binary, args, cwd, exitCode, signal: error?.signal ?? null, stdout, stderr, cause: error ?? null,
-      };
-      if (!error) resolve(result);
-      else reject(new EntireCommandError(result));
-    });
+  return runExternalCommand({
+    binary,
+    args,
+    cwd,
+    timeoutMs,
+    env,
+    ErrorType: EntireCommandError,
+    argumentLabel: "Entire",
   });
 }
 
-export function checkpointReferences(snapshot) {
+function checkpointReferences(snapshot) {
   validateLedgerSnapshot(snapshot);
   return snapshot.checkpoints.flatMap((checkpoint) => checkpoint.commits.map((commit) => ({
     provider: "entire",

@@ -10,7 +10,7 @@
     "id": "example-agent"
   },
   "task": {
-    "summary": "Demonstrate a provider-neutral Tabellio context packet."
+    "summary": "Demonstrate a GitHub-bound Tabellio context packet."
   },
   "refs": {
     "base": {
@@ -44,6 +44,6 @@
   "integrity": {
     "algorithm": "sha256",
     "scope": "canonical-json-without-integrity",
-    "digest": "a39aec4befed8f2e992aa6c2e2d55dce689d913ba99f4a3e0f68e52545d46a2d"
+    "digest": "26a70c751e06ac87ed338467a614d855cc58a569e9d930db5a98f793a2e2dfd3"
   }
 }

@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { reportCliError } from "./lib/cli-options.mjs";
 import { runGit } from "./lib/git-process.mjs";
 import { repositoryIdentity } from "./lib/repository-identity.mjs";
 import {
@@ -24,12 +25,7 @@ try {
   if (options.command === "plan") await plan(options);
   else await execute(options);
 } catch (error) {
-  process.exitCode = 1;
-  console.error(JSON.stringify({
-    ok: false,
-    error: error instanceof Error ? error.message : String(error),
-    name: error instanceof Error ? error.name : "Error",
-  }, null, 2));
+  reportCliError(error);
 }
 
 async function plan(options) {
@@ -62,8 +58,8 @@ async function execute(options) {
   const env = {};
   if (options.tokenFile) {
     const tokenFile = resolve(options.tokenFile);
-    env.FORGEJO_TOKEN = (await readFile(tokenFile, "utf8")).trim();
-    if (!env.FORGEJO_TOKEN) throw new Error("--token-file is empty.");
+    env.GITHUB_TOKEN = (await readFile(tokenFile, "utf8")).trim();
+    if (!env.GITHUB_TOKEN) throw new Error("--token-file is empty.");
     if (options.gitUsername) {
       env.GIT_ASKPASS = askpassPath;
       env.GIT_ASKPASS_REQUIRE = "force";

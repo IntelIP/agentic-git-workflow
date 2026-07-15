@@ -37,7 +37,7 @@
             "cacheCreation": 0
           },
           "summary": {
-            "intent": "Add provider-neutral checkpoint capture.",
+            "intent": "Add GitHub-bound checkpoint capture.",
             "outcome": "Checkpoint metadata captured successfully."
           },
           "error": null

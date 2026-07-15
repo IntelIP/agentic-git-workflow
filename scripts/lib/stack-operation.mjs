@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 
-export const STACK_OPERATION_SCHEMA_VERSION = "tabellio-stack-operation/v0.1";
-export const STACK_APPROVAL_SCHEMA_VERSION = "tabellio-stack-approval/v0.1";
+import { validateOperationApproval } from "./approval-validation.mjs";
+
+const STACK_OPERATION_SCHEMA_VERSION = "tabellio-stack-operation/v0.1";
+const STACK_APPROVAL_SCHEMA_VERSION = "tabellio-stack-approval/v0.1";
 export const STACK_OPERATIONS = ["submit", "update", "sync", "restack", "merge"];
 
 export function createStackOperationIntent({
@@ -56,25 +58,11 @@ export function validateStackOperationIntent(value) {
 }
 
 export function validateStackOperationApproval(value, intent, { now = new Date() } = {}) {
-  validateStackOperationIntent(intent);
-  object(value, "approval");
-  exactKeys(value, ["schemaVersion", "id", "intentDigest", "approved", "approvedBy", "approvedAt", "expiresAt", "reason"], "approval");
-  equals(value.schemaVersion, STACK_APPROVAL_SCHEMA_VERSION, "approval.schemaVersion");
-  string(value.id, "approval.id");
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value.id)) throw new Error("approval.id contains unsupported characters.");
-  equals(value.intentDigest, intent.integrity.digest, "approval.intentDigest");
-  equals(value.approved, true, "approval.approved");
-  string(value.approvedBy, "approval.approvedBy");
-  string(value.reason, "approval.reason");
-  date(value.approvedAt, "approval.approvedAt");
-  date(value.expiresAt, "approval.expiresAt");
-  const approvedAt = Date.parse(value.approvedAt);
-  const expiresAt = Date.parse(value.expiresAt);
-  if (approvedAt < Date.parse(intent.createdAt)) throw new Error("approval.approvedAt must not precede the intent.");
-  if (expiresAt <= approvedAt) throw new Error("approval.expiresAt must be later than approval.approvedAt.");
-  if (now.getTime() < approvedAt) throw new Error("approval is not active yet.");
-  if (now.getTime() >= expiresAt) throw new Error("approval has expired.");
-  return value;
+  return validateOperationApproval(value, intent, {
+    schemaVersion: STACK_APPROVAL_SCHEMA_VERSION,
+    validateIntent: validateStackOperationIntent,
+    now,
+  });
 }
 
 export function digestObject(value) {

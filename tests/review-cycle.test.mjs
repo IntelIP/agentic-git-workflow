@@ -4,7 +4,9 @@ import test from "node:test";
 
 import { GitJsonLedger } from "../scripts/lib/git-json-ledger.mjs";
 import {
+  migrateReviewCycleV1ToV2,
   ReviewCycleManager,
+  reviewCyclePaths,
   validateAgentReview,
   validateReviewCycle,
 } from "../scripts/lib/review-cycle.mjs";
@@ -15,11 +17,8 @@ import { createFixture, identityEnv } from "./helpers/git-fixture.mjs";
 
 const timestamp = "2026-07-10T20:00:00.000Z";
 
-test("review cycle persists forge and agent feedback through triage and checkpoint-bound fixes", async (t) => {
-  const fixture = await createFixture();
-  t.after(() => rm(fixture.root, { recursive: true, force: true }));
-  const store = await NativeGitStore.open(fixture.seed);
-  const ledger = await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/reviews" });
+test("review cycle persists GitHub and agent feedback through triage and checkpoint-bound fixes", async (t) => {
+  const { fixture, store, ledger } = await createReviewFixture(t);
   const provider = fakeProvider(fixture);
   const manager = new ReviewCycleManager({
     store,
@@ -148,11 +147,7 @@ test("review cycle persists forge and agent feedback through triage and checkpoi
 });
 
 test("review readiness consumes only the latest validation for the exact PR head", async (t) => {
-  const fixture = await createFixture();
-  t.after(() => rm(fixture.root, { recursive: true, force: true }));
-  const store = await NativeGitStore.open(fixture.seed);
-  const ledger = await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/reviews" });
-  const validationLedger = await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/validations" });
+  const { fixture, store, ledger, validationLedger } = await createReviewFixture(t);
   const provider = emptyProvider(fixture);
   const manager = new ReviewCycleManager({
     store,
@@ -197,6 +192,131 @@ test("agent review contract bounds finding count and text size", () => {
   assert.throws(() => validateAgentReview(input), /at most 65536/);
 });
 
+test("review-cycle v0.1 migration is deterministic and rejects tampering", async (t) => {
+  const fixture = await createFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const identity = {
+    source: legacyIdentity(),
+    target: { ...githubIdentity(), number: 14 },
+  };
+  const legacy = legacyReviewCycle(fixture);
+  const migrated = migrateReviewCycleV1ToV2(legacy, identity);
+
+  assert.equal(migrated.changed, true);
+  assert.equal(migrated.clearedProviderUrls, 1);
+  assert.equal(migrated.cycle.schemaVersion, "tabellio-review-cycle/v0.2");
+  assert.equal(migrated.cycle.repository.id, "IntelIP/Tabellio");
+  assert.equal(migrated.cycle.provider.id, "github");
+  assert.deepEqual(migrated.cycle.provider, { id: "github", owner: "IntelIP", repo: "Tabellio" });
+  assert.equal(migrated.cycle.changeRequest.id, "pending-github-sync:forgejo:21");
+  assert.equal(migrated.cycle.changeRequest.number, 14);
+  assert.equal(migrated.cycle.changeRequest.url, "https://github.com/IntelIP/Tabellio/pull/14");
+  assert.equal(migrated.cycle.feedback[0].source, "github");
+  assert.equal(migrated.cycle.checks.statuses[0].targetUrl, null);
+  assert.equal(validateReviewCycle(migrated.cycle), migrated.cycle);
+
+  const repeated = migrateReviewCycleV1ToV2(migrated.cycle, { source: identity.target, target: identity.target });
+  assert.equal(repeated.changed, false);
+  assert.deepEqual(repeated.cycle, migrated.cycle);
+
+  const tampered = structuredClone(legacy);
+  tampered.changeRequest.title = "Tampered";
+  assert.throws(() => migrateReviewCycleV1ToV2(tampered, identity), /integrity digest does not match/);
+});
+
+test("review-cycle migration previews, atomically moves, and becomes idempotent", async (t) => {
+  const { fixture, store, ledger } = await createReviewFixture(t);
+  const source = legacyIdentity();
+  const target = { ...githubIdentity(), number: 14 };
+  const paths = {
+    legacy: reviewCyclePaths(source).legacy,
+    current: reviewCyclePaths(target).current,
+  };
+  const seeded = await ledger.write(paths.legacy, legacyReviewCycle(fixture), { expectedVersion: null });
+  const manager = new ReviewCycleManager({
+    store,
+    ledger,
+    provider: null,
+    repositoryId: target.repositoryId,
+    owner: target.owner,
+    repo: target.repo,
+  });
+
+  const migrationOptions = {
+    number: 7,
+    targetNumber: 14,
+    legacyRepositoryId: source.repositoryId,
+    legacyOwner: source.owner,
+    legacyRepo: source.repo,
+  };
+  const preview = await manager.migrate(migrationOptions);
+  assert.equal(preview.state, "preview");
+  assert.equal(preview.applied, false);
+  assert.equal(preview.requiresSync, true);
+  assert.equal(await ledger.version(), seeded.version);
+
+  const applied = await manager.migrate({ ...migrationOptions, apply: true });
+  assert.equal(applied.state, "migrated");
+  assert.equal(applied.applied, true);
+  assert.equal((await ledger.read(paths.legacy)).value, null);
+  assert.equal((await ledger.read(paths.current)).value.schemaVersion, "tabellio-review-cycle/v0.2");
+  assert.equal((await ledger.read(paths.current)).value.changeRequest.number, 14);
+  assert.deepEqual((await ledger.list("cycles")).paths, [paths.current]);
+
+  const repeated = await manager.migrate({ ...migrationOptions, apply: true });
+  assert.equal(repeated.state, "current");
+  assert.equal(repeated.changed, false);
+  assert.equal(repeated.requiresSync, true);
+  assert.equal(repeated.version, applied.version);
+});
+
+test("review-cycle migration atomically corrects an already migrated PR number", async (t) => {
+  const { fixture, store, ledger } = await createReviewFixture(t);
+  const wrong = githubIdentity();
+  const target = { ...wrong, number: 14 };
+  const wrongPath = reviewCyclePaths(wrong).current;
+  const targetPath = reviewCyclePaths(target).current;
+  const migrated = migrateReviewCycleV1ToV2(legacyReviewCycle(fixture), {
+    source: legacyIdentity(),
+    target: wrong,
+  }).cycle;
+  await ledger.write(wrongPath, migrated, { expectedVersion: null });
+  const manager = new ReviewCycleManager({
+    store,
+    ledger,
+    provider: null,
+    repositoryId: target.repositoryId,
+    owner: target.owner,
+    repo: target.repo,
+  });
+
+  await assert.rejects(
+    manager.migrate({ number: 7, targetNumber: 14 }),
+    /--remap-current true/,
+  );
+  const preview = await manager.migrate({ number: 7, targetNumber: 14, remapCurrent: true });
+  assert.equal(preview.state, "preview");
+  assert.equal(preview.sourcePath, wrongPath);
+  assert.equal(preview.path, targetPath);
+  assert.equal(preview.cycle.changeRequest.number, 14);
+
+  const applied = await manager.migrate({ number: 7, targetNumber: 14, remapCurrent: true, apply: true });
+  assert.equal(applied.state, "migrated");
+  assert.equal((await ledger.read(wrongPath)).value, null);
+  assert.equal((await ledger.read(targetPath)).value.changeRequest.number, 14);
+});
+
+async function createReviewFixture(t) {
+  const fixture = await createFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  return {
+    fixture,
+    store: await NativeGitStore.open(fixture.seed),
+    ledger: await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/reviews" }),
+    validationLedger: await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/validations" }),
+  };
+}
+
 function fakeProvider(fixture) {
   let checkState = "failure";
   let headCommit = fixture.featureCommit;
@@ -218,7 +338,7 @@ function fakeProvider(fixture) {
         source: { branch: "feature", commit: headCommit },
         target: { branch: "main", commit: fixture.mainCommit },
         author: "agent",
-        webUrl: "https://forgejo.example.test/acme/project/pulls/7",
+        webUrl: "https://github.com/acme/project/pull/7",
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -234,7 +354,7 @@ function fakeProvider(fixture) {
         author: "reviewer",
         submittedAt: timestamp,
         updatedAt: timestamp,
-        webUrl: "https://forgejo.example.test/acme/project/pulls/7#review-31",
+        webUrl: "https://github.com/acme/project/pull/7#pullrequestreview-31",
       }];
     },
     async listReviewComments() {
@@ -249,7 +369,7 @@ function fakeProvider(fixture) {
         resolvedBy: null,
         createdAt: timestamp,
         updatedAt: timestamp,
-        webUrl: "https://forgejo.example.test/acme/project/pulls/7#comment-41",
+        webUrl: "https://github.com/acme/project/pull/7#discussion_r41",
       }];
     },
     async listIssueComments() {
@@ -259,7 +379,7 @@ function fakeProvider(fixture) {
         author: "reviewer",
         createdAt: timestamp,
         updatedAt: timestamp,
-        webUrl: "https://forgejo.example.test/acme/project/pulls/7#comment-42",
+        webUrl: "https://github.com/acme/project/pull/7#issuecomment-42",
       }];
     },
     async commitStatus() {
@@ -273,7 +393,7 @@ function fakeProvider(fixture) {
           context: "tests",
           state: "failure",
           description: "Tests failed",
-          targetUrl: "https://forgejo.example.test/checks/51",
+          targetUrl: "https://github.com/acme/project/actions/runs/51",
           createdAt: timestamp,
           updatedAt: timestamp,
         }] : [{
@@ -281,7 +401,7 @@ function fakeProvider(fixture) {
           context: "tests",
           state: "success",
           description: "Tests passed",
-          targetUrl: "https://forgejo.example.test/checks/52",
+          targetUrl: "https://github.com/acme/project/actions/runs/52",
           createdAt: timestamp,
           updatedAt: timestamp,
         }],
@@ -303,7 +423,7 @@ function emptyProvider(fixture) {
         source: { branch: "feature", commit: fixture.featureCommit },
         target: { branch: "main", commit: fixture.mainCommit },
         author: "agent",
-        webUrl: "https://forgejo.example.test/acme/project/pulls/7",
+        webUrl: "https://github.com/acme/project/pull/7",
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -348,4 +468,95 @@ function validationResult(commit, runId, status, completedAt) {
   };
   value.integrity = { algorithm: "sha256", digest: digestObject(value) };
   return value;
+}
+
+function legacyReviewCycle(fixture) {
+  const value = {
+    schemaVersion: "tabellio-review-cycle/v0.1",
+    id: "review-legacy-001",
+    repository: { id: "example/repository" },
+    provider: { id: "forgejo", owner: "acme", repo: "project" },
+    changeRequest: {
+      id: "21",
+      number: 7,
+      url: "https://forgejo.example.test/acme/project/pulls/7",
+      title: "Legacy agent change",
+      state: "open",
+      draft: false,
+      mergeable: true,
+      headBranch: "feature",
+      headCommit: fixture.featureCommit,
+      baseBranch: "main",
+      baseCommit: fixture.mainCommit,
+      updatedAt: timestamp,
+    },
+    status: "needs_triage",
+    round: 2,
+    feedback: [{
+      id: "review-comment:41",
+      source: "forgejo",
+      providerId: "41",
+      kind: "review-comment",
+      author: "reviewer",
+      title: "Legacy feedback",
+      body: "Preserve this feedback.",
+      path: "README.md",
+      line: 1,
+      commit: fixture.featureCommit,
+      severity: null,
+      providerState: "open",
+      disposition: "pending",
+      resolution: "open",
+      fixId: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }],
+    fixes: [],
+    checks: {
+      commit: fixture.featureCommit,
+      state: "success",
+      total: 1,
+      statuses: [{
+        id: "51",
+        context: "tests",
+        state: "success",
+        description: "Checks passed",
+        targetUrl: "https://forgejo.example.test/checks/51",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }],
+    },
+    events: [{
+      id: "event-legacy-001",
+      type: "synced",
+      actor: "legacy-sync",
+      at: timestamp,
+      detail: "Synced legacy feedback.",
+    }],
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    integrity: { algorithm: "sha256", digest: "0".repeat(64) },
+  };
+  value.integrity.digest = digestObject(Object.fromEntries(
+    Object.entries(value).filter(([key]) => key !== "integrity"),
+  ));
+  return value;
+}
+
+function legacyIdentity() {
+  return {
+    repositoryId: "example/repository",
+    owner: "acme",
+    repo: "project",
+    number: 7,
+  };
+}
+
+function githubIdentity() {
+  return {
+    repositoryId: "IntelIP/Tabellio",
+    owner: "IntelIP",
+    repo: "Tabellio",
+    number: 7,
+  };
 }

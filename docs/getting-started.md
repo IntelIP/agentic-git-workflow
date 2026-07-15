@@ -1,16 +1,16 @@
 # Getting Started
 
-Tabellio captures provider-neutral Git context and can attach a machine-readable evidence packet to pull requests. Humans, CI, and coding agents use the same contract.
+Tabellio captures GitHub-bound context and can attach a machine-readable evidence packet to pull requests. Humans, CI, and coding agents use the same contract.
 
 ## Requirements
 
 - Git repository
 - Node.js 20 or later
 - Git 2.38 or later with `merge-tree --write-tree`
-- git-spice 0.18 or later for optional stack snapshots; Forgejo support requires 0.30 or later
+- git-spice 0.18 or later for optional stack snapshots
 - Entire CLI 0.7.7 or later for mandatory checkpoint metadata export
 
-Forgejo 15 or later is the canonical review host. Any standard Git remote may remain a code mirror. No hosted workflow runtime is required.
+GitHub is the canonical code store through the `origin` remote. Tabellio does not use it for private agent transcripts, validation results, review ledgers, or control refs. No hosted workflow runtime is required.
 
 Enable Entire for Codex before creating agent commits:
 
@@ -22,7 +22,7 @@ Every agent change range must contain at least one `Entire-Checkpoint` commit tr
 
 ## Capture A Stack
 
-Initialize git-spice in a normal working repository, then capture its local stack graph without contacting the forge:
+Initialize git-spice in a normal working repository, then capture its local stack graph without contacting GitHub:
 
 ```bash
 git-spice repo init
@@ -35,32 +35,12 @@ node scripts/check-tabellio-stack.mjs --stack tabellio-stack.json
 
 The snapshot adapter uses documented JSON output and disables change-request status and comment queries. Approved write operations use the separate flow in [Approved stack operations](stack-operations.md).
 
-## Run The Forgejo Lab
-
-Docker users can prove the forge adapter without GitHub:
-
-```bash
-node scripts/dev/forgejo-lab.mjs up
-node scripts/dev/forgejo-lab.mjs bootstrap
-node scripts/dev/forgejo-lab.mjs seed
-node scripts/tabellio-forge.mjs pulls \
-  --base-url http://127.0.0.1:3300 \
-  --owner tabellio-admin \
-  --repo tabellio-lab \
-  --token-file .tabellio/forgejo/credentials/admin-token
-```
-
-The lab is disposable and localhost-only. Generated secrets and Forgejo data remain below ignored `.tabellio/forgejo/`. Stop the container with `node scripts/dev/forgejo-lab.mjs down`.
-
 ## Configure The Platform
 
-`tabellio.platform.json` makes the operating model explicit: Forgejo review, git-spice stacks, Entire checkpoints, local validation, and durable control refs.
+`tabellio.platform.json` makes the operating model explicit: GitHub code storage, git-spice stacks, and a private GitHub `control` remote for Entire checkpoints, validation, and review state.
 
 ```bash
 npm run tabellio:platform:check
-export TABELLIO_FORGE_URL=https://forge.example.test
-export TABELLIO_FORGE_API_URL=https://forge.example.test/api/v1
-export TABELLIO_FORGE_TOKEN_FILE=$HOME/.config/tabellio/forgejo-token
 ```
 
 Run `tabellio-validate` from any trusted worker. The runner checks out the exact revision in an isolated worktree, executes only argv arrays committed in `tabellio.validation.json`, bounds captured output, and writes the result to `refs/tabellio/validations`.
@@ -73,7 +53,7 @@ node scripts/tabellio-validate.mjs run \
   --manifest tabellio.validation.json
 ```
 
-The worker can be a local agent, a scheduled service, or a Forgejo runner. Tabellio's contract stays identical.
+The worker can be a local agent or an operator-managed scheduled service. Tabellio's contract stays identical.
 
 ## Share Control State
 
@@ -82,13 +62,12 @@ Review cycles, validation results, and Entire checkpoints use standard Git refs.
 ```bash
 node scripts/tabellio-control-ref.mjs plan \
   --operation publish \
-  --remote forgejo \
+  --remote "$TABELLIO_CONTROL_REMOTE" \
   --repo-id example/repository \
-  --token-file "$TABELLIO_FORGE_TOKEN_FILE" \
   --out /tmp/control-ref-intent.json
 ```
 
-Create a matching `tabellio-control-ref-approval/v0.1` document after reviewing the exact local and remote OIDs, then execute it once with `tabellio-control-ref.mjs execute`. Multi-ref publication is atomic. Non-fast-forward publication, divergence, changed refs, expired approvals, and reused approvals fail closed.
+`TABELLIO_CONTROL_REMOTE` must name a separately configured private GitHub repository remote. It cannot be `origin`. Create a matching `tabellio-control-ref-approval/v0.1` document after reviewing the exact local and remote OIDs, then execute it once with `tabellio-control-ref.mjs execute`. Multi-ref publication is atomic. Non-fast-forward publication, divergence, changed refs, expired approvals, and reused approvals fail closed.
 
 ## Local Validation
 
@@ -122,7 +101,7 @@ Add the Tabellio checklist to the repository PR template:
 - [ ] No protected side effect attempted without explicit approval
 ```
 
-The full provider-neutral template lives at `templates/pull_request_template.md`.
+The full GitHub pull-request template lives at `templates/pull_request_template.md`.
 
 ## Protected Side Effects
 
@@ -145,8 +124,8 @@ Keep the first PR small:
 
 1. Add `tabellio.platform.json` and `tabellio.validation.json`.
 2. Enable Entire and initialize git-spice.
-3. Open a test change request on Forgejo.
+3. Push a code branch to `origin` and open a thin pull request.
 4. Run exact-head validation and sync the durable review cycle.
-5. Publish canonical control refs with an approved one-use operation.
+5. Publish control refs to the configured external destination with an approved one-use operation.
 
-Before production deployment, apply the concurrency, worker isolation, backup, mirror, and monitoring guidance in [Operations hardening](operations-hardening.md).
+Before production deployment, apply the concurrency, worker isolation, backup, and monitoring guidance in [Operations hardening](operations-hardening.md).

@@ -22,21 +22,11 @@ const now = new Date("2026-07-10T12:02:00.000Z");
 
 test("approved control refs publish and fetch exact fast-forward state", async (t) => {
   const fixture = await createFixture();
+  await addControlRemote(fixture.seed, fixture.bare);
   const stateRoot = await mkdtemp(join(tmpdir(), "tabellio-control-ref-"));
-  t.after(() => Promise.all([
-    rm(fixture.root, { recursive: true, force: true }),
-    rm(stateRoot, { recursive: true, force: true }),
-  ]));
+  removeAfter(t, fixture.root, stateRoot);
 
-  const ledger = await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/validations" });
-  await ledger.write("runs/one.json", { status: "passed" }, { expectedVersion: null });
-  const publish = createControlRefIntent({
-    operation: "publish",
-    repositoryId: "example/repository",
-    remote: "origin",
-    refs: await snapshotControlRefs({ repoPath: fixture.seed, remote: "origin", refs: ["refs/tabellio/validations"] }),
-    createdAt,
-  });
+  const { intent: publish } = await createValidationPublishIntent(fixture.seed);
   validateControlRefIntent(publish);
   const publisher = await ApprovedControlRefTransport.open({ repoPath: fixture.seed, stateRoot: join(stateRoot, "publish") });
   const published = await publisher.execute({ intent: publish, approval: approvalFor(publish, "publish-once"), repositoryId: "example/repository", now });
@@ -49,11 +39,12 @@ test("approved control refs publish and fetch exact fast-forward state", async (
 
   const consumer = join(fixture.root, "consumer");
   await runGit({ args: ["clone", fixture.bare, consumer], cwd: fixture.root });
+  await addControlRemote(consumer, fixture.bare);
   const fetch = createControlRefIntent({
     operation: "fetch",
     repositoryId: "example/repository",
-    remote: "origin",
-    refs: await snapshotControlRefs({ repoPath: consumer, remote: "origin", refs: ["refs/tabellio/validations"] }),
+    remote: "ledger",
+    refs: await snapshotControlRefs({ repoPath: consumer, remote: "ledger", refs: ["refs/tabellio/validations"] }),
     createdAt,
   });
   const fetcher = await ApprovedControlRefTransport.open({ repoPath: consumer, stateRoot: join(stateRoot, "fetch") });
@@ -65,20 +56,10 @@ test("approved control refs publish and fetch exact fast-forward state", async (
 
 test("control ref operations reject tampering, expiry, and changed refs", async (t) => {
   const fixture = await createFixture();
+  await addControlRemote(fixture.seed, fixture.bare);
   const stateRoot = await mkdtemp(join(tmpdir(), "tabellio-control-ref-block-"));
-  t.after(() => Promise.all([
-    rm(fixture.root, { recursive: true, force: true }),
-    rm(stateRoot, { recursive: true, force: true }),
-  ]));
-  const ledger = await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/validations" });
-  await ledger.write("runs/one.json", { status: "passed" }, { expectedVersion: null });
-  const intent = createControlRefIntent({
-    operation: "publish",
-    repositoryId: "example/repository",
-    remote: "origin",
-    refs: await snapshotControlRefs({ repoPath: fixture.seed, remote: "origin", refs: ["refs/tabellio/validations"] }),
-    createdAt,
-  });
+  removeAfter(t, fixture.root, stateRoot);
+  const { intent, ledger } = await createValidationPublishIntent(fixture.seed);
   const tampered = structuredClone(intent);
   tampered.remote = "other";
   assert.throws(() => validateControlRefIntent(tampered), /digest does not match/);
@@ -101,6 +82,7 @@ test("control ref transport opens bare repositories", async (t) => {
 
 test("multi-ref publication is atomic when one remote ref is rejected", async (t) => {
   const fixture = await createFixture();
+  await addControlRemote(fixture.seed, fixture.bare);
   const stateRoot = await mkdtemp(join(tmpdir(), "tabellio-control-ref-atomic-"));
   t.after(() => Promise.all([
     rm(fixture.root, { recursive: true, force: true }),
@@ -116,10 +98,10 @@ test("multi-ref publication is atomic when one remote ref is rejected", async (t
   const intent = createControlRefIntent({
     operation: "publish",
     repositoryId: "example/repository",
-    remote: "origin",
+    remote: "ledger",
     refs: await snapshotControlRefs({
       repoPath: fixture.seed,
-      remote: "origin",
+      remote: "ledger",
       refs: ["refs/tabellio/validations", "refs/tabellio/reviews"],
     }),
     createdAt,
@@ -130,10 +112,32 @@ test("multi-ref publication is atomic when one remote ref is rejected", async (t
     /git push .* failed/,
   );
   const remote = await runGit({
-    args: ["ls-remote", "--refs", "origin", "refs/tabellio/validations", "refs/tabellio/reviews"],
+    args: ["ls-remote", "--refs", "ledger", "refs/tabellio/validations", "refs/tabellio/reviews"],
     cwd: fixture.seed,
   });
   assert.equal(remote.stdout, "");
+});
+
+test("code-storage remote rejects control-state publication", async (t) => {
+  const fixture = await createFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const ledger = await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/validations" });
+  await ledger.write("runs/one.json", { status: "passed" }, { expectedVersion: null });
+
+  await assert.rejects(
+    snapshotControlRefs({ repoPath: fixture.seed, remote: "origin", refs: ["refs/tabellio/validations"] }),
+    /must not target code-storage remote origin/,
+  );
+  assert.throws(
+    () => createControlRefIntent({
+      operation: "publish",
+      repositoryId: "example/repository",
+      remote: "origin",
+      refs: [{ name: "refs/tabellio/validations", localOid: "a".repeat(40), remoteOid: null }],
+      createdAt,
+    }),
+    /must not target code-storage remote origin/,
+  );
 });
 
 test("control-ref JSON schema encodes runtime uniqueness and required OIDs", async () => {
@@ -158,4 +162,25 @@ function approvalFor(intent, id) {
     expiresAt,
     reason: "Approved exact control-ref transfer.",
   };
+}
+
+async function addControlRemote(repoPath, barePath) {
+  await runGit({ args: ["remote", "add", "ledger", barePath], cwd: repoPath });
+}
+
+async function createValidationPublishIntent(repoPath) {
+  const ledger = await GitJsonLedger.open({ repoPath, ref: "refs/tabellio/validations" });
+  await ledger.write("runs/one.json", { status: "passed" }, { expectedVersion: null });
+  const intent = createControlRefIntent({
+    operation: "publish",
+    repositoryId: "example/repository",
+    remote: "ledger",
+    refs: await snapshotControlRefs({ repoPath, remote: "ledger", refs: ["refs/tabellio/validations"] }),
+    createdAt,
+  });
+  return { intent, ledger };
+}
+
+function removeAfter(t, ...paths) {
+  t.after(() => Promise.all(paths.map((path) => rm(path, { recursive: true, force: true }))));
 }
