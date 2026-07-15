@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { parseGitHubRepositoryRemote } from "./github-repository.mjs";
+
 export async function repositoryIdentity(store, explicitId = null) {
   if (explicitId) return explicitId;
   const remote = await store.gitConfig("remote.origin.url");
@@ -7,6 +9,8 @@ export async function repositoryIdentity(store, explicitId = null) {
 }
 
 function normalizeRepositoryRemote(remote) {
+  const github = parseGitHubRepositoryRemote(remote);
+  if (github) return github.identity;
   if (/^[A-Za-z]:[\\/]/.test(remote) || remote.startsWith("/") || remote.startsWith("\\\\")) {
     return hashedRemote(remote);
   }

@@ -5,10 +5,10 @@ import { createControlRefIntent, snapshotControlRefs } from "./control-ref-trans
 import { contract } from "./contract-checks.mjs";
 import { runExternalCommand } from "./external-command.mjs";
 import { GitJsonLedger } from "./git-json-ledger.mjs";
+import { parseGitHubRepositoryRemote } from "./github-repository.mjs";
 import { runGit } from "./git-process.mjs";
 import { runPreflight } from "./preflight.mjs";
 import { createReleaseIntent } from "./release-operation.mjs";
-import { repositoryIdentity } from "./repository-identity.mjs";
 import { ReviewCycleManager } from "./review-cycle.mjs";
 import { ValidationRunner } from "./validation-runner.mjs";
 import { GitHubProvider } from "../providers/github-provider.mjs";
@@ -34,11 +34,11 @@ export async function planRelease({
   githubProvider = null,
   now = new Date(),
 } = {}) {
-  validatePlanInput({ owner, repo, number, version, notesPath });
+  validatePlanInput({ owner, repo, number, version, notesPath, controlRemote });
   const store = await NativeGitStore.open(resolve(repoPath));
-  const preflight = await preflightRunner({ repoPath: store.repoPath, profile: "release", ghBinary });
+  const preflight = await preflightRunner({ repoPath: store.repoPath, profile: "release", ghBinary, commandRunner, controlRemote });
   assertReadyPreflight(preflight);
-  const repositoryId = await repositoryIdentity(store, explicitRepositoryId);
+  const repositoryId = await bindReleaseRepository(store, { owner, repo, explicitRepositoryId });
   const evidence = await loadReleaseEvidence({ store, notesPath, ghBinary, owner, repo, number, commandRunner });
   const { headCommit, parentCommit, notesSource, pr } = validateReleaseEvidence(evidence, { version, number });
   const validationLedger = await GitJsonLedger.open({ repoPath: store.repoPath, ref: "refs/tabellio/validations" });
@@ -63,12 +63,30 @@ export async function planRelease({
   });
 }
 
-function validatePlanInput({ owner, repo, number, version, notesPath }) {
+function validatePlanInput({ owner, repo, number, version, notesPath, controlRemote }) {
   contract.string(owner, "owner");
   contract.string(repo, "repo");
   contract.positiveInteger(number, "number");
   contract.semver(version, "version");
   contract.safeRelativePath(notesPath, "notesPath");
+  contract.equals(controlRemote, "control", "controlRemote");
+}
+
+async function bindReleaseRepository(store, { owner, repo, explicitRepositoryId }) {
+  const origin = parseGitHubRepositoryRemote(await store.gitConfig("remote.origin.url"));
+  if (!origin) throw new Error("origin must be a supported GitHub repository remote.");
+  assertRequestedRepository(origin, owner, repo);
+  assertExplicitRepositoryId(origin, explicitRepositoryId);
+  return origin.identity;
+}
+
+function assertRequestedRepository(origin, owner, repo) {
+  if (origin.key !== `${owner}/${repo}`.toLowerCase()) throw new Error(`Requested repository ${owner}/${repo} does not match origin ${origin.fullName}.`);
+}
+
+function assertExplicitRepositoryId(origin, explicitRepositoryId) {
+  if (!explicitRepositoryId) return;
+  if (explicitRepositoryId.toLowerCase() !== origin.identity.toLowerCase()) throw new Error(`repositoryId does not match origin ${origin.identity}.`);
 }
 
 function assertReadyPreflight(preflight) {

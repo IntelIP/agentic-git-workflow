@@ -28,6 +28,8 @@ test("release intent binds merged commit, validation, control refs, notes, and a
   const tampered = structuredClone(intent);
   tampered.release.title = "Changed";
   assert.throws(() => validateReleaseIntent(tampered), /integrity.digest/);
+  const longApproval = { ...approval, expiresAt: "2026-07-15T13:01:00.001Z" };
+  assert.throws(() => validateReleaseApproval(longApproval, intent, { now }), /must not exceed one hour/);
 });
 
 test("release executor resumes failed phases without repeating completed work", async (t) => {
@@ -45,7 +47,12 @@ test("release executor resumes failed phases without repeating completed work", 
       return { phase };
     },
   };
-  const executor = new ReleaseExecutor({ repoPath: root, stateRoot: root, actions });
+  const executor = new ReleaseExecutor({
+    repoPath: root,
+    stateRoot: root,
+    actions,
+    lockRunner: async (_options, action) => action(),
+  });
   const intent = exampleIntent();
   const approval = approvalFor(intent, "resume-release");
   await assert.rejects(executor.execute({ intent, approval, now }), /simulated tag failure/);
@@ -53,6 +60,30 @@ test("release executor resumes failed phases without repeating completed work", 
   assert.equal(receipt.status, "succeeded");
   assert.deepEqual(calls, ["verify", "control-refs", "tag", "tag", "github-release"]);
   assert.equal(receipt.phases.every((phase) => phase.status === "completed"), true);
+});
+
+test("release executor serializes concurrent execution of the same approval", async (t) => {
+  const fixture = await createFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  let unblock;
+  const actions = {
+    async run(phase) {
+      if (phase === "verify") await new Promise((resolve) => { unblock = resolve; });
+      return { phase };
+    },
+  };
+  const executor = new ReleaseExecutor({
+    repoPath: fixture.seed,
+    stateRoot: join(fixture.root, "release-lock-state"),
+    actions,
+  });
+  const intent = exampleIntent();
+  const approval = approvalFor(intent, "concurrent-release");
+  const first = executor.execute({ intent, approval, now });
+  while (!unblock) await new Promise((resolve) => setImmediate(resolve));
+  await assert.rejects(executor.execute({ intent, approval, now }), /Another release operation is active/);
+  unblock();
+  assert.equal((await first).status, "succeeded");
 });
 
 test("approved release publishes exact control ref, annotated tag, and GitHub release in isolated repos", async (t) => {
@@ -97,23 +128,56 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
     createdAt,
   });
   const ghCalls = [];
+  const publishedNotes = [];
+  let existingRelease = null;
   const commandRunner = async ({ args }) => {
     ghCalls.push(args);
-    if (args[1] === "view") throw Object.assign(new Error("not found"), { exitCode: 1 });
+    if (args[1] === "view") {
+      if (existingRelease) return { stdout: JSON.stringify(existingRelease), stderr: "", exitCode: 0, signal: null };
+      throw Object.assign(new Error("not found"), { exitCode: 1 });
+    }
+    const notesFile = args[args.indexOf("--notes-file") + 1];
+    publishedNotes.push(await readFile(notesFile, "utf8"));
     return { stdout: "https://github.com/example/repository/releases/tag/v1.2.3\n", stderr: "", exitCode: 0, signal: null };
   };
   const stateRoot = join(fixture.root, "release-state");
-  const executor = await ReleaseExecutor.open({ repoPath: fixture.seed, stateRoot, commandRunner });
+  const executor = await ReleaseExecutor.open({
+    repoPath: fixture.seed,
+    stateRoot,
+    commandRunner,
+    remoteRefReader: async () => head,
+  });
   const approval = approvalFor(intent, "publish-release");
+  await runGit({ args: ["tag", intent.tag, head], cwd: fixture.seed });
+  await runGit({ args: ["push", "origin", intent.tag], cwd: fixture.seed });
+  await runGit({ args: ["tag", "-d", intent.tag], cwd: fixture.seed });
+  await assert.rejects(executor.execute({ intent, approval, now }), /remotely as a lightweight tag/);
+  await runGit({ args: ["push", "origin", `:refs/tags/${intent.tag}`], cwd: fixture.seed });
+  await writeFile(join(fixture.seed, notesPath), "MUTATED WORKTREE NOTES\n");
   const receipt = await executor.execute({ intent, approval, now });
   assert.equal(receipt.status, "succeeded");
   assert.equal(ghCalls.length, 2);
+  assert.deepEqual(publishedNotes, ["Release 1.2.3\n"]);
   const remoteTag = await runGit({ args: ["ls-remote", "--tags", "origin", "refs/tags/v1.2.3^{}"], cwd: fixture.seed });
   assert.equal(remoteTag.stdout.split(/\s+/)[0], head);
   const remoteControl = await runGit({ args: ["ls-remote", "control", "refs/tabellio/validations"], cwd: fixture.seed });
   assert.equal(remoteControl.stdout.split(/\s+/)[0], controlIntent.refs[0].localOid);
   const stored = JSON.parse(await readFile(join(stateRoot, "publish-release.json"), "utf8"));
   assert.equal(stored.status, "succeeded");
+
+  await runGit({ args: ["restore", notesPath], cwd: fixture.seed });
+  existingRelease = {
+    tagName: intent.tag,
+    name: intent.release.title,
+    body: "wrong release body\n",
+    url: "https://github.com/example/repository/releases/tag/v1.2.3",
+    isDraft: false,
+    isPrerelease: false,
+  };
+  await assert.rejects(
+    executor.execute({ intent, approval: approvalFor(intent, "mismatched-existing-release"), now }),
+    /Existing GitHub release does not match final release intent/,
+  );
 });
 
 test("release planning binds merged PR proof after exact validation and terminal review sync", async (t) => {
@@ -141,6 +205,7 @@ test("release planning binds merged PR proof after exact validation and terminal
     env: identityEnv(),
   });
   await runGit({ args: ["push", "origin", "main"], cwd: fixture.seed });
+  await runGit({ args: ["remote", "set-url", "origin", "https://github.com/example/repository.git"], cwd: fixture.seed });
   const store = await NativeGitStore.open(fixture.seed);
   const head = await store.resolveRef("HEAD");
   const parent = await store.resolveRef("HEAD^");
@@ -152,9 +217,19 @@ test("release planning binds merged PR proof after exact validation and terminal
     }
     throw new Error(`Unexpected command: ${args.join(" ")}`);
   };
+  await assert.rejects(planRelease({
+    repoPath: fixture.seed,
+    owner: "example",
+    repo: "other-repository",
+    number: 9,
+    version: "2.0.0",
+    notesPath,
+    preflightRunner: async () => ({ status: "ready", checks: [] }),
+    now,
+  }), /does not match origin example\/repository/);
   const intent = await planRelease({
     repoPath: fixture.seed,
-    repositoryId: "example/repository",
+    repositoryId: "github.com/example/repository",
     owner: "example",
     repo: "repository",
     number: 9,
@@ -171,6 +246,21 @@ test("release planning binds merged PR proof after exact validation and terminal
   assert.equal(intent.validation.status, "passed");
   assert.equal(intent.control.intent.refs.length, 3);
   assert.equal(validateReleaseIntent(intent), intent);
+});
+
+test("release receipt schema fixes every phase to its canonical position", async () => {
+  const schema = JSON.parse(await readFile(new URL("../schemas/release-operation-receipt.schema.json", import.meta.url), "utf8"));
+  assert.deepEqual(schema.properties.phases.prefixItems.map((entry) => entry.$ref), [
+    "#/$defs/verifyPhase",
+    "#/$defs/controlRefsPhase",
+    "#/$defs/tagPhase",
+    "#/$defs/githubReleasePhase",
+  ]);
+  assert.equal(schema.properties.phases.items, false);
+  assert.equal(schema.$defs.verifyPhase.allOf[1].properties.id.const, "verify");
+  assert.equal(schema.$defs.controlRefsPhase.allOf[1].properties.id.const, "control-refs");
+  assert.equal(schema.$defs.tagPhase.allOf[1].properties.id.const, "tag");
+  assert.equal(schema.$defs.githubReleasePhase.allOf[1].properties.id.const, "github-release");
 });
 
 function exampleIntent() {

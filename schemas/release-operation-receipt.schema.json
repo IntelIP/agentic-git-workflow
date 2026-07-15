@@ -16,7 +16,20 @@
       "type": "array",
       "minItems": 4,
       "maxItems": 4,
-      "items": {
+      "prefixItems": [
+        { "$ref": "#/$defs/verifyPhase" },
+        { "$ref": "#/$defs/controlRefsPhase" },
+        { "$ref": "#/$defs/tagPhase" },
+        { "$ref": "#/$defs/githubReleasePhase" }
+      ],
+      "items": false
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "$defs": {
+    "phase": {
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "status", "startedAt", "completedAt", "evidence", "error"],
@@ -28,10 +41,18 @@
           "evidence": { "type": ["object", "null"] },
           "error": { "type": ["string", "null"], "maxLength": 500 }
         }
-      }
     },
-    "createdAt": { "type": "string", "format": "date-time" },
-    "updatedAt": { "type": "string", "format": "date-time" },
-    "completedAt": { "type": ["string", "null"], "format": "date-time" }
+    "verifyPhase": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "verify" } } }]
+    },
+    "controlRefsPhase": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "control-refs" } } }]
+    },
+    "tagPhase": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "tag" } } }]
+    },
+    "githubReleasePhase": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "github-release" } } }]
+    }
   }
 }

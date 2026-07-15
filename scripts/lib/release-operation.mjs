@@ -5,6 +5,7 @@ import { digestObject } from "./stack-operation.mjs";
 
 const RELEASE_OPERATION_VERSION = "tabellio-release-operation/v0.1";
 const RELEASE_APPROVAL_VERSION = "tabellio-release-approval/v0.1";
+const MAX_RELEASE_APPROVAL_MS = 60 * 60 * 1000;
 
 export function createReleaseIntent({
   repository,
@@ -74,6 +75,7 @@ export function validateReleaseIntent(value) {
   contract.exactKeys(value.control, ["intent"], "intent.control");
   validateControlRefIntent(value.control.intent);
   contract.equals(value.control.intent.operation, "publish", "intent.control.intent.operation");
+  contract.equals(value.control.intent.remote, "control", "intent.control.intent.remote");
   contract.equals(value.control.intent.repository.id, value.repository.id, "intent.control.intent.repository.id");
 
   contract.object(value.validation, "intent.validation");
@@ -100,9 +102,13 @@ export function validateReleaseIntent(value) {
 }
 
 export function validateReleaseApproval(value, intent, { now = new Date() } = {}) {
-  return validateOperationApproval(value, intent, {
+  const approval = validateOperationApproval(value, intent, {
     schemaVersion: RELEASE_APPROVAL_VERSION,
     validateIntent: validateReleaseIntent,
     now,
   });
+  if (Date.parse(approval.expiresAt) - Date.parse(approval.approvedAt) > MAX_RELEASE_APPROVAL_MS) {
+    throw new Error("Release approval lifetime must not exceed one hour.");
+  }
+  return approval;
 }

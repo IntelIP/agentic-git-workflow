@@ -4,6 +4,11 @@ import { resolve } from "node:path";
 import { runExternalCommand } from "./external-command.mjs";
 import { runGit } from "./git-process.mjs";
 import { contract } from "./contract-checks.mjs";
+import {
+  parseGitHubRepositoryRemote,
+  readRemoteRefOid,
+  sameGitHubRepository,
+} from "./github-repository.mjs";
 import { validatePlatformConfig } from "./platform-config.mjs";
 import { repositoryIdentity } from "./repository-identity.mjs";
 import { NativeGitStore } from "../providers/native-git-store.mjs";
@@ -18,6 +23,8 @@ export async function runPreflight({
   entireBinary = "entire",
   ghBinary = "gh",
   commandRunner = runExternalCommand,
+  controlRemote = null,
+  remoteRefReader = readRemoteRefOid,
   nodeVersion = process.versions.node,
   now = new Date(),
 } = {}) {
@@ -38,7 +45,7 @@ export async function runPreflight({
     return passed(`Repository ${repositoryId}.`);
   });
 
-  await recordRepositoryChecks({ checks, store, profile });
+  await recordRepositoryChecks({ checks, store, profile, commandRunner, ghBinary, controlRemote, remoteRefReader });
 
   await record(checks, "entire-version", async () => {
     const result = await commandRunner({ binary: entireBinary, args: ["--version"], cwd: resolvedRepo, timeoutMs: 30_000 });
@@ -106,12 +113,12 @@ export function validatePreflightResult(value) {
   return value;
 }
 
-async function recordRepositoryChecks({ checks, store, profile }) {
+async function recordRepositoryChecks({ checks, store, profile, commandRunner, ghBinary, controlRemote, remoteRefReader }) {
   if (!store) return;
   await record(checks, "platform-contract", () => checkPlatformContract(store));
-  await record(checks, "github-remotes", () => checkGitHubRemotes(store));
+  await record(checks, "github-remotes", () => checkGitHubRemotes({ store, commandRunner, ghBinary, controlRemote }));
   await record(checks, "codex-hooks", () => checkCodexHooks(store));
-  if (profile === "release") await record(checks, "clean-main", () => checkCleanMain(store));
+  if (profile === "release") await record(checks, "clean-main", () => checkCleanMain(store, remoteRefReader));
 }
 
 async function checkPlatformContract(store) {
@@ -120,32 +127,70 @@ async function checkPlatformContract(store) {
   return passed("GitHub code storage and external control-state contract valid.");
 }
 
-async function checkGitHubRemotes(store) {
-  const [origin, control] = await Promise.all([
+async function checkGitHubRemotes({ store, commandRunner, ghBinary, controlRemote }) {
+  const platform = await readPlatformConfig(store);
+  const configuredControl = platform.workflow.controlRemoteName;
+  const selectedControl = controlRemote || configuredControl;
+  const selectionBlocker = controlSelectionBlocker(selectedControl, configuredControl);
+  if (selectionBlocker) return selectionBlocker;
+  const [originUrl, controlUrl] = await Promise.all([
     store.gitConfig("remote.origin.url"),
-    store.gitConfig("remote.control.url"),
+    store.gitConfig(`remote.${selectedControl}.url`),
   ]);
-  const rules = [
-    () => origin ? null : blocked("origin remote missing.", "Configure GitHub code remote as origin."),
-    () => control ? null : blocked("control remote missing.", "Configure separate private GitHub control remote."),
-    () => isGitHubRemote(origin) ? null : blocked("origin is not a GitHub remote.", "Set origin to the canonical GitHub repository."),
-    () => isGitHubRemote(control) ? null : blocked("control is not a GitHub remote.", "Set control to the private GitHub control repository."),
-    () => origin !== control ? null : blocked("origin and control resolve to the same URL.", "Use separate GitHub repositories for code and private control state."),
-  ];
-  return firstBlocker(rules, passed("origin and control are distinct GitHub remotes."));
+  const origin = parseGitHubRepositoryRemote(originUrl);
+  const control = parseGitHubRepositoryRemote(controlUrl);
+  const remoteBlocker = githubRemoteBlocker({ originUrl, controlUrl, origin, control, selectedControl });
+  if (remoteBlocker) return remoteBlocker;
+  const result = await commandRunner({
+    binary: ghBinary,
+    args: ["repo", "view", control.fullName, "--json", "nameWithOwner,isPrivate"],
+    cwd: store.repoPath,
+    timeoutMs: 30_000,
+  });
+  return privateControlResult(JSON.parse(result.stdout), control, selectedControl);
+}
+
+function controlSelectionBlocker(selected, configured) {
+  if (selected === configured) return null;
+  return blocked(`Selected control remote ${selected} does not match platform remote ${configured}.`, `Use --control-remote ${configured}.`);
+}
+
+function githubRemoteBlocker({ originUrl, controlUrl, origin, control, selectedControl }) {
+  return firstBlocker([
+    () => originUrl ? null : blocked("origin remote missing.", "Configure GitHub code remote as origin."),
+    () => controlUrl ? null : blocked(`${selectedControl} remote missing.`, "Configure the private GitHub control remote."),
+    () => origin ? null : blocked("origin is not a supported GitHub remote.", "Set origin to the canonical GitHub repository."),
+    () => control ? null : blocked(`${selectedControl} is not a supported GitHub remote.`, "Set the control remote to the private GitHub control repository."),
+    () => sameGitHubRepository(origin, control) ? blocked("origin and control target the same GitHub repository.", "Use separate GitHub repositories for code and private control state.") : null,
+  ], null);
+}
+
+function privateControlResult(repository, control, selectedControl) {
+  if (String(repository.nameWithOwner).toLowerCase() !== control.key) {
+    return blocked("GitHub returned a different control repository identity.", "Correct the control remote and GitHub authentication scope.");
+  }
+  if (repository.isPrivate !== true) {
+    return blocked(`Control repository ${control.fullName} is public.`, "Make the GitHub control repository private before continuing.");
+  }
+  return passed(`origin and ${selectedControl} are distinct; control repository is private.`);
 }
 
 async function checkCodexHooks(store) {
   const hooks = JSON.parse(await readFile(resolve(store.repoPath, ".codex/hooks.json"), "utf8"));
-  const names = new Set(Object.keys(hooks.hooks || {}).map((name) => name.toLowerCase()));
-  const required = ["sessionstart", "userpromptsubmit", "stop", "posttooluse"];
-  const missing = required.filter((name) => !names.has(name));
+  const declared = new Map(Object.entries(hooks.hooks || {}).map(([name, entries]) => [name.toLowerCase(), entries]));
+  const required = new Map([
+    ["sessionstart", "session-start"],
+    ["userpromptsubmit", "user-prompt-submit"],
+    ["stop", "stop"],
+    ["posttooluse", "post-tool-use"],
+  ]);
+  const missing = [...required].filter(([event, command]) => !hasEntireHook(declared.get(event), command)).map(([event]) => event);
   if (missing.length > 0) return blocked(`Codex Entire hooks missing: ${missing.join(", ")}.`, "Reinstall Entire Codex hooks for this repository.");
-  return passed("Four required Entire Codex hooks declared.");
+  return passed("Four required Entire Codex hook commands declared.");
 }
 
-async function checkCleanMain(store) {
-  const [status, branch, head, remoteMain] = await Promise.all([
+async function checkCleanMain(store, remoteRefReader) {
+  const [status, branch, head, trackedMain] = await Promise.all([
     runGit({ args: ["status", "--porcelain=v1"], cwd: store.repoPath }),
     runGit({ args: ["branch", "--show-current"], cwd: store.repoPath }),
     store.resolveRef("HEAD"),
@@ -155,9 +200,27 @@ async function checkCleanMain(store) {
   const rules = [
     () => status.stdout === "" ? null : blocked("Worktree is not clean.", "Commit or remove local changes before release planning."),
     () => branchName === "main" ? null : blocked(`Current branch is ${branchName || "detached"}.`, "Switch to main before release planning."),
-    () => head === remoteMain ? null : blocked("main does not equal origin/main.", "Fetch and fast-forward main before release planning."),
+    () => head === trackedMain ? null : blocked("main does not equal tracked origin/main.", "Fetch and fast-forward main before release planning."),
   ];
-  return firstBlocker(rules, passed(`Clean main at ${head}.`));
+  const localBlocker = firstBlocker(rules, null);
+  if (localBlocker) return localBlocker;
+  const liveMain = await remoteRefReader({ repoPath: store.repoPath, remote: "origin", ref: "refs/heads/main" });
+  if (head !== liveMain) return blocked("main does not equal live origin/main.", "Fetch and fast-forward main before release planning.");
+  return passed(`Clean main equals live origin/main at ${head}.`);
+}
+
+async function readPlatformConfig(store) {
+  const source = await readFile(resolve(store.repoPath, "tabellio.platform.json"), "utf8");
+  return validatePlatformConfig(JSON.parse(source));
+}
+
+function hasEntireHook(entries, expectedCommand) {
+  if (!Array.isArray(entries)) return false;
+  const commandPattern = new RegExp(`(?:^|[\\s;&|'\"])(?:exec\\s+)?entire\\s+hooks\\s+codex\\s+${expectedCommand}(?=$|[\\s;&|'\"])`);
+  return entries.some((entry) => Array.isArray(entry?.hooks) && entry.hooks.some((hook) => {
+    if (hook?.type !== "command" || typeof hook.command !== "string") return false;
+    return commandPattern.test(hook.command);
+  }));
 }
 
 function firstBlocker(rules, fallback) {
@@ -235,10 +298,6 @@ function defaultResolution(id) {
   if (id.startsWith("entire")) return "Install or repair Entire, then rerun preflight.";
   if (id === "github-auth") return "Run gh auth login for github.com.";
   return "Resolve this required check, then rerun preflight.";
-}
-
-function isGitHubRemote(value) {
-  return /^(?:https:\/\/github\.com\/|git@github\.com:)[^/]+\/[^/]+(?:\.git)?$/i.test(value);
 }
 
 function parseEntireVersion(value) {
