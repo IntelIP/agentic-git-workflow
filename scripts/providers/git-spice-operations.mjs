@@ -135,7 +135,7 @@ export class ApprovedGitSpiceOperations {
   }
 }
 
-export class StackOperationExecutionError extends Error {
+class StackOperationExecutionError extends Error {
   constructor(operation, cause, secrets = []) {
     const detail = sanitize(cause?.stderr, secrets);
     super(`git-spice ${operation} operation failed${detail ? `: ${detail}` : "."}`);

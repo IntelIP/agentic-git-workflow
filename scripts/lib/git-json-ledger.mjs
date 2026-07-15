@@ -65,32 +65,27 @@ export class GitJsonLedger {
     };
   }
 
-  async write(path, value, { expectedVersion }) {
+  async write(path, value, { expectedVersion, replacePath = null }) {
     validateLedgerPath(path);
-    if (expectedVersion !== null && !isOid(expectedVersion)) {
-      throw new TypeError("expectedVersion must be null or a Git object ID.");
+    if (replacePath !== null) {
+      validateLedgerPath(replacePath);
+      if (replacePath === path) throw new Error("ledger replacement and destination paths must differ.");
     }
-    const currentVersion = await this.version();
-    if (currentVersion !== expectedVersion) {
-      throw new LedgerConflictError({ ref: this.ref, expected: expectedVersion, actual: currentVersion });
-    }
-    const serialized = JSON.stringify(value, null, 2);
-    if (serialized === undefined) throw new TypeError("ledger value must be JSON-serializable.");
+    return this.#commit({ path, value, expectedVersion, sourcePath: replacePath });
+  }
 
-    const common = await runGit({ args: ["rev-parse", "--git-common-dir"], cwd: this.repoPath });
-    const temporaryRoot = resolve(this.repoPath, common.stdout.trim(), "tabellio", "tmp");
-    await mkdir(temporaryRoot, { recursive: true });
-    const nonce = randomUUID();
-    const indexPath = resolve(temporaryRoot, `${nonce}.index`);
-    const valuePath = resolve(temporaryRoot, `${nonce}.json`);
+  async #commit({ path, value, expectedVersion, sourcePath = null }) {
+    validateExpectedVersion(expectedVersion);
+    const currentVersion = await this.version();
+    assertExpectedVersion(this.ref, expectedVersion, currentVersion);
+    const serialized = serializeLedgerValue(value);
+    await validateReplacement(this.repoPath, currentVersion, sourcePath, path);
+    const { indexPath, valuePath } = await temporaryLedgerPaths(this.repoPath);
     const env = { GIT_INDEX_FILE: indexPath };
     try {
       await writeFile(valuePath, `${serialized}\n`, { flag: "wx" });
-      await runGit({
-        args: currentVersion === null ? ["read-tree", "--empty"] : ["read-tree", currentVersion],
-        cwd: this.repoPath,
-        env,
-      });
+      await initializeLedgerIndex(this.repoPath, currentVersion, env);
+      await removeLedgerSource(this.repoPath, sourcePath, env);
       const blob = await runGit({ args: ["hash-object", "-w", "--", valuePath], cwd: this.repoPath });
       await runGit({
         args: ["update-index", "--add", "--cacheinfo", `100644,${blob.stdout.trim()},${path}`],
@@ -98,27 +93,10 @@ export class GitJsonLedger {
         env,
       });
       const tree = await runGit({ args: ["write-tree"], cwd: this.repoPath, env });
-      const commitArgs = ["commit-tree", tree.stdout.trim(), "-m", `tabellio ledger: ${path}`];
-      if (currentVersion !== null) commitArgs.push("-p", currentVersion);
-      const commit = await runGit({
-        args: commitArgs,
-        cwd: this.repoPath,
-        env: {
-          GIT_AUTHOR_NAME: "Tabellio",
-          GIT_AUTHOR_EMAIL: "tabellio@example.invalid",
-          GIT_COMMITTER_NAME: "Tabellio",
-          GIT_COMMITTER_EMAIL: "tabellio@example.invalid",
-        },
-      });
+      const commit = await createLedgerCommit(this.repoPath, tree.stdout.trim(), currentVersion, sourcePath, path);
       const newVersion = commit.stdout.trim();
-      const expected = currentVersion ?? "0".repeat(newVersion.length);
-      try {
-        await runGit({ args: ["update-ref", this.ref, newVersion, expected], cwd: this.repoPath });
-      } catch (error) {
-        const actual = await this.version();
-        throw new LedgerConflictError({ ref: this.ref, expected: currentVersion, actual });
-      }
-      return { path, version: newVersion, previousVersion: currentVersion };
+      await updateLedgerRef(this, currentVersion, newVersion);
+      return { path, sourcePath, version: newVersion, previousVersion: currentVersion };
     } finally {
       await Promise.all([
         rm(indexPath, { force: true }),
@@ -126,6 +104,95 @@ export class GitJsonLedger {
       ]);
     }
   }
+}
+
+function validateExpectedVersion(expectedVersion) {
+  if (expectedVersion !== null && !isOid(expectedVersion)) {
+    throw new TypeError("expectedVersion must be null or a Git object ID.");
+  }
+}
+
+function assertExpectedVersion(ref, expectedVersion, currentVersion) {
+  if (currentVersion !== expectedVersion) {
+    throw new LedgerConflictError({ ref, expected: expectedVersion, actual: currentVersion });
+  }
+}
+
+function serializeLedgerValue(value) {
+  const serialized = JSON.stringify(value, null, 2);
+  if (serialized === undefined) throw new TypeError("ledger value must be JSON-serializable.");
+  return serialized;
+}
+
+async function validateReplacement(repoPath, currentVersion, sourcePath, path) {
+  if (sourcePath === null) return;
+  if (currentVersion === null) throw new Error(`Ledger entry ${sourcePath} does not exist.`);
+  await requireTreeEntry(repoPath, currentVersion, sourcePath);
+  await requireMissingTreeEntry(repoPath, currentVersion, path);
+}
+
+async function requireTreeEntry(repoPath, version, path) {
+  if (!(await treeEntryExists(repoPath, version, path))) throw new Error(`Ledger entry ${path} does not exist.`);
+}
+
+async function requireMissingTreeEntry(repoPath, version, path) {
+  if (await treeEntryExists(repoPath, version, path)) throw new Error(`Ledger entry ${path} already exists.`);
+}
+
+async function temporaryLedgerPaths(repoPath) {
+  const common = await runGit({ args: ["rev-parse", "--git-common-dir"], cwd: repoPath });
+  const root = resolve(repoPath, common.stdout.trim(), "tabellio", "tmp");
+  await mkdir(root, { recursive: true });
+  const nonce = randomUUID();
+  return {
+    indexPath: resolve(root, `${nonce}.index`),
+    valuePath: resolve(root, `${nonce}.json`),
+  };
+}
+
+function initializeLedgerIndex(repoPath, currentVersion, env) {
+  const args = currentVersion === null ? ["read-tree", "--empty"] : ["read-tree", currentVersion];
+  return runGit({ args, cwd: repoPath, env });
+}
+
+function removeLedgerSource(repoPath, sourcePath, env) {
+  if (sourcePath === null) return Promise.resolve();
+  return runGit({ args: ["update-index", "--force-remove", "--", sourcePath], cwd: repoPath, env });
+}
+
+function createLedgerCommit(repoPath, tree, currentVersion, sourcePath, path) {
+  const detail = sourcePath === null ? path : `${sourcePath} -> ${path}`;
+  const args = ["commit-tree", tree, "-m", `tabellio ledger: ${detail}`];
+  if (currentVersion !== null) args.push("-p", currentVersion);
+  return runGit({
+    args,
+    cwd: repoPath,
+    env: {
+      GIT_AUTHOR_NAME: "Tabellio",
+      GIT_AUTHOR_EMAIL: "tabellio@example.invalid",
+      GIT_COMMITTER_NAME: "Tabellio",
+      GIT_COMMITTER_EMAIL: "tabellio@example.invalid",
+    },
+  });
+}
+
+async function updateLedgerRef(ledger, currentVersion, newVersion) {
+  const expected = currentVersion ?? "0".repeat(newVersion.length);
+  try {
+    await runGit({ args: ["update-ref", ledger.ref, newVersion, expected], cwd: ledger.repoPath });
+  } catch {
+    const actual = await ledger.version();
+    throw new LedgerConflictError({ ref: ledger.ref, expected: currentVersion, actual });
+  }
+}
+
+async function treeEntryExists(repoPath, version, path) {
+  const result = await runGit({
+    args: ["cat-file", "-e", `${version}:${path}`],
+    cwd: repoPath,
+    acceptableExitCodes: [0, 128],
+  });
+  return result.exitCode === 0;
 }
 
 export class LedgerConflictError extends Error {

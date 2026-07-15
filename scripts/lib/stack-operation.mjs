@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 
 import { validateOperationApproval } from "./approval-validation.mjs";
 
-export const STACK_OPERATION_SCHEMA_VERSION = "tabellio-stack-operation/v0.1";
-export const STACK_APPROVAL_SCHEMA_VERSION = "tabellio-stack-approval/v0.1";
+const STACK_OPERATION_SCHEMA_VERSION = "tabellio-stack-operation/v0.1";
+const STACK_APPROVAL_SCHEMA_VERSION = "tabellio-stack-approval/v0.1";
 export const STACK_OPERATIONS = ["submit", "update", "sync", "restack", "merge"];
 
 export function createStackOperationIntent({

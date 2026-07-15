@@ -7,8 +7,8 @@ import { LedgerConflictError } from "./git-json-ledger.mjs";
 import { runGit } from "./git-process.mjs";
 import { digestObject } from "./stack-operation.mjs";
 
-export const VALIDATION_MANIFEST_SCHEMA_VERSION = "tabellio-validation/v0.1";
-export const VALIDATION_RESULT_SCHEMA_VERSION = "tabellio-validation-result/v0.1";
+const VALIDATION_MANIFEST_SCHEMA_VERSION = "tabellio-validation/v0.1";
+const VALIDATION_RESULT_SCHEMA_VERSION = "tabellio-validation-result/v0.1";
 const MAX_OUTPUT_TAIL_BYTES = 16 * 1024;
 
 export class ValidationRunner {

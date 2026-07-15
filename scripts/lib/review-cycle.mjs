@@ -4,8 +4,9 @@ import { runGit } from "./git-process.mjs";
 import { digestObject } from "./stack-operation.mjs";
 import { latestValidationResult } from "./validation-runner.mjs";
 
-export const REVIEW_CYCLE_SCHEMA_VERSION = "tabellio-review-cycle/v0.2";
-export const AGENT_REVIEW_SCHEMA_VERSION = "tabellio-agent-review/v0.1";
+const REVIEW_CYCLE_SCHEMA_VERSION = "tabellio-review-cycle/v0.2";
+const AGENT_REVIEW_SCHEMA_VERSION = "tabellio-agent-review/v0.1";
+const LEGACY_REVIEW_CYCLE_SCHEMA_VERSION = "tabellio-review-cycle/v0.1";
 const MAX_FEEDBACK_ITEMS = 5_000;
 const MAX_AGENT_FINDINGS = 1_000;
 const MAX_TEXT_BODY = 64 * 1024;
@@ -193,6 +194,35 @@ export class ReviewCycleManager {
     return this.#required(number);
   }
 
+  async migrate({
+    number,
+    apply = false,
+    legacyRepositoryId = null,
+    legacyOwner = null,
+    legacyRepo = null,
+  }) {
+    positiveInteger(number, "number");
+    boolean(apply, "apply");
+    const target = {
+      repositoryId: this.repositoryId,
+      owner: this.owner,
+      repo: this.repo,
+      number,
+    };
+    const source = legacyCycleIdentity(target, { legacyRepositoryId, legacyOwner, legacyRepo });
+    const paths = {
+      legacy: reviewCyclePaths(source).legacy,
+      current: reviewCyclePaths(target).current,
+    };
+    const [legacy, current] = await Promise.all([
+      this.ledger.read(paths.legacy),
+      this.ledger.read(paths.current),
+    ]);
+    assertStableMigrationRead(legacy, current);
+    if (current.value) return currentMigrationResult({ legacy, current, paths, identity: target });
+    return legacyMigrationResult({ ledger: this.ledger, legacy, paths, source, target, apply });
+  }
+
   async #read(number) {
     positiveInteger(number, "number");
     return this.ledger.read(cyclePath(this.repositoryId, this.owner, this.repo, number));
@@ -345,6 +375,42 @@ export function validateAgentReview(value) {
   }
   date(value.createdAt, "agent review.createdAt");
   return value;
+}
+
+export function migrateReviewCycleV1ToV2(value, { source, target }) {
+  if (value?.schemaVersion === REVIEW_CYCLE_SCHEMA_VERSION) {
+    validateReviewCycle(value);
+    assertCycleIdentity(value, target);
+    return { cycle: structuredClone(value), changed: false, clearedProviderUrls: 0 };
+  }
+  validateLegacyReviewCycle(value, source);
+  const cycle = structuredClone(value);
+  const clearedProviderUrls = cycle.checks.statuses.filter((status) => status.targetUrl !== null).length;
+  cycle.schemaVersion = REVIEW_CYCLE_SCHEMA_VERSION;
+  cycle.repository.id = target.repositoryId;
+  cycle.provider = { id: "github", owner: target.owner, repo: target.repo };
+  cycle.changeRequest.url = githubPullRequestUrl(target.owner, target.repo, target.number);
+  cycle.feedback = cycle.feedback.map((item) => ({
+    ...item,
+    source: item.source === "forgejo" ? "github" : item.source,
+  }));
+  cycle.checks.statuses = cycle.checks.statuses.map((status) => ({ ...status, targetUrl: null }));
+  cycle.integrity = { algorithm: "sha256", digest: cycleDigest(cycle) };
+  validateReviewCycle(cycle);
+  assertCycleIdentity(cycle, target);
+  return { cycle, changed: true, clearedProviderUrls };
+}
+
+export function reviewCyclePaths({ repositoryId, owner, repo, number }) {
+  requiredString(repositoryId, "repositoryId");
+  requiredString(owner, "owner");
+  requiredString(repo, "repo");
+  positiveInteger(number, "number");
+  const suffix = `${number}-${createHash("sha256").update(`${repositoryId}\0${owner}\0${repo}`).digest("hex").slice(0, 16)}.json`;
+  return {
+    legacy: `cycles/forgejo-${suffix}`,
+    current: `cycles/github-${suffix}`,
+  };
 }
 
 function mergeProviderFeedback(existing, incoming, timestamp) {
@@ -517,7 +583,109 @@ function cycleId(repositoryId, owner, repo, number) {
 }
 
 function cyclePath(repositoryId, owner, repo, number) {
-  return `cycles/github-${number}-${createHash("sha256").update(`${repositoryId}\0${owner}\0${repo}`).digest("hex").slice(0, 16)}.json`;
+  return reviewCyclePaths({ repositoryId, owner, repo, number }).current;
+}
+
+function validateLegacyReviewCycle(value, identity) {
+  object(value, "legacy review cycle");
+  exactKeys(value, ["schemaVersion", "id", "repository", "provider", "changeRequest", "status", "round", "feedback", "fixes", "checks", "events", "createdAt", "updatedAt", "integrity"], "legacy review cycle");
+  equals(value.schemaVersion, LEGACY_REVIEW_CYCLE_SCHEMA_VERSION, "legacy review cycle.schemaVersion");
+  object(value.provider, "legacy review cycle.provider");
+  exactKeys(value.provider, ["id", "owner", "repo"], "legacy review cycle.provider");
+  equals(value.provider.id, "forgejo", "legacy review cycle.provider.id");
+  if (!Array.isArray(value.feedback)) throw new Error("legacy review cycle.feedback must be an array.");
+  value.feedback.forEach((item, index) => member(item?.source, ["forgejo", "agent"], `legacy review cycle.feedback[${index}].source`));
+  object(value.integrity, "legacy review cycle.integrity");
+  exactKeys(value.integrity, ["algorithm", "digest"], "legacy review cycle.integrity");
+  equals(value.integrity.algorithm, "sha256", "legacy review cycle.integrity.algorithm");
+  if (!/^[0-9a-f]{64}$/.test(value.integrity.digest)) throw new Error("legacy review cycle.integrity.digest must be a SHA-256 digest.");
+  if (cycleDigest(value) !== value.integrity.digest) throw new Error("legacy review cycle integrity digest does not match.");
+  validateChangeRequest(value.changeRequest);
+  validateChecks(value.checks);
+  assertCycleIdentity(value, identity);
+}
+
+function assertCycleIdentity(cycle, { repositoryId, owner, repo, number }) {
+  equals(cycle.repository.id, repositoryId, "review cycle.repository.id");
+  equals(cycle.provider.owner, owner, "review cycle.provider.owner");
+  equals(cycle.provider.repo, repo, "review cycle.provider.repo");
+  equals(cycle.changeRequest.number, number, "review cycle.changeRequest.number");
+}
+
+function assertStableMigrationRead(legacy, current) {
+  if (legacy.version !== current.version) {
+    throw new Error("Review ledger changed while migration state was being read; retry.");
+  }
+}
+
+function currentMigrationResult({ legacy, current, paths, identity }) {
+  validateReviewCycle(current.value);
+  assertCycleIdentity(current.value, identity);
+  if (legacy.value) throw new Error(`Both ${paths.legacy} and ${paths.current} exist; refusing ambiguous migration.`);
+  return {
+    state: "current",
+    changed: false,
+    applied: false,
+    sourcePath: null,
+    path: paths.current,
+    version: current.version,
+    clearedProviderUrls: 0,
+    cycle: current.value,
+  };
+}
+
+async function legacyMigrationResult({ ledger, legacy, paths, source, target, apply }) {
+  if (!legacy.value) throw new Error(`Legacy review cycle ${source.number} does not exist at ${paths.legacy}.`);
+  const migrated = migrateReviewCycleV1ToV2(legacy.value, { source, target });
+  if (!apply) return previewMigrationResult(legacy, paths, migrated);
+  const written = await ledger.write(paths.current, migrated.cycle, {
+    expectedVersion: legacy.version,
+    replacePath: paths.legacy,
+  });
+  return appliedMigrationResult(written, paths, migrated);
+}
+
+function legacyCycleIdentity(target, { legacyRepositoryId, legacyOwner, legacyRepo }) {
+  return {
+    repositoryId: legacyRepositoryId ?? target.repositoryId,
+    owner: legacyOwner ?? target.owner,
+    repo: legacyRepo ?? target.repo,
+    number: target.number,
+  };
+}
+
+function previewMigrationResult(legacy, paths, migrated) {
+  return {
+    state: "preview",
+    changed: true,
+    applied: false,
+    sourcePath: paths.legacy,
+    path: paths.current,
+    version: legacy.version,
+    clearedProviderUrls: migrated.clearedProviderUrls,
+    cycle: migrated.cycle,
+  };
+}
+
+function appliedMigrationResult(written, paths, migrated) {
+  return {
+    state: "migrated",
+    changed: true,
+    applied: true,
+    sourcePath: paths.legacy,
+    path: paths.current,
+    version: written.version,
+    previousVersion: written.previousVersion,
+    clearedProviderUrls: migrated.clearedProviderUrls,
+    cycle: migrated.cycle,
+  };
+}
+
+function githubPullRequestUrl(owner, repo, number) {
+  requiredString(owner, "owner");
+  requiredString(repo, "repo");
+  positiveInteger(number, "number");
+  return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pull/${number}`;
 }
 
 function event(type, actor, at, detail) {
@@ -594,6 +762,18 @@ function validateChecks(value) {
   if (!Number.isInteger(value.total) || value.total < 0) throw new Error("checks.total must be a non-negative integer.");
   if (!Array.isArray(value.statuses)) throw new Error("checks.statuses must be an array.");
   if (value.statuses.length > 1_000) throw new Error("checks.statuses must contain at most 1000 entries.");
+  for (const [index, status] of value.statuses.entries()) {
+    const path = `checks.statuses[${index}]`;
+    object(status, path);
+    exactKeys(status, ["id", "context", "state", "description", "targetUrl", "createdAt", "updatedAt"], path);
+    requiredString(status.id, `${path}.id`);
+    requiredString(status.context, `${path}.context`);
+    requiredString(status.state, `${path}.state`);
+    if (status.description !== null) requiredString(status.description, `${path}.description`);
+    if (status.targetUrl !== null) httpUrl(status.targetUrl, `${path}.targetUrl`);
+    if (status.createdAt !== null) date(status.createdAt, `${path}.createdAt`);
+    if (status.updatedAt !== null) date(status.updatedAt, `${path}.updatedAt`);
+  }
 }
 
 function validateEvent(value, path) {

@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-export const CONTEXT_SCHEMA_VERSION = "tabellio-context/v0.1";
-export const CONTEXT_INTEGRITY_SCOPE = "canonical-json-without-integrity";
+const CONTEXT_SCHEMA_VERSION = "tabellio-context/v0.1";
+const CONTEXT_INTEGRITY_SCOPE = "canonical-json-without-integrity";
 
 export function createContextPacket(input) {
   const packet = {

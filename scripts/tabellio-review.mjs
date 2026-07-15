@@ -16,7 +16,7 @@ import { ReviewCycleManager } from "./lib/review-cycle.mjs";
 import { GitHubProvider } from "./providers/github-provider.mjs";
 import { NativeGitStore } from "./providers/native-git-store.mjs";
 
-const COMMANDS = new Set(["sync", "status", "triage", "fix", "import"]);
+const COMMANDS = new Set(["sync", "status", "triage", "fix", "import", "migrate"]);
 const COMMON_OPTIONS = ["repo", "repoId", "owner", "remoteRepo", "number", "actor", "ledgerRef", "validationLedgerRef"];
 const ALLOWED_OPTIONS = {
   sync: [...COMMON_OPTIONS, "apiUrl", "tokenFile"],
@@ -24,6 +24,7 @@ const ALLOWED_OPTIONS = {
   triage: [...COMMON_OPTIONS, "feedbackId", "disposition", "reason"],
   fix: [...COMMON_OPTIONS, "feedbackIds", "commit", "checkpoint", "summary"],
   import: [...COMMON_OPTIONS, "input"],
+  migrate: [...COMMON_OPTIONS, "apply", "legacyRepoId", "legacyOwner", "legacyRemoteRepo"],
 };
 const REQUIRED_OPTIONS = {
   sync: [],
@@ -31,6 +32,7 @@ const REQUIRED_OPTIONS = {
   triage: ["feedbackId", "disposition", "reason"],
   fix: ["feedbackIds", "commit", "checkpoint", "summary"],
   import: ["input"],
+  migrate: [],
 };
 const COMMAND_HANDLERS = {
   sync: syncReview,
@@ -38,6 +40,7 @@ const COMMAND_HANDLERS = {
   triage: triageReview,
   fix: recordReviewFix,
   import: importAgentReview,
+  migrate: migrateReview,
 };
 
 main().catch(reportCliError);
@@ -117,9 +120,19 @@ async function importAgentReview(manager, options) {
   });
 }
 
+function migrateReview(manager, options) {
+  return manager.migrate({
+    number: options.number,
+    apply: options.apply,
+    legacyRepositoryId: options.legacyRepoId,
+    legacyOwner: options.legacyOwner,
+    legacyRepo: options.legacyRemoteRepo,
+  });
+}
+
 function parseArgs(args) {
   const command = args[0];
-  if (!COMMANDS.has(command)) throw new Error("Expected command: sync, status, triage, fix, or import.");
+  requireCommand(command);
   const values = parseOptionPairs(args.slice(1), command);
   assertAllowedOptions(values, ALLOWED_OPTIONS[command]);
   requireOptions(values, ["owner", "remoteRepo", "number"]);
@@ -128,6 +141,25 @@ function parseArgs(args) {
     command,
     ...values,
     number: positiveNumberOption(values.number, "--number"),
-    actor: values.actor ?? process.env.USER ?? "local-agent",
+    actor: defaultActor(values.actor),
+    ...migrationOptions(command, values),
   };
+}
+
+function requireCommand(command) {
+  if (!COMMANDS.has(command)) throw new Error("Expected command: sync, status, triage, fix, import, or migrate.");
+}
+
+function defaultActor(actor) {
+  return actor ?? process.env.USER ?? "local-agent";
+}
+
+function migrationOptions(command, values) {
+  if (command !== "migrate") return {};
+  return { apply: booleanOption(values.apply ?? "false", "--apply") };
+}
+
+function booleanOption(value, flag) {
+  if (!["true", "false"].includes(value)) throw new Error(`${flag} must be true or false.`);
+  return value === "true";
 }

@@ -7,8 +7,8 @@ import { runGit } from "./git-process.mjs";
 import { withOperationLock } from "./operation-lock.mjs";
 import { digestObject } from "./stack-operation.mjs";
 
-export const CONTROL_REF_INTENT_VERSION = "tabellio-control-ref-operation/v0.1";
-export const CONTROL_REF_APPROVAL_VERSION = "tabellio-control-ref-approval/v0.1";
+const CONTROL_REF_INTENT_VERSION = "tabellio-control-ref-operation/v0.1";
+const CONTROL_REF_APPROVAL_VERSION = "tabellio-control-ref-approval/v0.1";
 const DEFAULT_REMOTE_TIMEOUT_MS = 15 * 60 * 1000;
 const CODE_STORAGE_REMOTE = "origin";
 export const CONTROL_REFS = [

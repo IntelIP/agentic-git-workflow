@@ -41,6 +41,29 @@ test("Git JSON ledger works in a bare repository", async (t) => {
   assert.deepEqual(await ledger.read("cycles/bare.json"), { value: { durable: true }, version: written.version });
 });
 
+test("Git JSON ledger atomically moves and rewrites an entry", async (t) => {
+  const fixture = await createFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const ledger = await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/reviews" });
+  const first = await ledger.write("cycles/legacy.json", { schema: "v1" }, { expectedVersion: null });
+  const moved = await ledger.write(
+    "cycles/current.json",
+    { schema: "v2" },
+    { expectedVersion: first.version, replacePath: "cycles/legacy.json" },
+  );
+
+  assert.equal((await ledger.read("cycles/legacy.json")).value, null);
+  assert.deepEqual(await ledger.read("cycles/current.json"), {
+    value: { schema: "v2" },
+    version: moved.version,
+  });
+  assert.deepEqual((await ledger.list("cycles")).paths, ["cycles/current.json"]);
+  await assert.rejects(
+    ledger.write("cycles/next.json", {}, { expectedVersion: moved.version, replacePath: "cycles/missing.json" }),
+    /does not exist/,
+  );
+});
+
 test("concurrent Git JSON ledger writers allow exactly one compare-and-swap winner", async (t) => {
   const fixture = await createFixture();
   t.after(() => rm(fixture.root, { recursive: true, force: true }));
