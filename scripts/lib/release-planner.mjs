@@ -5,7 +5,7 @@ import { createControlRefIntent, snapshotControlRefs } from "./control-ref-trans
 import { contract } from "./contract-checks.mjs";
 import { runExternalCommand } from "./external-command.mjs";
 import { GitJsonLedger } from "./git-json-ledger.mjs";
-import { parseGitHubRepositoryRemote, sameGitHubRepository } from "./github-repository.mjs";
+import { effectiveGitHubRepository, sameGitHubRepository } from "./github-repository.mjs";
 import { runGit } from "./git-process.mjs";
 import { runPreflight } from "./preflight.mjs";
 import { validatePlatformConfig } from "./platform-config.mjs";
@@ -33,6 +33,7 @@ export async function planRelease({
   commandRunner = runExternalCommand,
   preflightRunner = runPreflight,
   githubProvider = null,
+  remoteRepositoryReader = effectiveGitHubRepository,
   now = new Date(),
 } = {}) {
   validatePlanInput({ owner, repo, number, version, notesPath, controlRemote, manifestPath });
@@ -40,7 +41,7 @@ export async function planRelease({
   const preflight = await preflightRunner({ repoPath: store.repoPath, profile: "release", ghBinary, commandRunner, controlRemote });
   assertReadyPreflight(preflight);
   await assertPlatformManifest(store, manifestPath);
-  const repositories = await bindReleaseRepositories(store, { owner, repo, explicitRepositoryId, controlRemote });
+  const repositories = await bindReleaseRepositories(store, { owner, repo, explicitRepositoryId, controlRemote, remoteRepositoryReader });
   const repositoryId = repositories.code.identity;
   const evidence = await loadReleaseEvidence({ store, notesPath, ghBinary, owner, repo, number, commandRunner });
   const { headCommit, parentCommit, notesSource, pr } = validateReleaseEvidence(evidence, { version, number });
@@ -94,15 +95,11 @@ async function assertPlatformManifest(store, manifestPath) {
   contract.equals(manifestPath, platform.validation.manifest, "manifestPath");
 }
 
-async function bindReleaseRepositories(store, { owner, repo, explicitRepositoryId, controlRemote }) {
-  const [originUrl, controlUrl] = await Promise.all([
-    store.gitConfig("remote.origin.url"),
-    store.gitConfig(`remote.${controlRemote}.url`),
+async function bindReleaseRepositories(store, { owner, repo, explicitRepositoryId, controlRemote, remoteRepositoryReader }) {
+  const [origin, control] = await Promise.all([
+    remoteRepositoryReader(store, "origin"),
+    remoteRepositoryReader(store, controlRemote),
   ]);
-  const origin = parseGitHubRepositoryRemote(originUrl);
-  if (!origin) throw new Error("origin must be a supported GitHub repository remote.");
-  const control = parseGitHubRepositoryRemote(controlUrl);
-  if (!control) throw new Error(`${controlRemote} must be a supported GitHub repository remote.`);
   if (sameGitHubRepository(origin, control)) throw new Error("Control repository must differ from the code repository.");
   assertRequestedRepository(origin, owner, repo);
   assertExplicitRepositoryId(origin, explicitRepositoryId);

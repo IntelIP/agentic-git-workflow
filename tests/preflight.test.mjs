@@ -32,6 +32,12 @@ test("preflight fails early with exact Codex hook approval remedy", async (t) =>
   const trust = result.checks.find((check) => check.id === "entire-doctor");
   assert.equal(trust.status, "blocked");
   assert.match(trust.resolution, /Open \/hooks in Codex/);
+
+  const unknown = await runPreflight({
+    repoPath: fixture.seed,
+    commandRunner: fakeCommands({ trusted: true, trustStatus: "UNKNOWN" }),
+  });
+  assert.equal(unknown.checks.find((check) => check.id === "entire-doctor").status, "blocked");
 });
 
 test("release preflight requires clean main equal to origin main", async (t) => {
@@ -66,6 +72,16 @@ test("preflight normalizes GitHub remote identities and requires private control
   await runGit({ args: ["remote", "set-url", "control", "ssh://git@github.com/example/repository-control.git"], cwd: fixture.seed });
   const sshUrl = await runPreflight({ repoPath: fixture.seed, commandRunner: fakeCommands({ trusted: true }) });
   assert.equal(sshUrl.checks.find((check) => check.id === "github-remotes").status, "passed");
+
+  await runGit({ args: ["remote", "set-url", "--add", "--push", "origin", "https://github.com/example/redirected.git"], cwd: fixture.seed });
+  const pushUrl = await runPreflight({ repoPath: fixture.seed, commandRunner: fakeCommands({ trusted: true }) });
+  assert.match(pushUrl.checks.find((check) => check.id === "github-remotes").detail, /effective fetch and push URLs target different/);
+  await runGit({ args: ["config", "--unset-all", "remote.origin.pushurl"], cwd: fixture.seed });
+
+  await runGit({ args: ["config", "url.https://github.com/example/rewritten.git.pushInsteadOf", "https://github.com/example/repository.git"], cwd: fixture.seed });
+  const rewritten = await runPreflight({ repoPath: fixture.seed, commandRunner: fakeCommands({ trusted: true }) });
+  assert.match(rewritten.checks.find((check) => check.id === "github-remotes").detail, /effective fetch and push URLs target different/);
+  await runGit({ args: ["config", "--unset-all", "url.https://github.com/example/rewritten.git.pushInsteadOf"], cwd: fixture.seed });
 
   await runGit({ args: ["remote", "set-url", "control", "git@github.com:EXAMPLE/REPOSITORY.git"], cwd: fixture.seed });
   const same = await runPreflight({ repoPath: fixture.seed, commandRunner: fakeCommands({ trusted: true }) });
@@ -126,11 +142,11 @@ async function writeEntireHooks(repoPath, commandFor) {
   await writeFile(join(repoPath, ".codex", "hooks.json"), JSON.stringify({ hooks }));
 }
 
-function fakeCommands({ trusted, privateControl = true }) {
+function fakeCommands({ trusted, trustStatus = trusted ? "OK" : "REVIEW NEEDED", privateControl = true }) {
   const commands = new Map([
     ["entire:--version", () => result("Entire CLI 0.7.7\n")],
     ["entire:status", () => result('{"enabled":true,"agents":["Codex"],"active_sessions":[]}\n')],
-    ["entire:doctor", () => result(`Metadata branches: OK\nCodex hook trust: ${trusted ? "OK" : "REVIEW NEEDED"}\n`)],
+    ["entire:doctor", () => result(`Metadata branches: OK\nCodex hook trust: ${trustStatus}\n`)],
     ["gh:auth", () => result("", "Logged in with gho_secret\n")],
     ["gh:repo", () => result(`${JSON.stringify({ nameWithOwner: "example/repository-control", isPrivate: privateControl })}\n`)],
   ]);

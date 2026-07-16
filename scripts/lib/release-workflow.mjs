@@ -8,10 +8,9 @@ import {
   snapshotControlRefs,
 } from "./control-ref-transport.mjs";
 import { runExternalCommand } from "./external-command.mjs";
-import { parseGitHubRepositoryRemote, readRemoteRefOid } from "./github-repository.mjs";
+import { effectiveGitHubRepository, readRemoteRefOid } from "./github-repository.mjs";
 import { runGit } from "./git-process.mjs";
 import { withOperationLock } from "./operation-lock.mjs";
-import { repositoryIdentity } from "./repository-identity.mjs";
 import { validateReleaseApproval, validateReleaseIntent } from "./release-operation.mjs";
 import { NativeGitStore } from "../providers/native-git-store.mjs";
 
@@ -31,7 +30,7 @@ export class ReleaseExecutor {
     ghBinary = "gh",
     commandRunner = runExternalCommand,
     remoteRefReader = readRemoteRefOid,
-    codeRepositoryReader = repositoryIdentity,
+    codeRepositoryReader = codeGitHubRemoteRepository,
     controlRepositoryReader = privateGitHubRemoteRepository,
   } = {}) {
     const store = await NativeGitStore.open(resolve(repoPath));
@@ -57,8 +56,6 @@ export class ReleaseExecutor {
     const path = resolve(this.stateRoot, `${approval.id}.json`);
     const existing = await readState(path);
     let state = resumeOrCreate(existing, intent, approval, now);
-    if (state.status === "succeeded") return releaseResult(state, path);
-
     const verification = state.phases.find((entry) => entry.id === "verify");
     state = await executePhase({ state, current: verification, phase: "verify", path, actions: this.actions, intent, approval, now });
     for (const phase of PHASES.slice(1)) {
@@ -76,7 +73,7 @@ class ReleaseActions {
     ghBinary = "gh",
     commandRunner = runExternalCommand,
     remoteRefReader = readRemoteRefOid,
-    codeRepositoryReader = repositoryIdentity,
+    codeRepositoryReader = codeGitHubRemoteRepository,
     controlRepositoryReader = privateGitHubRemoteRepository,
   }) {
     this.store = store;
@@ -159,9 +156,10 @@ class ReleaseActions {
     const remote = await remoteTagState(this.store.repoPath, intent.code.remote, intent.tag);
     assertTagTarget(local, intent, "locally");
     assertTagTarget(remote, intent, "remotely");
-    await ensureLocalTag(this.store.repoPath, intent, local);
+    await ensureLocalTag(this.store.repoPath, intent, local, remote);
     local = await localTagState(this.store.repoPath, intent.tag);
     assertTagTarget(local, intent, "locally");
+    assertMatchingTagObjects(local, remote, intent.tag);
     await ensureRemoteTag(this.store.repoPath, intent, remote);
     return { tag: intent.tag, commit: intent.revision.commit, status: tagPublishStatus(remote) };
   }
@@ -269,15 +267,41 @@ function assertReleaseArtifacts(actual, intent) {
 
 function assertTagTarget(target, intent, location) {
   if (!target) return;
-  if (!target.annotated) throw new Error(`${intent.tag} exists ${location} as a lightweight tag.`);
+  assertAnnotatedTag(target, intent.tag, location);
+  assertTagCommit(target, intent, location);
+  assertTagMessage(target, intent, location);
+}
+
+function assertAnnotatedTag(target, tag, location) {
+  if (!target.annotated) throw new Error(`${tag} exists ${location} as a lightweight tag.`);
+}
+
+function assertTagCommit(target, intent, location) {
   if (target.target !== intent.revision.commit) throw new Error(`${intent.tag} exists ${location} at a different commit.`);
 }
 
-async function ensureLocalTag(repoPath, intent, local) {
+function assertTagMessage(target, intent, location) {
+  if (target.message !== intent.release.title) throw new Error(`${intent.tag} exists ${location} with a different annotation.`);
+}
+
+function assertMatchingTagObjects(local, remote, tag) {
+  if (local && remote && local.object !== remote.object) throw new Error(`${tag} local and remote annotated tag objects differ.`);
+}
+
+async function ensureLocalTag(repoPath, intent, local, remote) {
   if (local) return;
+  if (remote) {
+    await runGit({ args: ["update-ref", `refs/tags/${intent.tag}`, remote.object], cwd: repoPath });
+    return;
+  }
   await runGit({
     args: ["tag", "-a", intent.tag, "-m", intent.release.title, intent.revision.commit],
     cwd: repoPath,
+    env: {
+      GIT_COMMITTER_NAME: "Tabellio Release Automation",
+      GIT_COMMITTER_EMAIL: "release@tabellio.invalid",
+      GIT_COMMITTER_DATE: intent.createdAt,
+    },
   });
 }
 
@@ -350,9 +374,7 @@ async function localTagState(repoPath, tag) {
     acceptableExitCodes: [0, 1, 128],
   });
   if (direct.exitCode !== 0) return null;
-  const type = await runGit({ args: ["cat-file", "-t", direct.stdout.trim()], cwd: repoPath });
-  const target = await runGit({ args: ["rev-parse", `${tag}^{}`], cwd: repoPath });
-  return { annotated: type.stdout.trim() === "tag", target: target.stdout.trim() };
+  return tagStateFromObject(repoPath, direct.stdout.trim());
 }
 
 async function remoteTagState(repoPath, remote, tag) {
@@ -365,19 +387,61 @@ async function remoteTagState(repoPath, remote, tag) {
   const direct = rows.find(([, ref]) => ref === `refs/tags/${tag}`);
   if (!direct) return null;
   const peeled = rows.find(([, ref]) => ref === `refs/tags/${tag}^{}`);
-  return { annotated: Boolean(peeled), target: peeled?.[0] ?? direct[0] };
+  if (!peeled) return { annotated: false, object: direct[0], target: direct[0], message: null };
+  await ensureRemoteTagObject(repoPath, remote, tag, direct[0]);
+  return tagStateFromObject(repoPath, direct[0]);
+}
+
+async function ensureRemoteTagObject(repoPath, remote, tag, object) {
+  const exists = await runGit({
+    args: ["cat-file", "-e", `${object}^{tag}`],
+    cwd: repoPath,
+    acceptableExitCodes: [0, 1, 128],
+  });
+  if (exists.exitCode === 0) return;
+  await runGit({
+    args: ["fetch", "--no-tags", "--no-write-fetch-head", remote, `refs/tags/${tag}`],
+    cwd: repoPath,
+    timeoutMs: 15 * 60 * 1000,
+  });
+}
+
+async function tagStateFromObject(repoPath, object) {
+  const type = await runGit({ args: ["cat-file", "-t", object], cwd: repoPath });
+  if (type.stdout.trim() !== "tag") return { annotated: false, object, target: object, message: null };
+  const [target, payload] = await Promise.all([
+    runGit({ args: ["rev-parse", `${object}^{}`], cwd: repoPath }),
+    runGit({ args: ["cat-file", "tag", object], cwd: repoPath }),
+  ]);
+  return { annotated: true, object, target: target.stdout.trim(), message: tagObjectMessage(payload.stdout) };
+}
+
+function tagObjectMessage(payload) {
+  const separator = payload.indexOf("\n\n");
+  if (separator === -1) return null;
+  const message = payload.slice(separator + 2);
+  return message.endsWith("\n") ? message.slice(0, -1) : message;
 }
 
 function controlPublicationState(snapshot, expected) {
   const actualByName = new Map(snapshot.map((entry) => [entry.name, entry]));
   const states = expected.map((approved) => approvedControlRefState(actualByName.get(approved.name), approved));
-  if (states.every((state) => state === "published")) return "published";
-  if (states.every((state) => state === "pending")) return "pending";
+  if (states.every((state) => ["published", "unchanged"].includes(state))) return "published";
+  if (states.every((state) => ["pending", "unchanged"].includes(state))) return "pending";
   throw new Error("Control refs are only partially published.");
 }
 
 function approvedControlRefState(actual, approved) {
   assertApprovedLocalRef(actual, approved);
+  if (controlRefWasUnchanged(actual, approved)) return "unchanged";
+  return changedControlRefState(actual, approved);
+}
+
+function controlRefWasUnchanged(actual, approved) {
+  return approved.remoteOid === approved.localOid && actual.remoteOid === approved.localOid;
+}
+
+function changedControlRefState(actual, approved) {
   if (actual.remoteOid === approved.localOid) return "published";
   if (actual.remoteOid === approved.remoteOid) return "pending";
   throw new Error(`Approved remote control ref ${approved.name} changed.`);
@@ -397,8 +461,7 @@ async function sourceAtCommit(repoPath, commit, path) {
 }
 
 async function privateGitHubRemoteRepository(store, remote, ghBinary, commandRunner) {
-  const repository = parseGitHubRepositoryRemote(await store.gitConfig(`remote.${remote}.url`));
-  if (!repository) throw new Error(`Release ${remote} remote is not a supported GitHub repository.`);
+  const repository = await effectiveGitHubRepository(store, remote);
   const result = await commandRunner({
     binary: ghBinary,
     args: ["repo", "view", repository.fullName, "--json", "nameWithOwner,isPrivate"],
@@ -408,6 +471,10 @@ async function privateGitHubRemoteRepository(store, remote, ghBinary, commandRun
   const view = JSON.parse(result.stdout);
   if (String(view.nameWithOwner).toLowerCase() !== repository.key) throw new Error("GitHub returned a different control repository identity.");
   return { id: repository.identity, isPrivate: view.isPrivate === true };
+}
+
+async function codeGitHubRemoteRepository(store) {
+  return (await effectiveGitHubRepository(store, "origin")).identity;
 }
 
 function assertControlRepository(actual, intent) {

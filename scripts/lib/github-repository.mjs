@@ -25,6 +25,23 @@ export function sameGitHubRepository(left, right) {
   return left !== null && right !== null && left.key === right.key;
 }
 
+export async function effectiveGitHubRepository(store, remote) {
+  assertSafeRemoteName(remote);
+  const [fetchUrls, pushUrls] = await Promise.all([
+    effectiveRemoteUrls(store.repoPath, remote, false),
+    effectiveRemoteUrls(store.repoPath, remote, true),
+  ]);
+  const repositories = [...fetchUrls, ...pushUrls].map(parseGitHubRepositoryRemote);
+  if (repositories.some((repository) => repository === null)) {
+    throw new Error(`Remote ${remote} has a non-GitHub effective fetch or push URL.`);
+  }
+  const repository = repositories[0];
+  if (!repositories.every((candidate) => sameGitHubRepository(repository, candidate))) {
+    throw new Error(`Remote ${remote} effective fetch and push URLs target different GitHub repositories.`);
+  }
+  return repository;
+}
+
 export async function readRemoteRefOid({ repoPath, remote, ref }) {
   assertSafeRemoteName(remote);
   assertSafeGitRef(ref);
@@ -34,6 +51,16 @@ export async function readRemoteRefOid({ repoPath, remote, ref }) {
     timeoutMs: 15 * 60 * 1000,
   });
   return parseRemoteRefOutput(result.stdout, remote, ref);
+}
+
+async function effectiveRemoteUrls(repoPath, remote, push) {
+  const result = await runGit({
+    args: ["remote", "get-url", ...(push ? ["--push"] : []), "--all", remote],
+    cwd: repoPath,
+  });
+  const urls = result.stdout.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+  if (urls.length === 0) throw new Error(`Remote ${remote} has no effective ${push ? "push" : "fetch"} URL.`);
+  return urls;
 }
 
 function repositoryRemoteParts(value) {

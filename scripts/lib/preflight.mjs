@@ -5,7 +5,7 @@ import { runExternalCommand } from "./external-command.mjs";
 import { runGit } from "./git-process.mjs";
 import { contract } from "./contract-checks.mjs";
 import {
-  parseGitHubRepositoryRemote,
+  effectiveGitHubRepository,
   readRemoteRefOid,
   sameGitHubRepository,
 } from "./github-repository.mjs";
@@ -25,6 +25,7 @@ export async function runPreflight({
   commandRunner = runExternalCommand,
   controlRemote = null,
   remoteRefReader = readRemoteRefOid,
+  remoteRepositoryReader = effectiveGitHubRepository,
   nodeVersion = process.versions.node,
   now = new Date(),
 } = {}) {
@@ -45,7 +46,7 @@ export async function runPreflight({
     return passed(`Repository ${repositoryId}.`);
   });
 
-  await recordRepositoryChecks({ checks, store, profile, commandRunner, ghBinary, controlRemote, remoteRefReader });
+  await recordRepositoryChecks({ checks, store, profile, commandRunner, ghBinary, controlRemote, remoteRefReader, remoteRepositoryReader });
 
   await record(checks, "entire-version", async () => {
     const result = await commandRunner({ binary: entireBinary, args: ["--version"], cwd: resolvedRepo, timeoutMs: 30_000 });
@@ -70,14 +71,11 @@ export async function runPreflight({
   await record(checks, "entire-doctor", async () => {
     const result = await commandRunner({ binary: entireBinary, args: ["doctor"], cwd: resolvedRepo, timeoutMs: 30_000 });
     const output = `${result.stdout}\n${result.stderr}`;
-    if (/Codex hook trust:\s*REVIEW NEEDED/i.test(output)) {
-      return blocked("Codex Entire hooks are not trusted on this machine.", "Open /hooks in Codex, approve all four repository hooks, then rerun preflight.");
-    }
     if (!/Metadata branches:\s*OK/i.test(output)) {
       return blocked("Entire metadata branches are unhealthy or unverifiable.", "Run entire doctor and resolve metadata branch errors.");
     }
-    if (!/Codex hook trust:/i.test(output)) {
-      return blocked("Entire doctor did not verify Codex hook trust.", "Reinstall Entire Codex hooks and approve them through /hooks.");
+    if (!/^Codex hook trust:\s*OK\s*$/im.test(output)) {
+      return blocked("Codex Entire hook trust is unhealthy or unverifiable.", "Open /hooks in Codex, approve all four repository hooks, then rerun preflight.");
     }
     return passed("Entire metadata and Codex hook trust healthy.");
   });
@@ -113,10 +111,10 @@ export function validatePreflightResult(value) {
   return value;
 }
 
-async function recordRepositoryChecks({ checks, store, profile, commandRunner, ghBinary, controlRemote, remoteRefReader }) {
+async function recordRepositoryChecks({ checks, store, profile, commandRunner, ghBinary, controlRemote, remoteRefReader, remoteRepositoryReader }) {
   if (!store) return;
   await record(checks, "platform-contract", () => checkPlatformContract(store));
-  await record(checks, "github-remotes", () => checkGitHubRemotes({ store, commandRunner, ghBinary, controlRemote }));
+  await record(checks, "github-remotes", () => checkGitHubRemotes({ store, commandRunner, ghBinary, controlRemote, remoteRepositoryReader }));
   await record(checks, "codex-hooks", () => checkCodexHooks(store));
   if (profile === "release") await record(checks, "clean-main", () => checkCleanMain(store, remoteRefReader));
 }
@@ -127,20 +125,19 @@ async function checkPlatformContract(store) {
   return passed("GitHub code storage and external control-state contract valid.");
 }
 
-async function checkGitHubRemotes({ store, commandRunner, ghBinary, controlRemote }) {
+async function checkGitHubRemotes({ store, commandRunner, ghBinary, controlRemote, remoteRepositoryReader }) {
   const platform = await readPlatformConfig(store);
   const configuredControl = platform.workflow.controlRemoteName;
   const selectedControl = controlRemote || configuredControl;
   const selectionBlocker = controlSelectionBlocker(selectedControl, configuredControl);
   if (selectionBlocker) return selectionBlocker;
-  const [originUrl, controlUrl] = await Promise.all([
-    store.gitConfig("remote.origin.url"),
-    store.gitConfig(`remote.${selectedControl}.url`),
+  const [origin, control] = await Promise.all([
+    remoteRepositoryReader(store, "origin"),
+    remoteRepositoryReader(store, selectedControl),
   ]);
-  const origin = parseGitHubRepositoryRemote(originUrl);
-  const control = parseGitHubRepositoryRemote(controlUrl);
-  const remoteBlocker = githubRemoteBlocker({ originUrl, controlUrl, origin, control, selectedControl });
-  if (remoteBlocker) return remoteBlocker;
+  if (sameGitHubRepository(origin, control)) {
+    return blocked("origin and control target the same GitHub repository.", "Use separate GitHub repositories for code and private control state.");
+  }
   const result = await commandRunner({
     binary: ghBinary,
     args: ["repo", "view", control.fullName, "--json", "nameWithOwner,isPrivate"],
@@ -153,16 +150,6 @@ async function checkGitHubRemotes({ store, commandRunner, ghBinary, controlRemot
 function controlSelectionBlocker(selected, configured) {
   if (selected === configured) return null;
   return blocked(`Selected control remote ${selected} does not match platform remote ${configured}.`, `Use --control-remote ${configured}.`);
-}
-
-function githubRemoteBlocker({ originUrl, controlUrl, origin, control, selectedControl }) {
-  return firstBlocker([
-    () => originUrl ? null : blocked("origin remote missing.", "Configure GitHub code remote as origin."),
-    () => controlUrl ? null : blocked(`${selectedControl} remote missing.`, "Configure the private GitHub control remote."),
-    () => origin ? null : blocked("origin is not a supported GitHub remote.", "Set origin to the canonical GitHub repository."),
-    () => control ? null : blocked(`${selectedControl} is not a supported GitHub remote.`, "Set the control remote to the private GitHub control repository."),
-    () => sameGitHubRepository(origin, control) ? blocked("origin and control target the same GitHub repository.", "Use separate GitHub repositories for code and private control state.") : null,
-  ], null);
 }
 
 function privateControlResult(repository, control, selectedControl) {

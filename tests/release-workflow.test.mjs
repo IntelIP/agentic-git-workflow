@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { createControlRefIntent, snapshotControlRefs } from "../scripts/lib/control-ref-transport.mjs";
 import { GitJsonLedger } from "../scripts/lib/git-json-ledger.mjs";
+import { parseGitHubRepositoryRemote } from "../scripts/lib/github-repository.mjs";
 import { runGit } from "../scripts/lib/git-process.mjs";
 import { createReleaseIntent, validateReleaseApproval, validateReleaseIntent } from "../scripts/lib/release-operation.mjs";
 import { planRelease } from "../scripts/lib/release-planner.mjs";
@@ -116,11 +117,13 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
   const parent = await store.resolveRef("HEAD^");
   const ledger = await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/validations" });
   const validationWrite = await ledger.write("commits/result.json", { status: "passed" }, { expectedVersion: null });
+  await runGit({ args: ["update-ref", "refs/tabellio/reviews", head], cwd: fixture.seed });
+  await runGit({ args: ["push", "control", "refs/tabellio/reviews"], cwd: fixture.seed });
   const controlIntent = createControlRefIntent({
     operation: "publish",
     repositoryId,
     remote: "control",
-    refs: await snapshotControlRefs({ repoPath: fixture.seed, remote: "control", refs: ["refs/tabellio/validations"] }),
+    refs: await snapshotControlRefs({ repoPath: fixture.seed, remote: "control", refs: ["refs/tabellio/validations", "refs/tabellio/reviews"] }),
     createdAt,
   });
   const intent = createReleaseIntent({
@@ -180,19 +183,44 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
   await writeFile(join(fixture.seed, notesPath), "MUTATED WORKTREE NOTES\n");
   await assert.rejects(executor.execute({ intent, approval, now }), /clean worktree/);
   await runGit({ args: ["restore", notesPath], cwd: fixture.seed });
+  await runGit({ args: ["config", "--unset", "user.name"], cwd: fixture.seed });
+  await runGit({ args: ["config", "--unset", "user.email"], cwd: fixture.seed });
   const result = await executor.execute({ intent, approval, now });
   assert.equal(result.receipt.status, "succeeded");
   assert.equal(Object.hasOwn(result.receipt, "receiptPath"), false);
   assert.equal(result.receiptPath, join(stateRoot, "publish-release.json"));
-  assert.equal(liveReads, 6);
-  assert.equal(ghCalls.length, 2);
-  assert.deepEqual(publishedNotes, ["Release 1.2.3\n"]);
+  const approvedTagObject = (await runGit({ args: ["rev-parse", `refs/tags/${intent.tag}`], cwd: fixture.seed })).stdout.trim();
+
+  await runGit({ args: ["push", "control", ":refs/tabellio/validations"], cwd: fixture.seed });
+  await runGit({ args: ["push", "origin", `:refs/tags/${intent.tag}`], cwd: fixture.seed });
+  const reconciled = await executor.execute({ intent, approval, now });
+  assert.equal(reconciled.receipt.status, "succeeded");
+  assert.equal(liveReads, 7);
+  assert.equal(ghCalls.length, 4);
+  assert.deepEqual(publishedNotes, ["Release 1.2.3\n", "Release 1.2.3\n"]);
   const remoteTag = await runGit({ args: ["ls-remote", "--tags", "origin", "refs/tags/v1.2.3^{}"], cwd: fixture.seed });
   assert.equal(remoteTag.stdout.split(/\s+/)[0], head);
   const remoteControl = await runGit({ args: ["ls-remote", "control", "refs/tabellio/validations"], cwd: fixture.seed });
   assert.equal(remoteControl.stdout.split(/\s+/)[0], controlIntent.refs[0].localOid);
   const stored = JSON.parse(await readFile(join(stateRoot, "publish-release.json"), "utf8"));
   assert.equal(stored.status, "succeeded");
+
+  await runGit({ args: ["tag", "-d", intent.tag], cwd: fixture.seed });
+  await runGit({
+    args: ["tag", "-a", intent.tag, "-m", intent.release.title, intent.revision.commit],
+    cwd: fixture.seed,
+    env: {
+      GIT_COMMITTER_NAME: "Different Tagger",
+      GIT_COMMITTER_EMAIL: "different@example.invalid",
+      GIT_COMMITTER_DATE: "2026-07-15T12:30:00.000Z",
+    },
+  });
+  const alternateTagObject = (await runGit({ args: ["rev-parse", `refs/tags/${intent.tag}`], cwd: fixture.seed })).stdout.trim();
+  assert.notEqual(alternateTagObject, approvedTagObject);
+  await runGit({ args: ["push", "--force", "origin", intent.tag], cwd: fixture.seed });
+  await runGit({ args: ["update-ref", `refs/tags/${intent.tag}`, approvedTagObject], cwd: fixture.seed });
+  await assert.rejects(executor.execute({ intent, approval, now }), /annotated tag objects differ/);
+  await runGit({ args: ["push", "--force", "origin", intent.tag], cwd: fixture.seed });
 
   existingRelease = {
     tagName: intent.tag,
@@ -265,6 +293,11 @@ test("release planning binds merged PR proof after exact validation and terminal
     }
     throw new Error(`Unexpected command: ${args.join(" ")}`);
   };
+  const remoteRepositoryReader = async (_store, remote) => parseGitHubRepositoryRemote(
+    remote === "origin"
+      ? "https://github.com/example/repository.git"
+      : "https://github.com/example/repository-control.git",
+  );
   await assert.rejects(planRelease({
     repoPath: fixture.seed,
     owner: "example",
@@ -284,6 +317,7 @@ test("release planning binds merged PR proof after exact validation and terminal
     version: "2.0.0",
     notesPath,
     preflightRunner: async () => ({ status: "ready", checks: [] }),
+    remoteRepositoryReader,
     now,
   }), /does not match origin example\/repository/);
   const intent = await planRelease({
@@ -298,6 +332,7 @@ test("release planning binds merged PR proof after exact validation and terminal
     commandRunner,
     preflightRunner: async () => ({ status: "ready", checks: [] }),
     githubProvider: provider,
+    remoteRepositoryReader,
     now,
   });
   assert.equal(intent.revision.commit, head);
