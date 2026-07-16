@@ -45,15 +45,16 @@ export class ReleaseExecutor {
     return new ReleaseExecutor({ repoPath: store.repoPath, stateRoot: root, actions, clock });
   }
 
-  async execute({ intent, approval, now = this.clock() }) {
+  async execute({ intent, approval, now = null }) {
+    const startedAt = now ?? await this.clock();
     validateReleaseIntent(intent);
-    validateReleaseApproval(approval, intent, { now });
+    validateReleaseApproval(approval, intent, { now: startedAt });
     return this.lockRunner({
       repoPath: this.repoPath,
       stateRoot: this.stateRoot,
       lockName: "release-operation",
       label: "release operation",
-    }, () => this.#executeLocked({ intent, approval, now }));
+    }, () => this.#executeLocked({ intent, approval, now: startedAt }));
   }
 
   async #executeLocked({ intent, approval, now }) {
@@ -64,7 +65,7 @@ export class ReleaseExecutor {
     const verification = state.phases.find((entry) => entry.id === "verify");
     state = await executePhase({ state, current: verification, phase: "verify", path, actions: this.actions, intent, approval, now });
     for (const phase of PHASES.slice(1)) {
-      const phaseNow = this.clock();
+      const phaseNow = await this.clock();
       validateReleaseApproval(approval, intent, { now: phaseNow });
       const current = state.phases.find((entry) => entry.id === phase);
       state = await executePhase({ state, current, phase, path, actions: this.actions, intent, approval, now: phaseNow });
@@ -131,6 +132,7 @@ class ReleaseActions {
       repoPath: this.store.repoPath,
       remote: intent.control.intent.remote,
       refs: intent.control.intent.refs.map((entry) => entry.name),
+      transportRemote: controlRepository.pushUrl,
     });
     const publication = controlPublicationState(snapshot, intent.control.intent.refs);
     if (publication === "published") {
@@ -152,6 +154,7 @@ class ReleaseActions {
       approval: controlApproval,
       repositoryId: intent.repository.id,
       now,
+      transportRemote: controlRepository.pushUrl,
     });
     return { status: result.status, approvalId: result.approvalId, refs: result.refs };
   }
@@ -175,6 +178,12 @@ class ReleaseActions {
   }
 
   async #publishRelease({ intent }) {
+    const repositoryId = await this.codeRepositoryReader(this.store);
+    assertRepositoryIdentity(repositoryId, intent.repository.id, "Release repository identity changed before GitHub release publication.");
+    const canonicalObject = await canonicalTagObject(this.store.repoPath, intent);
+    const remoteTag = await remoteTagState(this.store.repoPath, intent.code.remote, intent.tag);
+    if (!remoteTag) throw new Error(`${intent.tag} is missing remotely before GitHub release publication.`);
+    assertTagTarget(remoteTag, intent, "remotely", canonicalObject);
     const repository = `${intent.repository.owner}/${intent.repository.name}`;
     const notesSource = await sourceAtCommit(this.store.repoPath, intent.revision.commit, intent.release.notesPath);
     if (sha256(notesSource) !== intent.release.notesDigest) throw new Error("Release notes at the approved commit do not match release intent.");
@@ -516,6 +525,7 @@ async function sourceAtCommit(repoPath, commit, path) {
 
 async function privateGitHubRemoteRepository(store, remote, ghBinary, commandRunner) {
   const repository = await effectiveGitHubRepository(store, remote);
+  if (repository.pushUrls.length !== 1) throw new Error(`Control remote ${remote} must have exactly one effective push URL.`);
   const result = await commandRunner({
     binary: ghBinary,
     args: ["repo", "view", repository.fullName, "--json", "nameWithOwner,isPrivate"],
@@ -524,7 +534,7 @@ async function privateGitHubRemoteRepository(store, remote, ghBinary, commandRun
   });
   const view = JSON.parse(result.stdout);
   if (String(view.nameWithOwner).toLowerCase() !== repository.key) throw new Error("GitHub returned a different control repository identity.");
-  return { id: repository.identity, isPrivate: view.isPrivate === true };
+  return { id: repository.identity, isPrivate: view.isPrivate === true, pushUrl: repository.pushUrls[0] };
 }
 
 async function codeGitHubRemoteRepository(store) {

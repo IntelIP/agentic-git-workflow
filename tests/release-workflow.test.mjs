@@ -195,14 +195,23 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
   let liveResponses = [];
   let currentControlIdentity = intent.control.repository.id;
   let currentControlPrivate = true;
+  let phaseClockReads = 0;
+  let tagDriftObject = null;
   const executor = await ReleaseExecutor.open({
     repoPath: fixture.seed,
     stateRoot,
     commandRunner,
     remoteRefReader: async () => { liveReads += 1; return liveResponses.shift() ?? head; },
     codeRepositoryReader: async () => "github.com/EXAMPLE/REPOSITORY",
-    controlRepositoryReader: async () => ({ id: currentControlIdentity, isPrivate: currentControlPrivate }),
-    clock: () => now,
+    controlRepositoryReader: async () => ({ id: currentControlIdentity, isPrivate: currentControlPrivate, pushUrl: control }),
+    clock: async () => {
+      phaseClockReads += 1;
+      if (tagDriftObject && phaseClockReads === 3) {
+        await runGit({ args: ["push", "--force", "origin", `${tagDriftObject}:refs/tags/${intent.tag}`], cwd: fixture.seed });
+        tagDriftObject = null;
+      }
+      return now;
+    },
   });
   const approval = approvalFor(intent, "publish-release");
   await runGit({ args: ["tag", intent.tag, head], cwd: fixture.seed });
@@ -225,12 +234,28 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
     cwd: fixture.seed,
   });
   await runGit({ args: ["push", "origin", `:refs/tags/${intent.tag}`], cwd: fixture.seed });
+  await runGit({
+    args: ["tag", "-a", "--cleanup=verbatim", intent.tag, "-m", intent.release.title, intent.revision.commit],
+    cwd: fixture.seed,
+    env: {
+      GIT_COMMITTER_NAME: "Different Tagger",
+      GIT_COMMITTER_EMAIL: "different@example.invalid",
+      GIT_COMMITTER_DATE: "2026-07-15T12:30:00.000Z",
+    },
+  });
+  const alternateTagObject = (await runGit({ args: ["rev-parse", `refs/tags/${intent.tag}`], cwd: fixture.seed })).stdout.trim();
+  await runGit({ args: ["tag", "-d", intent.tag], cwd: fixture.seed });
   await writeFile(join(fixture.seed, notesPath), "MUTATED WORKTREE NOTES\n");
   await assert.rejects(executor.execute({ intent, approval, now }), /clean worktree/);
   await runGit({ args: ["restore", notesPath], cwd: fixture.seed });
   liveResponses = [head, parent];
   await assert.rejects(executor.execute({ intent, approval, now }), /immediately before tag publication/);
   assert.deepEqual(liveResponses, []);
+  phaseClockReads = 0;
+  tagDriftObject = alternateTagObject;
+  await assert.rejects(executor.execute({ intent, approval, now }), /noncanonical metadata/);
+  assert.equal(tagDriftObject, null);
+  await runGit({ args: ["push", "--force", "origin", intent.tag], cwd: fixture.seed });
   await runGit({ args: ["config", "--unset", "user.name"], cwd: fixture.seed });
   await runGit({ args: ["config", "--unset", "user.email"], cwd: fixture.seed });
   const result = await executor.execute({ intent, approval, now });
@@ -246,7 +271,7 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
   await runGit({ args: ["push", "origin", `:refs/tags/${intent.tag}`], cwd: fixture.seed });
   const reconciled = await executor.execute({ intent, approval, now });
   assert.equal(reconciled.receipt.status, "succeeded");
-  assert.equal(liveReads, 11);
+  assert.equal(liveReads, 13);
   assert.equal(ghCalls.length, 4);
   assert.deepEqual(publishedNotes, ["Release 1.2.3\n", "Release 1.2.3\n"]);
   const remoteTag = await runGit({ args: ["ls-remote", "--tags", "origin", "refs/tags/v1.2.3^{}"], cwd: fixture.seed });
@@ -257,16 +282,7 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
   assert.equal(stored.status, "succeeded");
 
   await runGit({ args: ["tag", "-d", intent.tag], cwd: fixture.seed });
-  await runGit({
-    args: ["tag", "-a", "--cleanup=verbatim", intent.tag, "-m", intent.release.title, intent.revision.commit],
-    cwd: fixture.seed,
-    env: {
-      GIT_COMMITTER_NAME: "Different Tagger",
-      GIT_COMMITTER_EMAIL: "different@example.invalid",
-      GIT_COMMITTER_DATE: "2026-07-15T12:30:00.000Z",
-    },
-  });
-  const alternateTagObject = (await runGit({ args: ["rev-parse", `refs/tags/${intent.tag}`], cwd: fixture.seed })).stdout.trim();
+  await runGit({ args: ["update-ref", `refs/tags/${intent.tag}`, alternateTagObject], cwd: fixture.seed });
   assert.notEqual(alternateTagObject, approvedTagObject);
   await runGit({ args: ["push", "--force", "origin", intent.tag], cwd: fixture.seed });
   await runGit({ args: ["update-ref", `refs/tags/${intent.tag}`, approvedTagObject], cwd: fixture.seed });

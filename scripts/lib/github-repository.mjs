@@ -39,7 +39,7 @@ export async function effectiveGitHubRepository(store, remote) {
   if (!repositories.every((candidate) => sameGitHubRepository(repository, candidate))) {
     throw new Error(`Remote ${remote} effective fetch and push URLs target different GitHub repositories.`);
   }
-  return repository;
+  return { ...repository, fetchUrls, pushUrls };
 }
 
 export async function readRemoteRefOid({ repoPath, remote, ref }) {
