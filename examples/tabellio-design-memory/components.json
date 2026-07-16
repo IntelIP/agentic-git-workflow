@@ -1,0 +1,4 @@
+{
+  "registry": "@example",
+  "components": ["button", "status-badge"]
+}

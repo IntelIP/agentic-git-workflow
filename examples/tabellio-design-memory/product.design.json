@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "tabellio-product-design/v0.1",
+  "productId": "example/product",
+  "title": "Example Product",
+  "audience": ["Operations teams"],
+  "platforms": ["web"],
+  "visualThesis": "Calm, precise operating software with visible state and clear next actions.",
+  "sources": {
+    "tokens": [{"path": "examples/tabellio-design-memory/tokens.json", "digest": "0854fe3b0c4bf45eaa2ca26cd8450644d57708a0cfc2e5e0ce68e206b75ff781"}],
+    "components": [{"path": "examples/tabellio-design-memory/components.json", "digest": "641926586087b8b8737309f934fee9729ab361c1f90a5af984448b74ef9f804f"}],
+    "decisions": ["examples/tabellio-design-memory/decision.md"]
+  },
+  "referenceLock": {
+    "primary": "Repository tokens and approved product surfaces",
+    "preserve": ["Semantic color", "Dense scan-first layout", "Visible workflow state"],
+    "borrow": [],
+    "roleRules": ["Primary blue is reserved for primary actions and selection"],
+    "reject": ["Decorative gradients", "Ambiguous icon-only actions"],
+    "mediaStrategy": "Use product screenshots only when they explain a real workflow."
+  },
+  "policy": {
+    "themes": ["light", "dark"],
+    "viewports": [
+      {"id": "desktop", "width": 1440, "height": 1000, "deviceScaleFactor": 1},
+      {"id": "mobile", "width": 390, "height": 844, "deviceScaleFactor": 1}
+    ],
+    "states": ["default", "loading", "empty", "error"],
+    "surfaces": [
+      {"id": "home", "kind": "route", "target": "/home", "viewports": ["desktop"], "themes": ["light"], "states": ["default"]}
+    ],
+    "forbiddenPatterns": ["Raw palette utilities outside token sources"],
+    "accessibility": {"standard": "WCAG 2.2 AA", "keyboardRequired": true, "reducedMotionRequired": true}
+  },
+  "baselines": {"manifest": "examples/tabellio-design-memory/baselines.json"}
+}

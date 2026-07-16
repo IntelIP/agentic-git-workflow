@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:visual-baseline-manifest:v0.1",
+  "title": "Tabellio Visual Baseline Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "productId", "profilePath", "profileDigest", "sourceCommit", "approvedAt", "approvedBy", "captures"],
+  "properties": {
+    "schemaVersion": {"const": "tabellio-visual-baselines/v0.1"},
+    "status": {"enum": ["proposed", "approved"]},
+    "productId": {"type": "string", "minLength": 1},
+    "profilePath": {"type": "string", "minLength": 1},
+    "profileDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "sourceCommit": {"type": ["string", "null"], "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+    "approvedAt": {"type": ["string", "null"], "format": "date-time"},
+    "approvedBy": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {"type": {"enum": ["human", "team"]}, "id": {"type": "string", "minLength": 1}}
+    },
+    "captures": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "surface", "kind", "viewport", "theme", "state", "artifact", "maskSelectors", "maxDiffPixelRatio"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "surface": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["route", "component"]},
+          "viewport": {"type": "string", "minLength": 1},
+          "theme": {"enum": ["light", "dark", "high-contrast"]},
+          "state": {"type": "string", "minLength": 1},
+          "artifact": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["uri", "digest", "mediaType", "bytes"],
+            "properties": {
+              "uri": {"type": "string", "format": "uri", "not": {"pattern": "^file:"}},
+              "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "mediaType": {"type": "string", "minLength": 1},
+              "bytes": {"type": "integer", "minimum": 0}
+            }
+          },
+          "maskSelectors": {"type": "array", "maxItems": 100, "items": {"type": "string", "minLength": 1}},
+          "maxDiffPixelRatio": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "approved"}}},
+      "then": {
+        "properties": {
+          "sourceCommit": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+          "approvedAt": {"type": "string", "format": "date-time"},
+          "approvedBy": {"type": "object"},
+          "captures": {"minItems": 1}
+        }
+      },
+      "else": {
+        "properties": {
+          "approvedAt": {"type": "null"},
+          "approvedBy": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "proposed"}, "captures": {"maxItems": 0}}},
+      "then": {"properties": {"sourceCommit": {"type": "null"}}}
+    },
+    {
+      "if": {"properties": {"status": {"const": "proposed"}, "captures": {"minItems": 1}}},
+      "then": {"properties": {"sourceCommit": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"}}}
+    }
+  ]
+}

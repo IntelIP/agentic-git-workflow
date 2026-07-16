@@ -17,6 +17,8 @@
     "tabellio-review": "scripts/tabellio-review.mjs",
     "tabellio-validate": "scripts/tabellio-validate.mjs",
     "tabellio-validator": "scripts/tabellio-validator.mjs",
+    "tabellio-design-memory": "scripts/check-tabellio-design-memory.mjs",
+    "tabellio-design-captures": "scripts/finalize-tabellio-visual-captures.mjs",
     "tabellio-control-ref": "scripts/tabellio-control-ref.mjs",
     "tabellio-ledger": "scripts/tabellio-ledger.mjs",
     "tabellio-preflight": "scripts/tabellio-preflight.mjs",
@@ -62,6 +64,7 @@
     "tabellio:release:example:check": "node scripts/check-tabellio-release.mjs --intent examples/tabellio-release/minimal-intent.json",
     "tabellio:platform:check": "node scripts/check-tabellio-platform.mjs",
     "tabellio:validate:example:check": "node scripts/check-tabellio-validation.mjs --manifest tabellio.validation.json && node scripts/check-tabellio-validation.mjs --manifest examples/tabellio-validation/product-manifest.json && node scripts/check-tabellio-validation.mjs --evidence examples/tabellio-validation/minimal-validator-evidence.json && node scripts/check-tabellio-validation.mjs --result examples/tabellio-validation/minimal-result.json",
+    "tabellio:design-memory:example:check": "node scripts/check-tabellio-design-memory.mjs --repo . --profile examples/tabellio-design-memory/product.design.json",
     "tabellio:ledger": "node scripts/tabellio-ledger.mjs",
     "tabellio:ledger:check": "node scripts/check-tabellio-ledger.mjs --ledger tabellio-ledger.json",
     "tabellio:ledger:example:check": "node scripts/check-tabellio-ledger.mjs --ledger examples/tabellio-ledger/minimal-ledger.json",
@@ -72,7 +75,7 @@
     "tabellio:evidence:write": "node scripts/write-tabellio-evidence-envelope.mjs --out tabellio-pr-evidence.json",
     "tabellio:evidence:check": "node scripts/check-tabellio-evidence-envelope.mjs --evidence tabellio-pr-evidence.json",
     "tabellio:external-actions:check": "node scripts/check-tabellio-external-actions.mjs --evidence tabellio-pr-evidence.json",
-    "check": "npm test && npm run tabellio:platform:check && npm run tabellio:run:example:check && npm run tabellio:stack:example:check && npm run tabellio:stack:operation:example:check && npm run tabellio:review:example:check && npm run tabellio:validate:example:check && npm run tabellio:ledger:example:check && npm run tabellio:release:example:check && npm run tabellio:context:example:check && npm run tabellio:evidence:example:check && node scripts/check-tabellio-external-actions.mjs --evidence examples/tabellio-evidence/minimal-evidence.json"
+    "check": "npm test && npm run tabellio:platform:check && npm run tabellio:run:example:check && npm run tabellio:stack:example:check && npm run tabellio:stack:operation:example:check && npm run tabellio:review:example:check && npm run tabellio:validate:example:check && npm run tabellio:design-memory:example:check && npm run tabellio:ledger:example:check && npm run tabellio:release:example:check && npm run tabellio:context:example:check && npm run tabellio:evidence:example:check && node scripts/check-tabellio-external-actions.mjs --evidence examples/tabellio-evidence/minimal-evidence.json"
   },
   "engines": {
     "node": ">=20"

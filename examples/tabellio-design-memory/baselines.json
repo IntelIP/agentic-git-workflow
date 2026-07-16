@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "tabellio-visual-baselines/v0.1",
+  "status": "approved",
+  "productId": "example/product",
+  "profilePath": "examples/tabellio-design-memory/product.design.json",
+  "profileDigest": "1304dd93039569be68388cd313c60621d85a289e196738f3e25a84a995f34767",
+  "sourceCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "approvedAt": "2026-07-16T20:00:00.000Z",
+  "approvedBy": {"type": "human", "id": "product-owner"},
+  "captures": [
+    {
+      "id": "home-desktop-light-default",
+      "surface": "/home",
+      "kind": "route",
+      "viewport": "desktop",
+      "theme": "light",
+      "state": "default",
+      "artifact": {
+        "uri": "https://artifacts.example.invalid/sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "mediaType": "image/png",
+        "bytes": 1234
+      },
+      "maskSelectors": [],
+      "maxDiffPixelRatio": 0.01
+    }
+  ]
+}
