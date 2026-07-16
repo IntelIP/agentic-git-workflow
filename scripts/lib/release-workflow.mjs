@@ -295,7 +295,7 @@ async function ensureLocalTag(repoPath, intent, local, remote) {
     return;
   }
   await runGit({
-    args: ["tag", "-a", intent.tag, "-m", intent.release.title, intent.revision.commit],
+    args: ["tag", "-a", "--cleanup=verbatim", intent.tag, "-m", intent.release.title, intent.revision.commit],
     cwd: repoPath,
     env: {
       GIT_COMMITTER_NAME: "Tabellio Release Automation",

@@ -134,7 +134,7 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
     controlIntent,
     controlRepository: { id: "github.com/example/repository-control" },
     validation: { runId: "validation-test", resultVersion: validationWrite.version, status: "passed", headCommit: head },
-    release: { title: "Tabellio v1.2.3", notesPath, notesDigest: digest("Release 1.2.3\n") },
+    release: { title: "# Tabellio v1.2.3  ", notesPath, notesDigest: digest("Release 1.2.3\n") },
     createdAt,
   });
   const ghCalls = [];
@@ -207,7 +207,7 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
 
   await runGit({ args: ["tag", "-d", intent.tag], cwd: fixture.seed });
   await runGit({
-    args: ["tag", "-a", intent.tag, "-m", intent.release.title, intent.revision.commit],
+    args: ["tag", "-a", "--cleanup=verbatim", intent.tag, "-m", intent.release.title, intent.revision.commit],
     cwd: fixture.seed,
     env: {
       GIT_COMMITTER_NAME: "Different Tagger",
