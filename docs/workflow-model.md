@@ -12,6 +12,8 @@ Tabellio turns an agentic coding run into a GitHub-bound context packet and, whe
 | Workspace | Isolated Git worktree assigned to one agent run |
 | Context packet | Integrity-protected binding between task, actor, exact commits, changed files, checkpoints, and merge preview |
 | Evidence envelope | JSON record of Git state, changed files, commands, checks, approvals, side-effect policy, and artifacts |
+| Acceptance contract | Committed outcomes, invariants, forbidden outcomes, risk, and required validator types |
+| Validator evidence | Bounded metrics, cost telemetry, and immutable artifact references emitted by one product validator |
 | External action policy | Default-deny policy for deploys, migrations, infra, DNS, billing, secrets, provider reads, and destructive actions |
 | Pull request | Human review surface for the diff plus evidence summary |
 | Stack | Ordered PR chain for larger changes |
@@ -34,7 +36,7 @@ task
   -> resolve immutable base commit
   -> isolated worktree and agent branch
   -> small commits and mandatory Entire checkpoint metadata
-  -> deterministic checks
+  -> deterministic and product-validity checks
   -> context packet
   -> read-only merge preview
   -> evidence envelope
@@ -60,7 +62,7 @@ Each PR should expose:
 
 The context packet is usable without a pull request. GitHub is the review and code-distribution surface; Tabellio's evidence remains independently verifiable.
 
-Evidence is not a claim that the work is correct. Evidence is the record reviewers inspect before trusting the work.
+Raw evidence is not automatically a correctness claim. A typed validation decision proves that the exact committed evidence met the committed thresholds. Human review still owns product judgment outside the declared contract.
 
 ## Stack Discipline
 
@@ -112,6 +114,6 @@ Future versions can add:
 - SLSA provenance export
 - in-toto link metadata
 - OpenTelemetry spans
-- model/tool eval suites
+- path-based validator policy selection
 - automated git-spice submission and merge orchestration for GitHub
 - GitHub merge queue metadata

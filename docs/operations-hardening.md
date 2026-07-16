@@ -11,9 +11,10 @@ Tabellio keeps code and control state in standard Git objects, but production sa
 
 ## Bounded Work
 
-- Validation manifests allow at most 50 commands, 100 arguments per command, and one-hour command timeouts.
+- Validation manifests allow at most 50 commands or validators, 100 arguments per entry, and one-hour command timeouts.
 - Timed-out commands receive `SIGTERM`, then `SIGKILL` after one second. Fail-fast suites mark remaining commands skipped.
 - Full stdout and stderr are hashed; only the newest 16 KiB of each stream is retained.
+- Typed evidence files are limited to 1 MiB, 100 metrics, and 50 immutable artifact references. Required missing cost telemetry blocks validation instead of being treated as zero spend.
 - Agent reviews allow at most 1,000 findings. Review cycles bound feedback, fixes, check statuses, titles, bodies, summaries, event details, and retained event history.
 - Remote control-ref reads and atomic pushes use a 15-minute timeout. Local atomic ref updates use a 30-second timeout.
 

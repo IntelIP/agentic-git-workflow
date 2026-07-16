@@ -4,6 +4,29 @@ All notable changes to Tabellio are recorded here.
 
 ## Unreleased
 
+## 0.4.0 - 2026-07-16
+
+### Added
+
+- Product-validity manifests that bind acceptance outcomes, invariants, forbidden outcomes, risk, and required validator types to an exact candidate commit.
+- Typed schema, semantic, workflow, visual, operational, and security evidence with bounded metrics, artifact digests, and cost telemetry.
+- Fail-closed `passed`, `failed`, and `blocked` decisions with threshold and cost-budget enforcement.
+- `tabellio-validate gate` for CI enforcement without external JSON parsing.
+
+### Changed
+
+- Product-changing work now requires evidence beyond command exit status when the manifest declares typed validators.
+- Missing required evidence, missing metrics, command errors, timeouts, and unknown required cost telemetry block readiness.
+- Existing v0.1 manifests and v0.1/v0.2 result readers remain supported during migration.
+
+### Release Gates
+
+- `tabellio-preflight --profile release`
+- `npm run check`
+- Fallow whole-repository and changed-code scans
+- `npm pack --dry-run --json`
+- Exact merged-head Tabellio validation
+
 ## 0.3.0 - 2026-07-15
 
 ### Added

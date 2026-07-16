@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:validator-evidence:v0.1",
+  "title": "Tabellio Validator Evidence",
+  "type": "object",
+  "required": ["schemaVersion", "validatorId", "status", "summary", "metrics", "cost", "artifacts"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "tabellio-validator-evidence/v0.1" },
+    "validatorId": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["passed", "failed", "blocked"] },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "metrics": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "required": ["name", "value", "unit"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "value": { "type": "number" },
+          "unit": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "cost": { "$ref": "#/$defs/cost" },
+    "artifacts": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "$ref": "#/$defs/artifact" }
+    }
+  },
+  "$defs": {
+    "cost": {
+      "type": "object",
+      "required": ["telemetry", "usd", "modelCalls", "toolCalls"],
+      "additionalProperties": false,
+      "properties": {
+        "telemetry": { "enum": ["available", "unavailable", "not_applicable"] },
+        "usd": { "type": ["number", "null"], "minimum": 0 },
+        "modelCalls": { "type": ["integer", "null"], "minimum": 0 },
+        "toolCalls": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "telemetry": { "const": "available" } }, "required": ["telemetry"] },
+          "then": {
+            "properties": {
+              "usd": { "type": "number" },
+              "modelCalls": { "type": "integer" },
+              "toolCalls": { "type": "integer" }
+            }
+          },
+          "else": {
+            "properties": {
+              "usd": { "type": "null" },
+              "modelCalls": { "type": "null" },
+              "toolCalls": { "type": "null" }
+            }
+          }
+        }
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["name", "uri", "digest", "mediaType", "bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "uri": { "type": "string", "format": "uri", "not": { "pattern": "^file:" } },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "mediaType": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

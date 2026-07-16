@@ -15,7 +15,7 @@ try {
     repoPath: store.repoPath,
     ref: options.ledgerRef ?? "refs/tabellio/validations",
   });
-  if (options.command === "run") {
+  if (["run", "gate"].includes(options.command)) {
     const runner = new ValidationRunner({ store, ledger });
     const result = await runner.run({
       repositoryId: await repositoryIdentity(store, options.repoId),
@@ -25,6 +25,7 @@ try {
       runnerId: options.runnerId ?? "local",
     });
     console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+    if (options.command === "gate" && result.result.status !== "passed") process.exitCode = 1;
   } else {
     const commit = await store.resolveRef(options.commit ?? "HEAD");
     const result = await latestValidationResult(ledger, commit);
@@ -37,7 +38,7 @@ try {
 
 function parseArgs(args) {
   const command = args[0];
-  if (!["run", "latest"].includes(command)) throw new Error("Expected command: run or latest.");
+  if (!["run", "gate", "latest"].includes(command)) throw new Error("Expected command: run, gate, or latest.");
   const values = {};
   for (let index = 1; index < args.length; index += 2) {
     const flag = args[index];
@@ -47,7 +48,7 @@ function parseArgs(args) {
     if (Object.hasOwn(values, key)) throw new Error(`Duplicate option: ${flag}.`);
     values[key] = value;
   }
-  const allowed = command === "run"
+  const allowed = ["run", "gate"].includes(command)
     ? ["repo", "repoId", "commit", "base", "manifest", "runnerId", "ledgerRef"]
     : ["repo", "commit", "ledgerRef"];
   for (const key of Object.keys(values)) if (!allowed.includes(key)) throw new Error(`Unsupported option: --${key}.`);

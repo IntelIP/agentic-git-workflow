@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:validation-result:v0.3",
+  "title": "Tabellio Product Validation Result",
+  "type": "object",
+  "required": ["schemaVersion", "runId", "repository", "revision", "checkpointRevision", "suite", "runner", "status", "checkpoints", "commands", "acceptance", "validators", "decision", "startedAt", "completedAt", "integrity"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "tabellio-validation-result/v0.3" },
+    "runId": { "type": "string", "minLength": 1 },
+    "repository": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": { "id": { "type": "string", "minLength": 1 } }
+    },
+    "revision": { "$ref": "#/$defs/revision" },
+    "checkpointRevision": { "$ref": "#/$defs/revision" },
+    "suite": {
+      "type": "object",
+      "required": ["id", "manifestPath", "manifestDigest"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "manifestPath": { "type": "string", "minLength": 1 },
+        "manifestDigest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "required": ["id", "runtime"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "runtime": { "type": "string", "minLength": 1 }
+      }
+    },
+    "status": { "enum": ["passed", "failed", "blocked"] },
+    "checkpoints": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "commands": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/commandResult" } },
+    "acceptance": { "$ref": "#/$defs/acceptanceResult" },
+    "validators": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "$ref": "#/$defs/validatorResult" } },
+    "decision": { "$ref": "#/$defs/decision" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "integrity": {
+      "type": "object",
+      "required": ["algorithm", "digest"],
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "digest": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  },
+  "$defs": {
+    "oid": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "validatorType": { "enum": ["static", "schema", "semantic", "workflow", "visual", "operational", "security"] },
+    "revision": {
+      "type": "object",
+      "required": ["baseCommit", "mergeBase", "headCommit"],
+      "additionalProperties": false,
+      "properties": {
+        "baseCommit": { "$ref": "#/$defs/oid" },
+        "mergeBase": { "$ref": "#/$defs/oid" },
+        "headCommit": { "$ref": "#/$defs/oid" }
+      }
+    },
+    "output": {
+      "type": "object",
+      "required": ["bytes", "digest", "tail", "truncated"],
+      "additionalProperties": false,
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 0 },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "tail": { "type": "string" },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "commandResult": {
+      "type": "object",
+      "required": ["id", "argv", "cwd", "required", "status", "exitCode", "signal", "durationMs", "stdout", "stderr", "startedAt", "completedAt", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "argv": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "cwd": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "status": { "enum": ["passed", "failed", "error", "timed_out", "skipped"] },
+        "exitCode": { "type": ["integer", "null"] },
+        "signal": { "type": ["string", "null"] },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "stdout": { "$ref": "#/$defs/output" },
+        "stderr": { "$ref": "#/$defs/output" },
+        "startedAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "completedAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "error": { "type": ["string", "null"] }
+      }
+    },
+    "acceptanceResult": {
+      "type": "object",
+      "required": ["id", "source", "risk", "digest", "requiredValidatorTypes"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "risk": { "enum": ["low", "medium", "high", "critical"] },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "requiredValidatorTypes": { "type": "array", "minItems": 1, "maxItems": 7, "uniqueItems": true, "items": { "$ref": "#/$defs/validatorType" } }
+      }
+    },
+    "validatorResult": {
+      "type": "object",
+      "required": ["id", "type", "required", "status", "evidence", "reasons"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "$ref": "#/$defs/validatorType" },
+        "required": { "type": "boolean" },
+        "status": { "enum": ["passed", "failed", "blocked", "skipped"] },
+        "evidence": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["path", "digest", "report"],
+              "additionalProperties": false,
+              "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "digest": { "$ref": "#/$defs/sha256" },
+                "report": { "$ref": "#/$defs/evidenceReport" }
+              }
+            }
+          ]
+        },
+        "reasons": { "type": "array", "maxItems": 128, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 2000 } }
+      }
+    },
+    "evidenceReport": {
+      "type": "object",
+      "required": ["schemaVersion", "validatorId", "status", "summary", "metrics", "cost", "artifacts"],
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": "tabellio-validator-evidence/v0.1" },
+        "validatorId": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["passed", "failed", "blocked"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "metrics": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/metric" } },
+        "cost": { "$ref": "#/$defs/cost" },
+        "artifacts": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/artifact" } }
+      }
+    },
+    "metric": {
+      "type": "object",
+      "required": ["name", "value", "unit"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "value": { "type": "number" },
+        "unit": { "type": "string", "minLength": 1 }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "required": ["telemetry", "usd", "modelCalls", "toolCalls"],
+      "additionalProperties": false,
+      "properties": {
+        "telemetry": { "enum": ["available", "unavailable", "not_applicable"] },
+        "usd": { "type": ["number", "null"], "minimum": 0 },
+        "modelCalls": { "type": ["integer", "null"], "minimum": 0 },
+        "toolCalls": { "type": ["integer", "null"], "minimum": 0 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "telemetry": { "const": "available" } }, "required": ["telemetry"] },
+          "then": {
+            "properties": {
+              "usd": { "type": "number" },
+              "modelCalls": { "type": "integer" },
+              "toolCalls": { "type": "integer" }
+            }
+          },
+          "else": {
+            "properties": {
+              "usd": { "type": "null" },
+              "modelCalls": { "type": "null" },
+              "toolCalls": { "type": "null" }
+            }
+          }
+        }
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["name", "uri", "digest", "mediaType", "bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "uri": { "type": "string", "format": "uri", "not": { "pattern": "^file:" } },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "mediaType": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": ["status", "reasons", "totalCostUsd", "costTelemetryComplete"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["passed", "failed", "blocked"] },
+        "reasons": { "type": "array", "maxItems": 6400, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 2000 } },
+        "totalCostUsd": { "type": "number", "minimum": 0 },
+        "costTelemetryComplete": { "type": "boolean" }
+      }
+    }
+  }
+}
