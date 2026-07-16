@@ -111,15 +111,26 @@ async function removeGeneratedTree(path) {
 }
 
 async function makeTreeOwnerWritable(path) {
-  const info = await lstat(path).catch(() => null);
+  const info = await lstat(path).catch((error) => {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  });
   if (!info) return;
   if (info.isSymbolicLink()) return;
   if (!info.isDirectory()) {
-    await chmod(path, info.mode | 0o600);
+    await chmod(path, info.mode | 0o600).catch((error) => {
+      if (error?.code !== "ENOENT") throw error;
+    });
     return;
   }
-  await chmod(path, info.mode | 0o700);
-  for (const entry of await readdir(path)) {
+  await chmod(path, info.mode | 0o700).catch((error) => {
+    if (error?.code !== "ENOENT") throw error;
+  });
+  const entries = await readdir(path).catch((error) => {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  });
+  for (const entry of entries) {
     await makeTreeOwnerWritable(resolve(path, entry));
   }
 }
