@@ -4,6 +4,30 @@ All notable changes to Tabellio are recorded here.
 
 ## Unreleased
 
+## 0.3.0 - 2026-07-15
+
+### Added
+
+- Deterministic `tabellio-preflight` checks for Node, GitHub remotes, GitHub CLI authentication, platform configuration, Entire version and enablement, required Codex hooks, hook trust, and release-main cleanliness.
+- Exact `/hooks` recovery guidance when Entire integration exists but Codex has not trusted the repository hook commands.
+- Integrity-bound `tabellio-release-operation/v0.1` plans and short-lived release approvals.
+- Resumable, idempotent post-merge release execution for private control-ref publication, annotated tag publication, and GitHub release creation.
+- Isolated consumer-repository dogfood covering release planning, exact validation, terminal review sync, control transport, tag publication, failure recovery, and GitHub release invocation.
+
+### Changed
+
+- Release planning now runs exact merged-head validation and terminal review synchronization before requesting remote-write approval.
+- Pull-request merge remains an explicit operator gate; release execution begins only after the resulting commit and all publishable control OIDs are known.
+
+### Release Gates
+
+- `tabellio-preflight --profile release`
+- `npm run check`
+- Fallow whole-repository dead-code and stale-suppression scan
+- Fallow changed-code audit against `origin/main`
+- `npm pack --dry-run --json`
+- Exact merged-head Tabellio validation
+
 ## 0.2.0 - 2026-07-15
 
 ### Added

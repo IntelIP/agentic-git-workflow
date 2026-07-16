@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:validation-result:v0.2",
+  "title": "Tabellio Validation Result",
+  "type": "object",
+  "required": ["schemaVersion", "runId", "repository", "revision", "checkpointRevision", "suite", "runner", "status", "checkpoints", "commands", "startedAt", "completedAt", "integrity"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "tabellio-validation-result/v0.2" },
+    "runId": { "type": "string", "minLength": 1 },
+    "repository": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": { "id": { "type": "string", "minLength": 1 } }
+    },
+    "revision": {
+      "type": "object",
+      "required": ["baseCommit", "mergeBase", "headCommit"],
+      "additionalProperties": false,
+      "properties": {
+        "baseCommit": { "$ref": "#/$defs/oid" },
+        "mergeBase": { "$ref": "#/$defs/oid" },
+        "headCommit": { "$ref": "#/$defs/oid" }
+      }
+    },
+    "checkpointRevision": {
+      "type": "object",
+      "required": ["baseCommit", "mergeBase", "headCommit"],
+      "additionalProperties": false,
+      "properties": {
+        "baseCommit": { "$ref": "#/$defs/oid" },
+        "mergeBase": { "$ref": "#/$defs/oid" },
+        "headCommit": { "$ref": "#/$defs/oid" }
+      }
+    },
+    "suite": {
+      "type": "object",
+      "required": ["id", "manifestPath", "manifestDigest"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "manifestPath": { "type": "string", "minLength": 1 },
+        "manifestDigest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "required": ["id", "runtime"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "runtime": { "type": "string", "minLength": 1 }
+      }
+    },
+    "status": { "enum": ["passed", "failed"] },
+    "checkpoints": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "commands": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/commandResult" } },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "integrity": {
+      "type": "object",
+      "required": ["algorithm", "digest"],
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "digest": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  },
+  "$defs": {
+    "oid": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "output": {
+      "type": "object",
+      "required": ["bytes", "digest", "tail", "truncated"],
+      "additionalProperties": false,
+      "properties": {
+        "bytes": { "type": "integer", "minimum": 0 },
+        "digest": { "$ref": "#/$defs/sha256" },
+        "tail": { "type": "string" },
+        "truncated": { "type": "boolean" }
+      }
+    },
+    "commandResult": {
+      "type": "object",
+      "required": ["id", "argv", "cwd", "required", "status", "exitCode", "signal", "durationMs", "stdout", "stderr", "startedAt", "completedAt", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "argv": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "cwd": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "status": { "enum": ["passed", "failed", "error", "timed_out", "skipped"] },
+        "exitCode": { "type": ["integer", "null"] },
+        "signal": { "type": ["string", "null"] },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "stdout": { "$ref": "#/$defs/output" },
+        "stderr": { "$ref": "#/$defs/output" },
+        "startedAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "completedAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "error": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

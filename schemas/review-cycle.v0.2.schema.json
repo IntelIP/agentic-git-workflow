@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:review-cycle:v0.2",
+  "title": "Tabellio Review Cycle",
+  "type": "object",
+  "required": ["schemaVersion", "id", "repository", "provider", "changeRequest", "status", "round", "feedback", "fixes", "checks", "events", "createdAt", "updatedAt", "integrity"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "tabellio-review-cycle/v0.2" },
+    "id": { "type": "string", "minLength": 1 },
+    "repository": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": { "id": { "type": "string", "minLength": 1 } }
+    },
+    "provider": {
+      "type": "object",
+      "required": ["id", "owner", "repo"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "const": "github" },
+        "owner": { "type": "string", "minLength": 1 },
+        "repo": { "type": "string", "minLength": 1 }
+      }
+    },
+    "changeRequest": {
+      "type": "object",
+      "required": ["id", "number", "url", "title", "state", "draft", "mergeable", "headBranch", "headCommit", "baseBranch", "baseCommit", "updatedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "number": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "format": "uri", "pattern": "^https?://" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "state": { "enum": ["open", "closed", "merged"] },
+        "draft": { "type": "boolean" },
+        "mergeable": { "type": ["boolean", "null"] },
+        "headBranch": { "type": "string", "minLength": 1 },
+        "headCommit": { "$ref": "#/$defs/oid" },
+        "baseBranch": { "type": "string", "minLength": 1 },
+        "baseCommit": { "$ref": "#/$defs/oid" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "status": { "enum": ["draft", "needs_triage", "changes_requested", "update_required", "blocked", "validating", "ready", "merged", "closed"] },
+    "round": { "type": "integer", "minimum": 1 },
+    "feedback": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": { "$ref": "#/$defs/feedback" }
+    },
+    "fixes": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": { "$ref": "#/$defs/fix" }
+    },
+    "checks": { "$ref": "#/$defs/checks" },
+    "events": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/event" }
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "integrity": {
+      "type": "object",
+      "required": ["algorithm", "digest"],
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  },
+  "$defs": {
+    "oid": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+    "nullableString": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+    "nullableDate": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+    "feedback": {
+      "type": "object",
+      "required": ["id", "source", "providerId", "kind", "author", "title", "body", "path", "line", "commit", "severity", "providerState", "disposition", "resolution", "fixId", "createdAt", "updatedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "source": { "enum": ["github", "agent"] },
+        "providerId": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["review", "review-comment", "issue-comment", "check", "agent-finding"] },
+        "author": { "$ref": "#/$defs/nullableString" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "body": { "type": "string", "maxLength": 65536 },
+        "path": { "$ref": "#/$defs/nullableString" },
+        "line": { "type": ["integer", "null"], "minimum": 1 },
+        "commit": { "oneOf": [{ "$ref": "#/$defs/oid" }, { "type": "null" }] },
+        "severity": { "enum": ["critical", "high", "medium", "low", "info", null] },
+        "providerState": { "enum": ["open", "resolved", "stale"] },
+        "disposition": { "enum": ["pending", "actionable", "informational", "wont-fix"] },
+        "resolution": { "enum": ["open", "fixed", "dismissed"] },
+        "fixId": { "$ref": "#/$defs/nullableString" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "fix": {
+      "type": "object",
+      "required": ["id", "feedbackIds", "originalCommit", "commit", "checkpointId", "summary", "actor", "published", "createdAt"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "feedbackIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "originalCommit": { "$ref": "#/$defs/oid" },
+        "commit": { "$ref": "#/$defs/oid" },
+        "checkpointId": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "actor": { "type": "string", "minLength": 1 },
+        "published": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "required": ["commit", "state", "total", "statuses"],
+      "additionalProperties": false,
+      "properties": {
+        "commit": { "$ref": "#/$defs/oid" },
+        "state": { "type": "string", "minLength": 1 },
+        "total": { "type": "integer", "minimum": 0 },
+        "statuses": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "required": ["id", "context", "state", "description", "targetUrl", "createdAt", "updatedAt"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "context": { "type": "string", "minLength": 1 },
+              "state": { "type": "string", "minLength": 1 },
+              "description": { "$ref": "#/$defs/nullableString" },
+              "targetUrl": { "$ref": "#/$defs/nullableString" },
+              "createdAt": { "$ref": "#/$defs/nullableDate" },
+              "updatedAt": { "$ref": "#/$defs/nullableDate" }
+            }
+          }
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["id", "type", "actor", "at", "detail"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["synced", "triaged", "fix-recorded", "agent-review-imported"] },
+        "actor": { "type": "string", "minLength": 1 },
+        "at": { "type": "string", "format": "date-time" },
+        "detail": { "type": "string", "minLength": 1, "maxLength": 2000 }
+      }
+    }
+  }
+}

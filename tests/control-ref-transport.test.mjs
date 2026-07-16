@@ -80,6 +80,29 @@ test("control ref transport opens bare repositories", async (t) => {
   assert.equal(transport.repoPath, await realpath(fixture.bare));
 });
 
+test("control ref transport pins an approved target when the remote name changes", async (t) => {
+  const fixture = await createFixture();
+  await addControlRemote(fixture.seed, fixture.bare);
+  const alternate = join(fixture.root, "alternate.git");
+  await runGit({ args: ["init", "--bare", alternate], cwd: fixture.root });
+  const stateRoot = await mkdtemp(join(tmpdir(), "tabellio-control-ref-pinned-"));
+  removeAfter(t, fixture.root, stateRoot);
+  const { intent } = await createValidationPublishIntent(fixture.seed);
+  await runGit({ args: ["remote", "set-url", "ledger", alternate], cwd: fixture.seed });
+  const transport = await ApprovedControlRefTransport.open({ repoPath: fixture.seed, stateRoot });
+  await transport.execute({
+    intent,
+    approval: approvalFor(intent, "pinned-remote"),
+    repositoryId: "example/repository",
+    transportRemote: fixture.bare,
+    now,
+  });
+  const expected = await runGit({ args: ["ls-remote", "--refs", fixture.bare, "refs/tabellio/validations"], cwd: fixture.seed });
+  const unexpected = await runGit({ args: ["ls-remote", "--refs", alternate, "refs/tabellio/validations"], cwd: fixture.seed });
+  assert.match(expected.stdout, new RegExp(intent.refs[0].localOid));
+  assert.equal(unexpected.stdout, "");
+});
+
 test("multi-ref publication is atomic when one remote ref is rejected", async (t) => {
   const fixture = await createFixture();
   await addControlRemote(fixture.seed, fixture.bare);

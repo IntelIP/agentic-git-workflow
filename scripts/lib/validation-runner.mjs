@@ -8,7 +8,8 @@ import { runGit } from "./git-process.mjs";
 import { digestObject } from "./stack-operation.mjs";
 
 const VALIDATION_MANIFEST_SCHEMA_VERSION = "tabellio-validation/v0.1";
-const VALIDATION_RESULT_SCHEMA_VERSION = "tabellio-validation-result/v0.1";
+const VALIDATION_RESULT_SCHEMA_VERSION_V1 = "tabellio-validation-result/v0.1";
+const VALIDATION_RESULT_SCHEMA_VERSION_V2 = "tabellio-validation-result/v0.2";
 const MAX_OUTPUT_TAIL_BYTES = 16 * 1024;
 
 export class ValidationRunner {
@@ -21,6 +22,8 @@ export class ValidationRunner {
     repositoryId,
     commit,
     base,
+    checkpointHead = null,
+    checkpointBase = null,
     manifestPath = "tabellio.validation.json",
     runnerId = "local",
     now = new Date(),
@@ -28,23 +31,20 @@ export class ValidationRunner {
     requiredString(repositoryId, "repositoryId");
     requiredString(runnerId, "runnerId");
     validateRelativePath(manifestPath, "manifestPath");
-    const [headCommit, baseCommit] = await Promise.all([
-      this.store.resolveRef(commit),
-      this.store.resolveRef(base),
-    ]);
-    const mergeBase = (await runGit({
-      args: ["merge-base", baseCommit, headCommit],
-      cwd: this.store.repoPath,
-    })).stdout.trim();
+    if ((checkpointHead === null) !== (checkpointBase === null)) throw new Error("checkpointHead and checkpointBase must be supplied together.");
+    const revision = await resolveRevision(this.store, base, commit);
+    const checkpointRevision = checkpointHead === null
+      ? revision
+      : await resolveRevision(this.store, checkpointBase, checkpointHead);
     const manifestSource = await runGit({
-      args: ["show", `${headCommit}:${manifestPath}`],
+      args: ["show", `${revision.headCommit}:${manifestPath}`],
       cwd: this.store.repoPath,
     });
     const manifest = JSON.parse(manifestSource.stdout);
     validateValidationManifest(manifest);
-    const checkpoints = await checkpointIds(this.store.repoPath, mergeBase, headCommit);
+    const checkpoints = await checkpointIds(this.store.repoPath, checkpointRevision.mergeBase, checkpointRevision.headCommit);
     if (manifest.requireEntireCheckpoint && checkpoints.length === 0) {
-      throw new Error(`Validation range ${mergeBase}..${headCommit} has no Entire checkpoint.`);
+      throw new Error(`Checkpoint range ${checkpointRevision.mergeBase}..${checkpointRevision.headCommit} has no Entire checkpoint.`);
     }
 
     const runId = `validation-${randomUUID()}`;
@@ -57,7 +57,7 @@ export class ValidationRunner {
     const startedAt = now.toISOString();
     const commands = [];
     try {
-      await runGit({ args: ["worktree", "add", "--detach", workspace, headCommit], cwd: this.store.repoPath });
+      await runGit({ args: ["worktree", "add", "--detach", workspace, revision.headCommit], cwd: this.store.repoPath });
       await mkdir(resolve(home, "tmp"), { recursive: true });
       let stopped = false;
       for (const command of manifest.commands) {
@@ -81,10 +81,11 @@ export class ValidationRunner {
     const completedAt = new Date().toISOString();
     const requiredFailed = commands.some((command, index) => manifest.commands[index].required && command.status !== "passed");
     const result = {
-      schemaVersion: VALIDATION_RESULT_SCHEMA_VERSION,
+      schemaVersion: VALIDATION_RESULT_SCHEMA_VERSION_V2,
       runId,
       repository: { id: repositoryId },
-      revision: { baseCommit, mergeBase, headCommit },
+      revision,
+      checkpointRevision,
       suite: {
         id: manifest.id,
         manifestPath,
@@ -100,7 +101,7 @@ export class ValidationRunner {
     };
     result.integrity.digest = validationResultDigest(result);
     validateValidationResult(result);
-    const path = validationPath(headCommit, runId);
+    const path = validationPath(revision.headCommit, runId);
     const written = await writeResultWithRetry(this.ledger, path, result);
     return { result, path, version: written.version };
   }
@@ -154,17 +155,14 @@ export function validateValidationManifest(value) {
 
 export function validateValidationResult(value) {
   object(value, "validation result");
-  exactKeys(value, ["schemaVersion", "runId", "repository", "revision", "suite", "runner", "status", "checkpoints", "commands", "startedAt", "completedAt", "integrity"], "validation result");
-  equals(value.schemaVersion, VALIDATION_RESULT_SCHEMA_VERSION, "validation result.schemaVersion");
+  member(value.schemaVersion, [VALIDATION_RESULT_SCHEMA_VERSION_V1, VALIDATION_RESULT_SCHEMA_VERSION_V2], "validation result.schemaVersion");
+  exactKeys(value, validationResultKeys(value.schemaVersion), "validation result");
   requiredString(value.runId, "validation result.runId");
   object(value.repository, "validation result.repository");
   exactKeys(value.repository, ["id"], "validation result.repository");
   requiredString(value.repository.id, "validation result.repository.id");
-  object(value.revision, "validation result.revision");
-  exactKeys(value.revision, ["baseCommit", "mergeBase", "headCommit"], "validation result.revision");
-  oid(value.revision.baseCommit, "validation result.revision.baseCommit");
-  oid(value.revision.mergeBase, "validation result.revision.mergeBase");
-  oid(value.revision.headCommit, "validation result.revision.headCommit");
+  validateRevision(value.revision, "validation result.revision");
+  validateCheckpointRevision(value);
   object(value.suite, "validation result.suite");
   exactKeys(value.suite, ["id", "manifestPath", "manifestDigest"], "validation result.suite");
   requiredString(value.suite.id, "validation result.suite.id");
@@ -188,6 +186,25 @@ export function validateValidationResult(value) {
   const expectedStatus = value.commands.some((command) => command.required && command.status !== "passed") ? "failed" : "passed";
   if (value.status !== expectedStatus) throw new Error("validation result status does not match required command results.");
   return value;
+}
+
+function validationResultKeys(schemaVersion) {
+  const keys = ["schemaVersion", "runId", "repository", "revision", "suite", "runner", "status", "checkpoints", "commands", "startedAt", "completedAt", "integrity"];
+  return schemaVersion === VALIDATION_RESULT_SCHEMA_VERSION_V2 ? [...keys, "checkpointRevision"] : keys;
+}
+
+function validateCheckpointRevision(value) {
+  if (value.schemaVersion === VALIDATION_RESULT_SCHEMA_VERSION_V2) {
+    validateRevision(value.checkpointRevision, "validation result.checkpointRevision");
+  }
+}
+
+function validateRevision(value, path) {
+  object(value, path);
+  exactKeys(value, ["baseCommit", "mergeBase", "headCommit"], path);
+  oid(value.baseCommit, `${path}.baseCommit`);
+  oid(value.mergeBase, `${path}.mergeBase`);
+  oid(value.headCommit, `${path}.headCommit`);
 }
 
 async function runValidationCommand(command, workspace, home) {
@@ -294,6 +311,18 @@ function outputAccumulator() {
 
 function emptyOutput() {
   return { bytes: 0, digest: createHash("sha256").update("").digest("hex"), tail: "", truncated: false };
+}
+
+async function resolveRevision(store, base, head) {
+  const [baseCommit, headCommit] = await Promise.all([
+    store.resolveRef(base),
+    store.resolveRef(head),
+  ]);
+  const mergeBase = (await runGit({
+    args: ["merge-base", baseCommit, headCommit],
+    cwd: store.repoPath,
+  })).stdout.trim();
+  return { baseCommit, mergeBase, headCommit };
 }
 
 async function checkpointIds(cwd, baseCommit, headCommit) {

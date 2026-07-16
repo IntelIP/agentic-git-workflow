@@ -5,6 +5,8 @@ import test from "node:test";
 import { GitJsonLedger } from "../scripts/lib/git-json-ledger.mjs";
 import {
   ReviewCycleManager,
+  reviewCycleHasReadyEvidence,
+  reviewCycleHasReleaseReadiness,
   validateAgentReview,
   validateReviewCycle,
 } from "../scripts/lib/review-cycle.mjs";
@@ -124,8 +126,48 @@ test("review cycle persists GitHub and agent feedback through triage and checkpo
   provider.setHead(fixCommit2);
   result = await manager.sync({ number: 7, actor: "sync-agent", now: new Date("2026-07-10T20:06:00.000Z") });
   assert.equal(result.cycle.status, "ready");
+  assert.equal(reviewCycleHasReadyEvidence(result.cycle, fixCommit2), true);
   assert.equal(result.cycle.fixes.length, 2);
   assert.equal(validateReviewCycle(result.cycle), result.cycle);
+
+  const legacyReady = structuredClone(result.cycle);
+  legacyReady.schemaVersion = "tabellio-review-cycle/v0.2";
+  legacyReady.events = legacyReady.events.filter((item) => item.type !== "ready");
+  const { integrity: _integrity, ...legacyUnsigned } = legacyReady;
+  legacyReady.integrity = { algorithm: "sha256", digest: digestObject(legacyUnsigned) };
+  await ledger.write(result.path, legacyReady, { expectedVersion: result.version });
+  provider.setState("merged");
+  result = await manager.sync({ number: 7, actor: "sync-agent", now: new Date("2026-07-10T20:06:30.000Z") });
+  assert.equal(result.cycle.status, "merged");
+  assert.equal(reviewCycleHasReadyEvidence(result.cycle, fixCommit2), true);
+  assert.equal(reviewCycleHasReleaseReadiness(result.cycle, fixCommit2), true);
+
+  const saturated = structuredClone(result.cycle);
+  const readyEvent = saturated.events.find((item) => item.type === "ready");
+  saturated.events = [
+    readyEvent,
+    ...Array.from({ length: 99 }, (_, index) => ({
+      id: `saturation-${index}`,
+      type: "synced",
+      actor: "sync-agent",
+      at: "2026-07-10T20:06:35.000Z",
+      detail: `Saturation event ${index}.`,
+    })),
+  ];
+  const { integrity: _saturatedIntegrity, ...saturatedUnsigned } = saturated;
+  saturated.integrity = { algorithm: "sha256", digest: digestObject(saturatedUnsigned) };
+  await ledger.write(result.path, saturated, { expectedVersion: result.version });
+  result = await manager.sync({ number: 7, actor: "sync-agent", now: new Date("2026-07-10T20:06:40.000Z") });
+  assert.equal(result.cycle.events.length, 100);
+  assert.equal(reviewCycleHasReadyEvidence(result.cycle, fixCommit2), true);
+  assert.equal(reviewCycleHasReleaseReadiness(result.cycle, fixCommit2), true);
+
+  provider.setChecks("failure");
+  result = await manager.sync({ number: 7, actor: "sync-agent", now: new Date("2026-07-10T20:06:45.000Z") });
+  assert.equal(result.cycle.status, "merged");
+  assert.equal(reviewCycleHasReleaseReadiness(result.cycle, fixCommit2), false);
+  provider.setChecks("success");
+  provider.setState("open");
 
   provider.setDraft(true);
   result = await manager.sync({ number: 7, actor: "sync-agent", now: new Date("2026-07-10T20:07:00.000Z") });
@@ -139,7 +181,7 @@ test("review cycle persists GitHub and agent feedback through triage and checkpo
   tampered.status = "ready";
   assert.throws(() => validateReviewCycle(tampered), /digest does not match|status does not match/);
   const history = await runGit({ args: ["rev-list", "--count", "refs/tabellio/reviews"], cwd: fixture.seed });
-  assert.equal(Number(history.stdout.trim()), 9);
+  assert.equal(Number(history.stdout.trim()), 14);
   const worktree = await runGit({ args: ["status", "--porcelain=v1"], cwd: fixture.seed });
   assert.equal(worktree.stdout, "");
 });
@@ -206,17 +248,19 @@ function fakeProvider(fixture) {
   let headCommit = fixture.featureCommit;
   let draft = false;
   let mergeable = true;
+  let state = "open";
   return {
     setChecks(value) { checkState = value; },
     setHead(value) { headCommit = value; },
     setDraft(value) { draft = value; },
     setMergeable(value) { mergeable = value; },
+    setState(value) { state = value; },
     async changeRequest() {
       return {
         id: "21",
         number: 7,
         title: "Agent change",
-        state: "open",
+        state,
         draft,
         mergeable,
         source: { branch: "feature", commit: headCommit },

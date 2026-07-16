@@ -72,14 +72,16 @@ export function validateControlRefApproval(value, intent, { now = new Date() } =
   });
 }
 
-export async function snapshotControlRefs({ repoPath, remote, refs, env = {} }) {
+export async function snapshotControlRefs({ repoPath, remote, refs, env = {}, transportRemote = null }) {
   controlRemoteName(remote);
+  const target = transportRemote ?? remote;
+  transportTarget(target);
   const unique = [...new Set(refs)];
   if (unique.length === 0 || unique.some((ref) => !CONTROL_REFS.includes(ref))) throw new Error("refs must be a non-empty subset of canonical control refs.");
   return Promise.all(unique.map(async (name) => ({
     name,
     localOid: await localOid(repoPath, name),
-    remoteOid: await remoteOid(repoPath, remote, name, env),
+    remoteOid: await remoteOid(repoPath, target, name, env),
   })));
 }
 
@@ -111,10 +113,12 @@ export class ApprovedControlRefTransport {
   }
 
   // fallow-ignore-next-line unused-class-member
-  async execute({ intent, approval, repositoryId, now = new Date() }) {
+  async execute({ intent, approval, repositoryId, now = new Date(), transportRemote = null }) {
     validateControlRefIntent(intent);
     validateControlRefApproval(approval, intent, { now });
     if (repositoryId !== intent.repository.id) throw new Error(`Operation repository mismatch: expected ${intent.repository.id}, found ${repositoryId}.`);
+    const remote = transportRemote ?? intent.remote;
+    transportTarget(remote);
     return this.#withLock(async () => {
       for (const entry of intent.refs) {
         const actual = await localOid(this.repoPath, entry.name);
@@ -142,12 +146,12 @@ export class ApprovedControlRefTransport {
       await handle.close();
       try {
         for (const entry of intent.refs) {
-          const actualRemote = await remoteOid(this.repoPath, intent.remote, entry.name, this.#env, this.#timeoutMs);
+          const actualRemote = await remoteOid(this.repoPath, remote, entry.name, this.#env, this.#timeoutMs);
           if (actualRemote !== entry.remoteOid) throw new Error(`Remote control ref changed after planning: ${entry.name}.`);
         }
         const results = intent.operation === "publish"
-          ? await this.#publish(intent.remote, intent.refs)
-          : await this.#fetch(intent.remote, intent.refs);
+          ? await this.#publish(remote, intent.refs)
+          : await this.#fetch(remote, intent.refs);
         for (const [index, entry] of intent.refs.entries()) {
           const result = results[index];
           receipt.refs[index] = { name: entry.name, before: entry.localOid, after: result.after, status: result.status };
@@ -289,6 +293,13 @@ function remoteName(value) {
 function controlRemoteName(value) {
   remoteName(value);
   if (value === CODE_STORAGE_REMOTE) throw new Error(`Control refs must not target code-storage remote ${CODE_STORAGE_REMOTE}.`);
+}
+
+function transportTarget(value) {
+  const invalid = typeof value !== "string" || [value.length === 0, value.startsWith("-"), /[\0\r\n]/.test(value)].includes(true);
+  if (invalid) {
+    throw new Error("transportRemote must be a safe Git remote name, path, or URL.");
+  }
 }
 
 function nullableOid(value, path) {

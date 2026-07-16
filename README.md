@@ -84,6 +84,8 @@ AI-assisted pull requests should not depend on reviewer trust alone. Tabellio gi
 | `scripts/lib/review-cycle.mjs` | Durable GitHub and agent review/fix state machine |
 | `scripts/lib/validation-runner.mjs` | Exact-commit, shell-free validation with bounded evidence logs |
 | `scripts/lib/control-ref-transport.mjs` | Approval-gated, fast-forward-only sharing of review, validation, and Entire refs |
+| `scripts/tabellio-preflight.mjs` | Fail-closed GitHub, Entire, hook-trust, and release-main readiness checks |
+| `scripts/tabellio-release.mjs` | Integrity-bound post-merge control-ref, tag, and GitHub release orchestration |
 | `scripts/lib/` | Git process, repository contract, worktree, and context primitives |
 | `scripts/` | Dependency-free capture, writer, and validators |
 | `examples/` | Minimal valid context, evidence, review, validation, stack, and ledger fixtures |
@@ -102,6 +104,15 @@ node scripts/tabellio-validate.mjs run --repo . --commit HEAD --manifest tabelli
 ```
 
 Keep `origin` limited to ordinary code branches and tags. Configure a separate private GitHub repository under another remote name before publishing control refs. The transport refuses to target `origin`.
+
+Before agent or release work, run:
+
+```bash
+node scripts/tabellio-preflight.mjs --profile agent
+node scripts/tabellio-preflight.mjs --profile release
+```
+
+Hook trust failures identify the exact Codex `/hooks` action required. Release profile additionally requires clean `main` equal to `origin/main`.
 
 Validate the bundled fixture:
 

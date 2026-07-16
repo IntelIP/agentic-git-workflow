@@ -47,6 +47,8 @@ The runner:
 7. Removes the worktree even after failure.
 8. Writes an integrity-protected result to `refs/tabellio/validations` with compare-and-swap retries.
 
+New results use `tabellio-validation-result/v0.2`. They require `checkpointRevision` so checkpoint proof remains bound to the pull-request head when the validated revision is a later squash-merge commit. Runtime readers continue to accept legacy v0.1 results.
+
 Read the newest result for a commit:
 
 ```bash

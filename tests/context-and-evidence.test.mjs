@@ -261,12 +261,42 @@ test("core runtime and adoption docs do not require GitHub Actions", async () =>
   }
 });
 
-test("stable schema identifiers keep external references resolvable", async () => {
-  const [evidenceSchema, policySchema] = await Promise.all([
+test("stable schema identifiers keep external references and released contracts resolvable", async () => {
+  const [
+    evidenceSchema,
+    policySchema,
+    releaseSchema,
+    controlSchema,
+    reviewAlias,
+    reviewV2,
+    reviewV3,
+    validationAlias,
+    validationV1,
+    validationV2,
+  ] = await Promise.all([
     readFile(`${projectRoot}/schemas/evidence-envelope.schema.json`, "utf8").then(JSON.parse),
     readFile(`${projectRoot}/schemas/external-action-policy.schema.json`, "utf8").then(JSON.parse),
+    readFile(`${projectRoot}/schemas/release-operation.schema.json`, "utf8").then(JSON.parse),
+    readFile(`${projectRoot}/schemas/control-ref-operation.schema.json`, "utf8").then(JSON.parse),
+    readFile(`${projectRoot}/schemas/review-cycle.schema.json`, "utf8").then(JSON.parse),
+    readFile(`${projectRoot}/schemas/review-cycle.v0.2.schema.json`, "utf8").then(JSON.parse),
+    readFile(`${projectRoot}/schemas/review-cycle.v0.3.schema.json`, "utf8").then(JSON.parse),
+    readFile(`${projectRoot}/schemas/validation-result.schema.json`, "utf8").then(JSON.parse),
+    readFile(`${projectRoot}/schemas/validation-result.v0.1.schema.json`, "utf8").then(JSON.parse),
+    readFile(`${projectRoot}/schemas/validation-result.v0.2.schema.json`, "utf8").then(JSON.parse),
   ]);
   assert.equal(evidenceSchema.properties.externalActionPolicy.$ref, policySchema.$id);
+  assert.equal(releaseSchema.properties.control.properties.intent.$ref, controlSchema.$id);
+  assert.equal(reviewAlias.$ref, "review-cycle.v0.3.schema.json");
+  assert.equal(reviewV2.$id, "urn:tabellio:schema:review-cycle:v0.2");
+  assert.equal(reviewV3.$id, "urn:tabellio:schema:review-cycle:v0.3");
+  assert.equal(reviewV2.$defs.event.properties.type.enum.includes("ready"), false);
+  assert.equal(reviewV3.$defs.event.properties.type.enum.includes("ready"), true);
+  assert.equal(validationAlias.$ref, "validation-result.v0.2.schema.json");
+  assert.equal(validationV1.$id, "urn:tabellio:schema:validation-result:v0.1");
+  assert.equal(validationV2.$id, "urn:tabellio:schema:validation-result:v0.2");
+  assert.equal(Object.hasOwn(validationV1.properties, "checkpointRevision"), false);
+  assert.equal(validationV2.required.includes("checkpointRevision"), true);
 });
 
 test("required repository validation is recorded in evidence", async (t) => {

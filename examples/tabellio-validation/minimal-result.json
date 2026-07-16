@@ -1,8 +1,13 @@
 {
-  "schemaVersion": "tabellio-validation-result/v0.1",
+  "schemaVersion": "tabellio-validation-result/v0.2",
   "runId": "validation-example-001",
   "repository": { "id": "example/tabellio" },
   "revision": {
+    "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mergeBase": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "headCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "checkpointRevision": {
     "baseCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "mergeBase": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "headCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -44,6 +49,6 @@
   "completedAt": "2026-07-10T12:00:01.000Z",
   "integrity": {
     "algorithm": "sha256",
-    "digest": "e0bf535d574ca275855e3fee7cccc4512785eaa9f4041975459d898145a4338f"
+    "digest": "eefca7fe3e063446cfdc3151ad9238c5015e577741e3023ffb2e0d06fcbf194d"
   }
 }

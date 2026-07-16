@@ -25,7 +25,7 @@ Review status is deterministic:
 | `update_required` | Fix exists locally but is not in the remote PR head |
 | `blocked` | A remote check failed or GitHub reports the change as non-mergeable |
 | `validating` | No validation result exists yet, or checks are pending/running |
-| `ready` | Feedback is handled, fixes are published, and checks are clear |
+| `ready` | Feedback is handled, fixes are published, checks are clear, and a head-bound readiness event is recorded |
 | `merged` / `closed` | Pull-request terminal state |
 
 ## Sync GitHub
@@ -83,7 +83,7 @@ git-spice restacks rewrite commit IDs. Tabellio retains `originalCommit` and rem
 
 ## Storage And Transport
 
-Ledger writes create normal Git blobs, trees, and commits without changing the working tree. Concurrent writers use compare-and-swap on `refs/tabellio/reviews`; stale writers fail instead of overwriting newer state. The same implementation works in normal and bare repositories. The latest cycle retains the newest 100 audit events; older versions remain recoverable from the ledger's Git commit history.
+Ledger writes create normal Git blobs, trees, and commits without changing the working tree. Concurrent writers use compare-and-swap on `refs/tabellio/reviews`; stale writers fail instead of overwriting newer state. The same implementation works in normal and bare repositories. The latest `tabellio-review-cycle/v0.3` cycle retains the newest 100 audit events; older versions remain recoverable from the ledger's Git commit history. A `ready` event stores the exact pull-request head commit so release planning can prove readiness existed before the terminal merged sync, and sync preserves that evidence when the event window is full. Terminal sync migrates a legacy v0.2 `ready` cycle into this evidence form, while newly observed feedback or failed checks still block release.
 
 To share the ledger, configure a separate private GitHub repository as the control-state remote, for example:
 

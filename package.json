@@ -1,6 +1,6 @@
 {
   "name": "@intelip/tabellio",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Tabellio: GitHub-native context and evidence for agentic development.",
   "type": "module",
   "license": "Apache-2.0",
@@ -17,7 +17,9 @@
     "tabellio-review": "scripts/tabellio-review.mjs",
     "tabellio-validate": "scripts/tabellio-validate.mjs",
     "tabellio-control-ref": "scripts/tabellio-control-ref.mjs",
-    "tabellio-ledger": "scripts/tabellio-ledger.mjs"
+    "tabellio-ledger": "scripts/tabellio-ledger.mjs",
+    "tabellio-preflight": "scripts/tabellio-preflight.mjs",
+    "tabellio-release": "scripts/tabellio-release.mjs"
   },
   "bugs": {
     "url": "https://github.com/IntelIP/Tabellio/issues"
@@ -54,6 +56,9 @@
     "tabellio:review:example:check": "node scripts/check-tabellio-review-cycle.mjs --cycle examples/tabellio-review/minimal-cycle.json && node scripts/check-tabellio-agent-review.mjs --review examples/tabellio-review/minimal-agent-review.json",
     "tabellio:validate": "node scripts/tabellio-validate.mjs",
     "tabellio:control-ref": "node scripts/tabellio-control-ref.mjs",
+    "tabellio:preflight": "node scripts/tabellio-preflight.mjs",
+    "tabellio:release": "node scripts/tabellio-release.mjs",
+    "tabellio:release:example:check": "node scripts/check-tabellio-release.mjs --intent examples/tabellio-release/minimal-intent.json",
     "tabellio:platform:check": "node scripts/check-tabellio-platform.mjs",
     "tabellio:validate:example:check": "node scripts/check-tabellio-validation.mjs --manifest tabellio.validation.json && node scripts/check-tabellio-validation.mjs --result examples/tabellio-validation/minimal-result.json",
     "tabellio:ledger": "node scripts/tabellio-ledger.mjs",
@@ -66,7 +71,7 @@
     "tabellio:evidence:write": "node scripts/write-tabellio-evidence-envelope.mjs --out tabellio-pr-evidence.json",
     "tabellio:evidence:check": "node scripts/check-tabellio-evidence-envelope.mjs --evidence tabellio-pr-evidence.json",
     "tabellio:external-actions:check": "node scripts/check-tabellio-external-actions.mjs --evidence tabellio-pr-evidence.json",
-    "check": "npm test && npm run tabellio:platform:check && npm run tabellio:run:example:check && npm run tabellio:stack:example:check && npm run tabellio:stack:operation:example:check && npm run tabellio:review:example:check && npm run tabellio:validate:example:check && npm run tabellio:ledger:example:check && npm run tabellio:context:example:check && npm run tabellio:evidence:example:check && node scripts/check-tabellio-external-actions.mjs --evidence examples/tabellio-evidence/minimal-evidence.json"
+    "check": "npm test && npm run tabellio:platform:check && npm run tabellio:run:example:check && npm run tabellio:stack:example:check && npm run tabellio:stack:operation:example:check && npm run tabellio:review:example:check && npm run tabellio:validate:example:check && npm run tabellio:ledger:example:check && npm run tabellio:release:example:check && npm run tabellio:context:example:check && npm run tabellio:evidence:example:check && node scripts/check-tabellio-external-actions.mjs --evidence examples/tabellio-evidence/minimal-evidence.json"
   },
   "engines": {
     "node": ">=20"
