@@ -1,15 +1,33 @@
 {
-  "schemaVersion": "tabellio-validation/v0.1",
-  "id": "tabellio-default",
-  "failFast": true,
+  "schemaVersion": "tabellio-validation/v0.2",
+  "id": "tabellio-product-validity",
+  "failFast": false,
   "requireEntireCheckpoint": true,
-  "commands": [
-    {
-      "id": "repository-check",
-      "argv": ["npm", "run", "check"],
-      "cwd": ".",
-      "timeoutMs": 1200000,
-      "required": true
-    }
+  "acceptance": {
+    "id": "tabellio-v0.4-control-plane",
+    "source": "repository product contract and docs/product-validation.md",
+    "risk": "high",
+    "outcomes": [
+      "Agent runs, checkpoints, reviews, and validation results remain bound to exact Git state.",
+      "Typed validation distinguishes passed, failed, and blocked evidence.",
+      "External actions and release operations remain approval-gated and fail closed."
+    ],
+    "invariants": [
+      "Validation never publishes, deploys, or mutates a live external system.",
+      "Unknown or missing cost telemetry cannot be treated as zero."
+    ],
+    "forbiddenOutcomes": [
+      "A stale validation result is accepted for a moved head.",
+      "A blocked validator is reported as passed.",
+      "An unapproved external action is executed."
+    ],
+    "requiredValidatorTypes": ["static", "schema", "semantic", "workflow", "security"]
+  },
+  "validators": [
+    {"id": "control-plane-static", "type": "static", "argv": ["tabellio-validator", "--profile", "static"], "cwd": ".", "timeoutMs": 1200000, "required": true, "evidence": null, "policy": {"metricThresholds": [], "maxCostUsd": null, "requireCostTelemetry": false}},
+    {"id": "control-plane-schema", "type": "schema", "argv": ["tabellio-validator", "--profile", "schema", "--validator-id", "control-plane-schema", "--out", ".artifacts/tabellio/schema.json"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/schema.json"}, "policy": {"metricThresholds": [{"metric": "platform_contract_pass", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}},
+    {"id": "control-plane-semantic", "type": "semantic", "argv": ["tabellio-validator", "--profile", "semantic", "--validator-id", "control-plane-semantic", "--out", ".artifacts/tabellio/semantic.json"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/semantic.json"}, "policy": {"metricThresholds": [{"metric": "validation_contract_examples_pass", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}},
+    {"id": "control-plane-workflow", "type": "workflow", "argv": ["tabellio-validator", "--profile", "workflow", "--validator-id", "control-plane-workflow", "--out", ".artifacts/tabellio/workflow.json"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/workflow.json"}, "policy": {"metricThresholds": [{"metric": "run_review_workflows_pass", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}},
+    {"id": "control-plane-security", "type": "security", "argv": ["tabellio-validator", "--profile", "security", "--validator-id", "control-plane-security", "--out", ".artifacts/tabellio/security.json"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/security.json"}, "policy": {"metricThresholds": [{"metric": "external_action_policy_pass", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}}
   ]
 }

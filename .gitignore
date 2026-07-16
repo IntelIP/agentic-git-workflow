@@ -1,5 +1,7 @@
 node_modules/
-.tabellio/
+.tabellio/*
+!.tabellio/
+!.tabellio/validators.json
 agentic-pr-evidence.json
 tabellio-pr-evidence.json
 tabellio-context.json
