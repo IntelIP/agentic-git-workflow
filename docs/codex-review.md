@@ -36,3 +36,5 @@ Codex review is not:
 - deployment approval
 - substitute for human ownership
 - proof that agent output is secure
+
+When the repository commits a product-validation manifest, review begins only after the exact pull-request head has a `passed` v0.3 decision. A `blocked` decision means the evidence is incomplete or untrustworthy; it is not a product pass and should not be converted into reviewer guesswork.

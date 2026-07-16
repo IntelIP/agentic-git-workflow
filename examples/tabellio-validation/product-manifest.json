@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "tabellio-validation/v0.2",
+  "id": "product-validity",
+  "failFast": true,
+  "requireEntireCheckpoint": true,
+  "acceptance": {
+    "id": "PLANE-101",
+    "source": "plane",
+    "risk": "high",
+    "outcomes": [
+      "The user receives a correct result for the requested workflow."
+    ],
+    "invariants": [
+      "Validation cannot mutate production resources."
+    ],
+    "forbiddenOutcomes": [
+      "Unknown cost telemetry is treated as zero cost."
+    ],
+    "requiredValidatorTypes": [
+      "semantic",
+      "operational"
+    ]
+  },
+  "validators": [
+    {
+      "id": "semantic-golden-set",
+      "type": "semantic",
+      "argv": [
+        "npm",
+        "run",
+        "eval:semantic:ci"
+      ],
+      "cwd": ".",
+      "timeoutMs": 600000,
+      "required": true,
+      "evidence": {
+        "path": ".artifacts/tabellio/semantic-evidence.json"
+      },
+      "policy": {
+        "metricThresholds": [
+          {
+            "metric": "strict_pass_rate",
+            "operator": "gte",
+            "value": 0.8
+          }
+        ],
+        "maxCostUsd": 1,
+        "requireCostTelemetry": true
+      }
+    },
+    {
+      "id": "runtime-cost-guard",
+      "type": "operational",
+      "argv": [
+        "npm",
+        "run",
+        "cost:check"
+      ],
+      "cwd": ".",
+      "timeoutMs": 120000,
+      "required": true,
+      "evidence": {
+        "path": ".artifacts/tabellio/cost-evidence.json"
+      },
+      "policy": {
+        "metricThresholds": [
+          {
+            "metric": "projected_monthly_cost_usd",
+            "operator": "lte",
+            "value": 20
+          }
+        ],
+        "maxCostUsd": 0.25,
+        "requireCostTelemetry": true
+      }
+    }
+  ]
+}

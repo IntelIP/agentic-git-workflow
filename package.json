@@ -1,6 +1,6 @@
 {
   "name": "@intelip/tabellio",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Tabellio: GitHub-native context and evidence for agentic development.",
   "type": "module",
   "license": "Apache-2.0",
@@ -60,7 +60,7 @@
     "tabellio:release": "node scripts/tabellio-release.mjs",
     "tabellio:release:example:check": "node scripts/check-tabellio-release.mjs --intent examples/tabellio-release/minimal-intent.json",
     "tabellio:platform:check": "node scripts/check-tabellio-platform.mjs",
-    "tabellio:validate:example:check": "node scripts/check-tabellio-validation.mjs --manifest tabellio.validation.json && node scripts/check-tabellio-validation.mjs --result examples/tabellio-validation/minimal-result.json",
+    "tabellio:validate:example:check": "node scripts/check-tabellio-validation.mjs --manifest tabellio.validation.json && node scripts/check-tabellio-validation.mjs --manifest examples/tabellio-validation/product-manifest.json && node scripts/check-tabellio-validation.mjs --evidence examples/tabellio-validation/minimal-validator-evidence.json && node scripts/check-tabellio-validation.mjs --result examples/tabellio-validation/minimal-result.json",
     "tabellio:ledger": "node scripts/tabellio-ledger.mjs",
     "tabellio:ledger:check": "node scripts/check-tabellio-ledger.mjs --ledger tabellio-ledger.json",
     "tabellio:ledger:example:check": "node scripts/check-tabellio-ledger.mjs --ledger examples/tabellio-ledger/minimal-ledger.json",
