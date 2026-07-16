@@ -12,6 +12,7 @@ All notable changes to Tabellio are recorded here.
 - Typed schema, semantic, workflow, visual, operational, and security evidence with bounded metrics, artifact digests, and cost telemetry.
 - Fail-closed `passed`, `failed`, and `blocked` decisions with threshold and cost-budget enforcement.
 - `tabellio-validate gate` for CI enforcement without external JSON parsing.
+- `tabellio-validator` for repository-declared shell-free adapter commands, metric extraction, and common evidence emission.
 
 ### Changed
 

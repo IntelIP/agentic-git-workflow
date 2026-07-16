@@ -37,6 +37,8 @@ Fail closed. Never translate `blocked` into `passed`, and never treat missing co
 
 Keep product knowledge in each repository. The adapter runs the existing eval, browser, design, cost, or security harness and writes the common evidence contract.
 
+Use `tabellio-validator` for simple adapters. Commit `.tabellio/validators.json` with `tabellio-adapter/v0.1` profiles containing shell-free command arrays, evidence metrics, cost telemetry, and a concise summary. Metrics may map command pass/fail to numeric values or extract a numeric capture group from bounded command output.
+
 - AI systems: stable golden cases in pull requests; larger live suites on schedules or release gates.
 - Web applications: critical journeys, desktop/mobile screenshot comparisons, loaded-font assertions, overflow, and accessibility metrics.
 - Operational systems: projected and observed provider usage, worker counts, polling frequency, rate limits, latency, and spend.

@@ -16,6 +16,7 @@
     "tabellio-stack-operation": "scripts/tabellio-stack-operation.mjs",
     "tabellio-review": "scripts/tabellio-review.mjs",
     "tabellio-validate": "scripts/tabellio-validate.mjs",
+    "tabellio-validator": "scripts/tabellio-validator.mjs",
     "tabellio-control-ref": "scripts/tabellio-control-ref.mjs",
     "tabellio-ledger": "scripts/tabellio-ledger.mjs",
     "tabellio-preflight": "scripts/tabellio-preflight.mjs",
