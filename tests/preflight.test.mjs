@@ -63,6 +63,10 @@ test("preflight requires executable Entire hook commands, not empty event keys",
 
 test("preflight normalizes GitHub remote identities and requires private control storage", async (t) => {
   const fixture = await preparedFixture(t);
+  await runGit({ args: ["remote", "set-url", "control", "ssh://git@github.com/example/repository-control.git"], cwd: fixture.seed });
+  const sshUrl = await runPreflight({ repoPath: fixture.seed, commandRunner: fakeCommands({ trusted: true }) });
+  assert.equal(sshUrl.checks.find((check) => check.id === "github-remotes").status, "passed");
+
   await runGit({ args: ["remote", "set-url", "control", "git@github.com:EXAMPLE/REPOSITORY.git"], cwd: fixture.seed });
   const same = await runPreflight({ repoPath: fixture.seed, commandRunner: fakeCommands({ trusted: true }) });
   assert.match(same.checks.find((check) => check.id === "github-remotes").detail, /same GitHub repository/);

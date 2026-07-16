@@ -44,8 +44,19 @@ export async function planRelease({
   const repositoryId = repositories.code.identity;
   const evidence = await loadReleaseEvidence({ store, notesPath, ghBinary, owner, repo, number, commandRunner });
   const { headCommit, parentCommit, notesSource, pr } = validateReleaseEvidence(evidence, { version, number });
+  const pullRequestHead = await resolvePullRequestHead(store, number, pr.headRefOid);
   const validationLedger = await GitJsonLedger.open({ repoPath: store.repoPath, ref: "refs/tabellio/validations" });
-  const validation = await validateMergedHead({ store, validationLedger, repositoryId, headCommit, parentCommit, manifestPath, runnerId, now });
+  const validation = await validateMergedHead({
+    store,
+    validationLedger,
+    repositoryId,
+    headCommit,
+    parentCommit,
+    pullRequestHead,
+    manifestPath,
+    runnerId,
+    now,
+  });
   const provider = await resolveGitHubProvider({ githubProvider, apiUrl, token, ghBinary, commandRunner, cwd: store.repoPath });
   await assertMergedReview({ store, validationLedger, provider, repositoryId, owner, repo, number, runnerId, now });
   const controlIntent = await planControlPublication({ store, repositoryId, controlRemote, now });
@@ -147,14 +158,33 @@ function assertDatedChangelog(source, version) {
 function assertMergedPullRequest(pr, { number, headCommit }) {
   if (pr.state !== "MERGED") throw new Error(`Pull request ${number} is not merged.`);
   if (!pr.mergeCommit) throw new Error(`Pull request ${number} has no merge commit.`);
+  contract.oid(pr.headRefOid, `pull request ${number} head`);
+  contract.oid(pr.mergeCommit.oid, `pull request ${number} merge commit`);
   if (pr.mergeCommit.oid !== headCommit) throw new Error(`Pull request ${number} merge commit does not equal local main.`);
 }
 
-async function validateMergedHead({ store, validationLedger, repositoryId, headCommit, parentCommit, manifestPath, runnerId, now }) {
+async function resolvePullRequestHead(store, number, expectedHead) {
+  try {
+    return await store.resolveRef(expectedHead);
+  } catch {
+    await runGit({
+      args: ["fetch", "--no-tags", "origin", `refs/pull/${number}/head`],
+      cwd: store.repoPath,
+      timeoutMs: 15 * 60 * 1000,
+    });
+    const fetchedHead = await store.resolveRef("FETCH_HEAD");
+    contract.equals(fetchedHead, expectedHead, `pull request ${number} fetched head`);
+    return fetchedHead;
+  }
+}
+
+async function validateMergedHead({ store, validationLedger, repositoryId, headCommit, parentCommit, pullRequestHead, manifestPath, runnerId, now }) {
   const validation = await new ValidationRunner({ store, ledger: validationLedger }).run({
     repositoryId,
     commit: headCommit,
     base: parentCommit,
+    checkpointHead: pullRequestHead,
+    checkpointBase: parentCommit,
     manifestPath,
     runnerId,
     now,

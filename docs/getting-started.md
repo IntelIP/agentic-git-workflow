@@ -100,7 +100,7 @@ node scripts/tabellio-release.mjs execute \
   --approval /secure/tabellio-release-approval.json
 ```
 
-Planning accepts only the validation manifest named by `tabellio.platform.json`. Execution rechecks the distinct repository identities and current private control visibility, then publishes exact private control refs, the annotated tag, and the GitHub release. Merge stays outside this command because the final squash commit must exist before release approval can bind it.
+Planning accepts only the validation manifest named by `tabellio.platform.json`. It runs commands on the exact merged commit and binds checkpoint evidence to the pre-merge pull-request head, so a squash merge does not erase proof. Execution accepts canonical HTTPS, SCP-style SSH, and `ssh://git@github.com/...` remotes, rechecks the distinct repository identities and current private control visibility, then publishes exact private control refs, the annotated tag, and the GitHub release. Merge stays outside this command because the final squash commit must exist before release approval can bind it.
 
 ## Local Validation
 

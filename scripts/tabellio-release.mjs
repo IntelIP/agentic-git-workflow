@@ -88,8 +88,8 @@ async function execute(options) {
     stateRoot: options.stateRoot,
     ghBinary: options.ghBinary ?? "gh",
   });
-  const receipt = await executor.execute({ intent, approval });
-  console.log(JSON.stringify({ ok: true, receipt }, null, 2));
+  const result = await executor.execute({ intent, approval });
+  console.log(JSON.stringify({ ok: true, ...result }, null, 2));
 }
 
 async function readJson(path) {

@@ -24,6 +24,16 @@
         "headCommit": { "$ref": "#/$defs/oid" }
       }
     },
+    "checkpointRevision": {
+      "type": "object",
+      "required": ["baseCommit", "mergeBase", "headCommit"],
+      "additionalProperties": false,
+      "properties": {
+        "baseCommit": { "$ref": "#/$defs/oid" },
+        "mergeBase": { "$ref": "#/$defs/oid" },
+        "headCommit": { "$ref": "#/$defs/oid" }
+      }
+    },
     "suite": {
       "type": "object",
       "required": ["id", "manifestPath", "manifestDigest"],

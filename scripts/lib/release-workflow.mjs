@@ -57,17 +57,16 @@ export class ReleaseExecutor {
     const path = resolve(this.stateRoot, `${approval.id}.json`);
     const existing = await readState(path);
     let state = resumeOrCreate(existing, intent, approval, now);
-    if (state.status === "succeeded") return { ...state, receiptPath: path };
+    if (state.status === "succeeded") return releaseResult(state, path);
 
     const verification = state.phases.find((entry) => entry.id === "verify");
     state = await executePhase({ state, current: verification, phase: "verify", path, actions: this.actions, intent, approval, now });
     for (const phase of PHASES.slice(1)) {
       const current = state.phases.find((entry) => entry.id === phase);
-      if (current.status === "completed") continue;
       state = await executePhase({ state, current, phase, path, actions: this.actions, intent, approval, now });
     }
     await completeRelease(path, state);
-    return { ...state, receiptPath: path };
+    return releaseResult(state, path);
   }
 }
 
@@ -155,7 +154,7 @@ class ReleaseActions {
 
   async #publishTag({ intent }) {
     const repositoryId = await this.codeRepositoryReader(this.store);
-    assertEqual(repositoryId, intent.repository.id, "Release repository identity changed before tag publication.");
+    assertRepositoryIdentity(repositoryId, intent.repository.id, "Release repository identity changed before tag publication.");
     let local = await localTagState(this.store.repoPath, intent.tag);
     const remote = await remoteTagState(this.store.repoPath, intent.code.remote, intent.tag);
     assertTagTarget(local, intent, "locally");
@@ -240,13 +239,17 @@ async function completeRelease(path, state) {
   await writeState(path, state);
 }
 
+function releaseResult(receipt, receiptPath) {
+  return { receipt, receiptPath };
+}
+
 function assertReleaseRepository(actual, intent) {
   assertReleaseRevision(actual, intent);
   assertReleaseWorkspace(actual);
 }
 
 function assertReleaseRevision(actual, intent) {
-  assertEqual(actual.repositoryId, intent.repository.id, "Release repository identity changed.");
+  assertRepositoryIdentity(actual.repositoryId, intent.repository.id, "Release repository identity changed.");
   assertControlRepository(actual.controlRepository, intent);
   assertEqual(actual.head, intent.revision.commit, "Release HEAD changed after planning.");
   assertEqual(actual.trackedMain, actual.head, "Release commit no longer equals tracked origin/main.");
@@ -410,6 +413,10 @@ async function privateGitHubRemoteRepository(store, remote, ghBinary, commandRun
 function assertControlRepository(actual, intent) {
   assertEqual(actual.id.toLowerCase(), intent.control.repository.id.toLowerCase(), "Release control repository identity changed.");
   if (!actual.isPrivate) throw new Error("Release control repository is not private.");
+}
+
+function assertRepositoryIdentity(actual, expected, message) {
+  assertEqual(actual.toLowerCase(), expected.toLowerCase(), message);
 }
 
 async function withTemporaryReleaseNotes(source, action) {

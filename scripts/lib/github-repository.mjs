@@ -38,23 +38,40 @@ export async function readRemoteRefOid({ repoPath, remote, ref }) {
 
 function repositoryRemoteParts(value) {
   const https = httpsParts(value);
-  return https || sshParts(value);
+  return https || sshUrlParts(value) || sshParts(value);
 }
 
 function httpsParts(value) {
-  try {
-    const parsed = new URL(value);
-    if (parsed.origin.toLowerCase() !== `https://${GITHUB_HOST}`) return null;
-    if (`${parsed.username}${parsed.password}${parsed.search}${parsed.hash}` !== "") return null;
-    return repositoryPathParts(parsed.pathname);
-  } catch {
-    return null;
-  }
+  const parsed = parseUrl(value);
+  if (!parsed) return null;
+  if (parsed.origin.toLowerCase() !== `https://${GITHUB_HOST}`) return null;
+  if (`${parsed.username}${parsed.password}${parsed.search}${parsed.hash}` !== "") return null;
+  return repositoryPathParts(parsed.pathname);
 }
 
 function sshParts(value) {
   const match = value.match(/^git@github\.com:([^\s]+)$/i);
   return match ? repositoryPathParts(match[1]) : null;
+}
+
+function sshUrlParts(value) {
+  const parsed = parseUrl(value);
+  if (!parsed) return null;
+  const valid = [
+    parsed.protocol === "ssh:",
+    parsed.hostname.toLowerCase() === GITHUB_HOST,
+    parsed.username === "git",
+    `${parsed.password}${parsed.port}${parsed.search}${parsed.hash}` === "",
+  ].every(Boolean);
+  return valid ? repositoryPathParts(parsed.pathname) : null;
+}
+
+function parseUrl(value) {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
 }
 
 function repositoryPathParts(value) {

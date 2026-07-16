@@ -36,7 +36,7 @@ test("release intent binds merged commit, validation, control refs, notes, and a
   assert.throws(() => exampleIntent({ controlRepositoryId: "github.com/example/repository" }), /must differ/);
 });
 
-test("release executor resumes failed phases without repeating completed work", async (t) => {
+test("release executor reconciles completed publication phases after a failure", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tabellio-release-resume-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const calls = [];
@@ -60,10 +60,12 @@ test("release executor resumes failed phases without repeating completed work", 
   const intent = exampleIntent();
   const approval = approvalFor(intent, "resume-release");
   await assert.rejects(executor.execute({ intent, approval, now }), /simulated tag failure/);
-  const receipt = await executor.execute({ intent, approval, now });
-  assert.equal(receipt.status, "succeeded");
-  assert.deepEqual(calls, ["verify", "control-refs", "tag", "verify", "tag", "github-release"]);
-  assert.equal(receipt.phases.every((phase) => phase.status === "completed"), true);
+  const result = await executor.execute({ intent, approval, now });
+  assert.equal(result.receipt.status, "succeeded");
+  assert.deepEqual(calls, ["verify", "control-refs", "tag", "verify", "control-refs", "tag", "github-release"]);
+  assert.equal(result.receipt.phases.every((phase) => phase.status === "completed"), true);
+  assert.equal(result.receiptPath, join(root, "resume-release.json"));
+  assert.equal(Object.hasOwn(result.receipt, "receiptPath"), false);
 });
 
 test("release executor serializes concurrent execution of the same approval", async (t) => {
@@ -87,7 +89,7 @@ test("release executor serializes concurrent execution of the same approval", as
   while (!unblock) await new Promise((resolve) => setImmediate(resolve));
   await assert.rejects(executor.execute({ intent, approval, now }), /Another release operation is active/);
   unblock();
-  assert.equal((await first).status, "succeeded");
+  assert.equal((await first).receipt.status, "succeeded");
 });
 
 test("approved release publishes exact control ref, annotated tag, and GitHub release in isolated repos", async (t) => {
@@ -154,7 +156,7 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
     stateRoot,
     commandRunner,
     remoteRefReader: async () => { liveReads += 1; return head; },
-    codeRepositoryReader: async () => repositoryId,
+    codeRepositoryReader: async () => "github.com/EXAMPLE/REPOSITORY",
     controlRepositoryReader: async () => ({ id: currentControlIdentity, isPrivate: currentControlPrivate }),
   });
   const approval = approvalFor(intent, "publish-release");
@@ -173,12 +175,15 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
   await assert.rejects(executor.execute({ intent, approval, now }), /control repository is not private/);
   currentControlPrivate = true;
   await assert.rejects(executor.execute({ intent, approval, now }), /remotely as a lightweight tag/);
+  await runGit({ args: ["push", "control", ":refs/tabellio/validations"], cwd: fixture.seed });
   await runGit({ args: ["push", "origin", `:refs/tags/${intent.tag}`], cwd: fixture.seed });
   await writeFile(join(fixture.seed, notesPath), "MUTATED WORKTREE NOTES\n");
   await assert.rejects(executor.execute({ intent, approval, now }), /clean worktree/);
   await runGit({ args: ["restore", notesPath], cwd: fixture.seed });
-  const receipt = await executor.execute({ intent, approval, now });
-  assert.equal(receipt.status, "succeeded");
+  const result = await executor.execute({ intent, approval, now });
+  assert.equal(result.receipt.status, "succeeded");
+  assert.equal(Object.hasOwn(result.receipt, "receiptPath"), false);
+  assert.equal(result.receiptPath, join(stateRoot, "publish-release.json"));
   assert.equal(liveReads, 6);
   assert.equal(ghCalls.length, 2);
   assert.deepEqual(publishedNotes, ["Release 1.2.3\n"]);
@@ -209,6 +214,7 @@ test("release planning binds merged PR proof after exact validation and terminal
   const control = join(fixture.root, "control-plan.git");
   await NativeGitStore.createBare(control);
   await runGit({ args: ["remote", "add", "control", control], cwd: fixture.seed });
+  await runGit({ args: ["switch", "-c", "release-pr"], cwd: fixture.seed });
   const notesPath = "docs/releases/v2.0.0.md";
   await mkdir(join(fixture.seed, "docs", "releases"), { recursive: true });
   await writeFile(join(fixture.seed, "package.json"), '{"version":"2.0.0"}\n');
@@ -224,10 +230,14 @@ test("release planning binds merged PR proof after exact validation and terminal
   await writeFile(join(fixture.seed, "tabellio.platform.json"), JSON.stringify(platformFixture()));
   await runGit({ args: ["add", "package.json", "CHANGELOG.md", "tabellio.validation.json", "tabellio.platform.json", notesPath], cwd: fixture.seed });
   await runGit({
-    args: ["commit", "-m", "Merge release", "-m", "Entire-Checkpoint: abcdef123456"],
+    args: ["commit", "-m", "Prepare release", "-m", "Entire-Checkpoint: abcdef123456"],
     cwd: fixture.seed,
     env: identityEnv(),
   });
+  const pullRequestHead = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
+  await runGit({ args: ["switch", "main"], cwd: fixture.seed });
+  await runGit({ args: ["merge", "--squash", "release-pr"], cwd: fixture.seed });
+  await runGit({ args: ["commit", "-m", "Squash release"], cwd: fixture.seed, env: identityEnv() });
   await runGit({ args: ["push", "origin", "main"], cwd: fixture.seed });
   await runGit({ args: ["remote", "set-url", "origin", "https://github.com/example/repository.git"], cwd: fixture.seed });
   await runGit({ args: ["remote", "set-url", "control", "https://github.com/example/repository-control.git"], cwd: fixture.seed });
@@ -235,13 +245,15 @@ test("release planning binds merged PR proof after exact validation and terminal
   const store = await NativeGitStore.open(fixture.seed);
   const head = await store.resolveRef("HEAD");
   const parent = await store.resolveRef("HEAD^");
-  await runGit({ args: ["update-ref", "refs/heads/entire/checkpoints/v1", head], cwd: fixture.seed });
-  const provider = mergedProvider({ head: parent, base: parent });
+  const squashCheckpoints = await runGit({ args: ["log", "-1", "--format=%(trailers:key=Entire-Checkpoint,valueonly)", head], cwd: fixture.seed });
+  assert.equal(squashCheckpoints.stdout.trim(), "");
+  await runGit({ args: ["update-ref", "refs/heads/entire/checkpoints/v1", pullRequestHead], cwd: fixture.seed });
+  const provider = mergedProvider({ head: pullRequestHead, base: parent });
   const reviewLedger = await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/reviews" });
   const readyManager = new ReviewCycleManager({
     store,
     ledger: reviewLedger,
-    provider: readyProvider({ head: parent, base: parent }),
+    provider: readyProvider({ head: pullRequestHead, base: parent }),
     repositoryId: "github.com/example/repository",
     owner: "example",
     repo: "repository",
@@ -249,7 +261,7 @@ test("release planning binds merged PR proof after exact validation and terminal
   assert.equal((await readyManager.sync({ number: 9, actor: "test", now })).cycle.status, "ready");
   const commandRunner = async ({ args }) => {
     if (args[0] === "pr" && args[1] === "view") {
-      return { stdout: JSON.stringify({ state: "MERGED", headRefOid: parent, mergeCommit: { oid: head } }), stderr: "", exitCode: 0, signal: null };
+      return { stdout: JSON.stringify({ state: "MERGED", headRefOid: pullRequestHead, mergeCommit: { oid: head } }), stderr: "", exitCode: 0, signal: null };
     }
     throw new Error(`Unexpected command: ${args.join(" ")}`);
   };
@@ -289,7 +301,7 @@ test("release planning binds merged PR proof after exact validation and terminal
     now,
   });
   assert.equal(intent.revision.commit, head);
-  assert.equal(intent.pullRequest.headCommit, parent);
+  assert.equal(intent.pullRequest.headCommit, pullRequestHead);
   assert.equal(intent.validation.status, "passed");
   assert.equal(intent.control.repository.id, "github.com/example/repository-control");
   assert.equal(intent.control.intent.refs.length, 3);
