@@ -23,6 +23,7 @@ test("validation runner executes exact committed manifests and stores bounded re
   await writeFile(manifestPath, JSON.stringify(manifest([
     command("tests", [process.execPath, "-e", 'process.stdout.write("x".repeat(20000))']),
     command("isolated-home", [process.execPath, "-e", 'if (!process.env.HOME.includes("validation-workspaces")) process.exit(2)']),
+    command("readonly-cache", [process.execPath, "-e", 'const fs=require("node:fs");const p=process.env.HOME+"/go/pkg/mod/example/.github";fs.mkdirSync(p,{recursive:true});fs.chmodSync(p,0o500);fs.chmodSync(process.env.HOME+"/go/pkg/mod/example",0o500)']),
   ]), null, 2));
   await commit(fixture.seed, "Add passing validation", "validation-pass");
   const passingHead = await head(fixture.seed);
@@ -44,6 +45,7 @@ test("validation runner executes exact committed manifests and stores bounded re
   assert.equal(passed.result.commands[0].stdout.truncated, true);
   assert.equal(Buffer.byteLength(passed.result.commands[0].stdout.tail), 16 * 1024);
   assert.equal(passed.result.commands[1].status, "passed");
+  assert.equal(passed.result.commands[2].status, "passed");
   assert.equal(validateValidationResult(passed.result), passed.result);
   assert.deepEqual(await latestValidationResult(ledger, passingHead), passed.result);
   const otherRepository = await runner.run({

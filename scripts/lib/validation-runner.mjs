@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, stat } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
 import { LedgerConflictError } from "./git-json-ledger.mjs";
@@ -74,8 +74,8 @@ export class ValidationRunner {
         cwd: this.store.repoPath,
         acceptableExitCodes: [0, 128],
       }).catch(() => {});
-      await rm(workspace, { recursive: true, force: true });
-      await rm(home, { recursive: true, force: true });
+      await removeGeneratedTree(workspace);
+      await removeGeneratedTree(home);
     }
     const completedAt = new Date().toISOString();
     const result = buildValidationResult({
@@ -97,6 +97,30 @@ export class ValidationRunner {
     const path = validationPath(revision.headCommit, runId);
     const written = await writeResultWithRetry(this.ledger, path, result);
     return { result, path, version: written.version };
+  }
+}
+
+async function removeGeneratedTree(path) {
+  try {
+    await rm(path, { recursive: true, force: true });
+  } catch (error) {
+    if (!error || !["EACCES", "EPERM"].includes(error.code)) throw error;
+    await makeTreeOwnerWritable(path);
+    await rm(path, { recursive: true, force: true });
+  }
+}
+
+async function makeTreeOwnerWritable(path) {
+  const info = await lstat(path).catch(() => null);
+  if (!info) return;
+  if (info.isSymbolicLink()) return;
+  if (!info.isDirectory()) {
+    await chmod(path, info.mode | 0o600);
+    return;
+  }
+  await chmod(path, info.mode | 0o700);
+  for (const entry of await readdir(path)) {
+    await makeTreeOwnerWritable(resolve(path, entry));
   }
 }
 
