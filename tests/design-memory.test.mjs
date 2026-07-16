@@ -63,6 +63,12 @@ test("structured UI review binds model judgment and cost to exact evidence", asy
   const incomplete = structuredClone(review);
   delete incomplete.cost;
   assert.throws(() => validateUiReviewArtifact(incomplete), /cost is required/);
+  const unknownCost = structuredClone(review);
+  unknownCost.cost = { telemetry: "unknown", currency: null, amount: null, inputTokens: null, outputTokens: null };
+  assert.throws(() => validateUiReviewArtifact(unknownCost), /requires blocked verdict/);
+  unknownCost.verdict = "blocked";
+  unknownCost.blockers = ["model cost telemetry unavailable"];
+  assert.equal(validateUiReviewArtifact(unknownCost), unknownCost);
 });
 
 test("design memory rejects unsupported fields and ephemeral artifacts", async () => {

@@ -8,6 +8,7 @@
     "model": "visual-review-model"
   },
   "cost": {
+    "telemetry": "available",
     "currency": "USD",
     "amount": 0.01,
     "inputTokens": 1000,

@@ -194,11 +194,16 @@ export function validateUiReviewArtifact(value) {
   string(value.reviewer.provider, "UI review.reviewer.provider");
   string(value.reviewer.model, "UI review.reviewer.model");
   object(value.cost, "UI review.cost");
-  exactKeys(value.cost, ["currency", "amount", "inputTokens", "outputTokens"], "UI review.cost");
-  string(value.cost.currency, "UI review.cost.currency", 3, 3);
-  number(value.cost.amount, "UI review.cost.amount", 0, Number.MAX_SAFE_INTEGER);
-  integer(value.cost.inputTokens, "UI review.cost.inputTokens", 0, Number.MAX_SAFE_INTEGER);
-  integer(value.cost.outputTokens, "UI review.cost.outputTokens", 0, Number.MAX_SAFE_INTEGER);
+  exactKeys(value.cost, ["telemetry", "currency", "amount", "inputTokens", "outputTokens"], "UI review.cost");
+  if (!new Set(["available", "unknown", "not_applicable"]).has(value.cost.telemetry)) throw new TypeError("UI review.cost.telemetry is unsupported.");
+  if (value.cost.telemetry === "available") {
+    string(value.cost.currency, "UI review.cost.currency", 3, 3);
+    number(value.cost.amount, "UI review.cost.amount", 0, Number.MAX_SAFE_INTEGER);
+    integer(value.cost.inputTokens, "UI review.cost.inputTokens", 0, Number.MAX_SAFE_INTEGER);
+    integer(value.cost.outputTokens, "UI review.cost.outputTokens", 0, Number.MAX_SAFE_INTEGER);
+  } else if (value.cost.currency !== null || value.cost.amount !== null || value.cost.inputTokens !== null || value.cost.outputTokens !== null) {
+    throw new TypeError("unavailable UI review cost fields must be null.");
+  }
   if (!Array.isArray(value.captures) || value.captures.length < 1 || value.captures.length > 500) throw new TypeError("UI review.captures must contain 1 to 500 entries.");
   for (const [index, capture] of value.captures.entries()) {
     const label = `UI review.captures[${index}]`;
@@ -223,6 +228,7 @@ export function validateUiReviewArtifact(value) {
   if (!new Set(["passed", "failed", "blocked"]).has(value.verdict)) throw new TypeError("UI review.verdict must be passed, failed, or blocked.");
   stringArray(value.blockers, "UI review.blockers", 0, 100);
   if (value.verdict === "blocked" && value.blockers.length === 0) throw new TypeError("blocked UI review requires at least one blocker.");
+  if (value.cost.telemetry === "unknown" && value.verdict !== "blocked") throw new TypeError("unknown UI review cost telemetry requires blocked verdict.");
   return value;
 }
 
