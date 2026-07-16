@@ -6,6 +6,7 @@ import { GitJsonLedger } from "../scripts/lib/git-json-ledger.mjs";
 import {
   ReviewCycleManager,
   reviewCycleHasReadyEvidence,
+  reviewCycleHasReleaseReadiness,
   validateAgentReview,
   validateReviewCycle,
 } from "../scripts/lib/review-cycle.mjs";
@@ -129,10 +130,22 @@ test("review cycle persists GitHub and agent feedback through triage and checkpo
   assert.equal(result.cycle.fixes.length, 2);
   assert.equal(validateReviewCycle(result.cycle), result.cycle);
 
+  const legacyReady = structuredClone(result.cycle);
+  legacyReady.events = legacyReady.events.filter((item) => item.type !== "ready");
+  const { integrity: _integrity, ...legacyUnsigned } = legacyReady;
+  legacyReady.integrity = { algorithm: "sha256", digest: digestObject(legacyUnsigned) };
+  await ledger.write(result.path, legacyReady, { expectedVersion: result.version });
   provider.setState("merged");
   result = await manager.sync({ number: 7, actor: "sync-agent", now: new Date("2026-07-10T20:06:30.000Z") });
   assert.equal(result.cycle.status, "merged");
   assert.equal(reviewCycleHasReadyEvidence(result.cycle, fixCommit2), true);
+  assert.equal(reviewCycleHasReleaseReadiness(result.cycle, fixCommit2), true);
+
+  provider.setChecks("failure");
+  result = await manager.sync({ number: 7, actor: "sync-agent", now: new Date("2026-07-10T20:06:45.000Z") });
+  assert.equal(result.cycle.status, "merged");
+  assert.equal(reviewCycleHasReleaseReadiness(result.cycle, fixCommit2), false);
+  provider.setChecks("success");
   provider.setState("open");
 
   provider.setDraft(true);
@@ -147,7 +160,7 @@ test("review cycle persists GitHub and agent feedback through triage and checkpo
   tampered.status = "ready";
   assert.throws(() => validateReviewCycle(tampered), /digest does not match|status does not match/);
   const history = await runGit({ args: ["rev-list", "--count", "refs/tabellio/reviews"], cwd: fixture.seed });
-  assert.equal(Number(history.stdout.trim()), 10);
+  assert.equal(Number(history.stdout.trim()), 12);
   const worktree = await runGit({ args: ["status", "--porcelain=v1"], cwd: fixture.seed });
   assert.equal(worktree.stdout, "");
 });

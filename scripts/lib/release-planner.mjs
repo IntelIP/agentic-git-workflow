@@ -8,8 +8,9 @@ import { GitJsonLedger } from "./git-json-ledger.mjs";
 import { parseGitHubRepositoryRemote, sameGitHubRepository } from "./github-repository.mjs";
 import { runGit } from "./git-process.mjs";
 import { runPreflight } from "./preflight.mjs";
+import { validatePlatformConfig } from "./platform-config.mjs";
 import { createReleaseIntent } from "./release-operation.mjs";
-import { ReviewCycleManager, reviewCycleHasReadyEvidence } from "./review-cycle.mjs";
+import { ReviewCycleManager, reviewCycleHasReleaseReadiness } from "./review-cycle.mjs";
 import { ValidationRunner } from "./validation-runner.mjs";
 import { GitHubProvider } from "../providers/github-provider.mjs";
 import { NativeGitStore } from "../providers/native-git-store.mjs";
@@ -34,10 +35,11 @@ export async function planRelease({
   githubProvider = null,
   now = new Date(),
 } = {}) {
-  validatePlanInput({ owner, repo, number, version, notesPath, controlRemote });
+  validatePlanInput({ owner, repo, number, version, notesPath, controlRemote, manifestPath });
   const store = await NativeGitStore.open(resolve(repoPath));
   const preflight = await preflightRunner({ repoPath: store.repoPath, profile: "release", ghBinary, commandRunner, controlRemote });
   assertReadyPreflight(preflight);
+  await assertPlatformManifest(store, manifestPath);
   const repositories = await bindReleaseRepositories(store, { owner, repo, explicitRepositoryId, controlRemote });
   const repositoryId = repositories.code.identity;
   const evidence = await loadReleaseEvidence({ store, notesPath, ghBinary, owner, repo, number, commandRunner });
@@ -65,13 +67,20 @@ export async function planRelease({
   });
 }
 
-function validatePlanInput({ owner, repo, number, version, notesPath, controlRemote }) {
+function validatePlanInput({ owner, repo, number, version, notesPath, controlRemote, manifestPath }) {
   contract.string(owner, "owner");
   contract.string(repo, "repo");
   contract.positiveInteger(number, "number");
   contract.semver(version, "version");
   contract.safeRelativePath(notesPath, "notesPath");
+  contract.safeRelativePath(manifestPath, "manifestPath");
   contract.equals(controlRemote, "control", "controlRemote");
+}
+
+async function assertPlatformManifest(store, manifestPath) {
+  const source = await runGit({ args: ["show", "HEAD:tabellio.platform.json"], cwd: store.repoPath });
+  const platform = validatePlatformConfig(JSON.parse(source.stdout));
+  contract.equals(manifestPath, platform.validation.manifest, "manifestPath");
 }
 
 async function bindReleaseRepositories(store, { owner, repo, explicitRepositoryId, controlRemote }) {
@@ -173,8 +182,8 @@ async function assertMergedReview({ store, validationLedger, provider, repositor
   });
   const review = await manager.sync({ number, actor: runnerId, now });
   if (review.cycle.status !== "merged") throw new Error(`Review cycle ${number} is ${review.cycle.status}, not merged.`);
-  if (!reviewCycleHasReadyEvidence(review.cycle, review.cycle.changeRequest.headCommit)) {
-    throw new Error(`Review cycle ${number} has no ready evidence for the merged pull-request head.`);
+  if (!reviewCycleHasReleaseReadiness(review.cycle, review.cycle.changeRequest.headCommit)) {
+    throw new Error(`Review cycle ${number} is not release-ready for the merged pull-request head.`);
   }
 }
 

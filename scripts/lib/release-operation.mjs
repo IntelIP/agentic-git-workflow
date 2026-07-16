@@ -50,6 +50,7 @@ export function validateReleaseIntent(value) {
   contract.string(value.repository.id, "intent.repository.id");
   contract.slug(value.repository.owner, "intent.repository.owner");
   contract.slug(value.repository.name, "intent.repository.name");
+  assertCodeRepositoryIdentity(value.repository);
 
   contract.semver(value.version, "intent.version");
   contract.equals(value.tag, `v${value.version}`, "intent.tag");
@@ -77,6 +78,7 @@ export function validateReleaseIntent(value) {
   contract.object(value.control.repository, "intent.control.repository");
   contract.exactKeys(value.control.repository, ["id"], "intent.control.repository");
   contract.string(value.control.repository.id, "intent.control.repository.id");
+  assertSeparateControlRepository(value.repository, value.control.repository);
   validateControlRefIntent(value.control.intent);
   contract.equals(value.control.intent.operation, "publish", "intent.control.intent.operation");
   contract.equals(value.control.intent.remote, "control", "intent.control.intent.remote");
@@ -115,4 +117,13 @@ export function validateReleaseApproval(value, intent, { now = new Date() } = {}
     throw new Error("Release approval lifetime must not exceed one hour.");
   }
   return approval;
+}
+
+function assertCodeRepositoryIdentity(repository) {
+  const expected = `github.com/${repository.owner}/${repository.name}`;
+  if (repository.id.toLowerCase() !== expected.toLowerCase()) throw new Error("intent.repository.id must match intent.repository.owner and intent.repository.name.");
+}
+
+function assertSeparateControlRepository(repository, controlRepository) {
+  if (controlRepository.id.toLowerCase() === repository.id.toLowerCase()) throw new Error("intent.control.repository.id must differ from intent.repository.id.");
 }

@@ -31,12 +31,13 @@ export class ReleaseExecutor {
     ghBinary = "gh",
     commandRunner = runExternalCommand,
     remoteRefReader = readRemoteRefOid,
-    remoteRepositoryReader = githubRemoteRepositoryIdentity,
+    codeRepositoryReader = repositoryIdentity,
+    controlRepositoryReader = privateGitHubRemoteRepository,
   } = {}) {
     const store = await NativeGitStore.open(resolve(repoPath));
     const common = (await runGit({ args: ["rev-parse", "--git-common-dir"], cwd: store.repoPath })).stdout.trim();
     const root = stateRoot ? resolve(stateRoot) : resolve(store.repoPath, common, "tabellio", "release-operations");
-    const actions = new ReleaseActions({ store, ghBinary, commandRunner, remoteRefReader, remoteRepositoryReader });
+    const actions = new ReleaseActions({ store, ghBinary, commandRunner, remoteRefReader, codeRepositoryReader, controlRepositoryReader });
     return new ReleaseExecutor({ repoPath: store.repoPath, stateRoot: root, actions });
   }
 
@@ -76,13 +77,15 @@ class ReleaseActions {
     ghBinary = "gh",
     commandRunner = runExternalCommand,
     remoteRefReader = readRemoteRefOid,
-    remoteRepositoryReader = githubRemoteRepositoryIdentity,
+    codeRepositoryReader = repositoryIdentity,
+    controlRepositoryReader = privateGitHubRemoteRepository,
   }) {
     this.store = store;
     this.ghBinary = ghBinary;
     this.commandRunner = commandRunner;
     this.remoteRefReader = remoteRefReader;
-    this.remoteRepositoryReader = remoteRepositoryReader;
+    this.codeRepositoryReader = codeRepositoryReader;
+    this.controlRepositoryReader = controlRepositoryReader;
   }
 
   async run(phase, context) {
@@ -97,9 +100,9 @@ class ReleaseActions {
   }
 
   async #verify({ intent }) {
-    const [repositoryId, controlRepositoryId, head, trackedMain, packageResult, notesSource, refs] = await Promise.all([
-      repositoryIdentity(this.store),
-      this.remoteRepositoryReader(this.store, intent.control.intent.remote),
+    const [repositoryId, controlRepository, head, trackedMain, packageResult, notesSource, refs] = await Promise.all([
+      this.codeRepositoryReader(this.store),
+      this.controlRepositoryReader(this.store, intent.control.intent.remote, this.ghBinary, this.commandRunner),
       this.store.resolveRef("HEAD"),
       this.store.resolveRef("origin/main"),
       runGit({ args: ["show", `${intent.revision.commit}:package.json`], cwd: this.store.repoPath }),
@@ -113,14 +116,14 @@ class ReleaseActions {
     const liveMain = await this.remoteRefReader({ repoPath: this.store.repoPath, remote: "origin", ref: "refs/heads/main" });
     const status = await runGit({ args: ["status", "--porcelain=v1"], cwd: this.store.repoPath });
     const branch = await runGit({ args: ["branch", "--show-current"], cwd: this.store.repoPath });
-    assertReleaseRepository({ repositoryId, controlRepositoryId, head, trackedMain, liveMain, branch: branch.stdout, status: status.stdout }, intent);
+    assertReleaseRepository({ repositoryId, controlRepository, head, trackedMain, liveMain, branch: branch.stdout, status: status.stdout }, intent);
     assertReleaseArtifacts({ packageSource: packageResult.stdout, notesSource, refs }, intent);
     return { commit: head, version: intent.version, controlIntentDigest: intent.control.intent.integrity.digest };
   }
 
   async #publishControl({ intent, approval, now }) {
-    const controlRepositoryId = await this.remoteRepositoryReader(this.store, intent.control.intent.remote);
-    assertEqual(controlRepositoryId.toLowerCase(), intent.control.repository.id.toLowerCase(), "Release control repository identity changed.");
+    const controlRepository = await this.controlRepositoryReader(this.store, intent.control.intent.remote, this.ghBinary, this.commandRunner);
+    assertControlRepository(controlRepository, intent);
     const snapshot = await snapshotControlRefs({
       repoPath: this.store.repoPath,
       remote: intent.control.intent.remote,
@@ -151,7 +154,7 @@ class ReleaseActions {
   }
 
   async #publishTag({ intent }) {
-    const repositoryId = await repositoryIdentity(this.store);
+    const repositoryId = await this.codeRepositoryReader(this.store);
     assertEqual(repositoryId, intent.repository.id, "Release repository identity changed before tag publication.");
     let local = await localTagState(this.store.repoPath, intent.tag);
     const remote = await remoteTagState(this.store.repoPath, intent.code.remote, intent.tag);
@@ -244,7 +247,7 @@ function assertReleaseRepository(actual, intent) {
 
 function assertReleaseRevision(actual, intent) {
   assertEqual(actual.repositoryId, intent.repository.id, "Release repository identity changed.");
-  assertEqual(actual.controlRepositoryId.toLowerCase(), intent.control.repository.id.toLowerCase(), "Release control repository identity changed.");
+  assertControlRepository(actual.controlRepository, intent);
   assertEqual(actual.head, intent.revision.commit, "Release HEAD changed after planning.");
   assertEqual(actual.trackedMain, actual.head, "Release commit no longer equals tracked origin/main.");
   assertEqual(actual.liveMain, actual.head, "Release commit no longer equals live origin/main.");
@@ -390,10 +393,23 @@ async function sourceAtCommit(repoPath, commit, path) {
   return (await runGit({ args: ["show", `${commit}:${path}`], cwd: repoPath })).stdout;
 }
 
-async function githubRemoteRepositoryIdentity(store, remote) {
+async function privateGitHubRemoteRepository(store, remote, ghBinary, commandRunner) {
   const repository = parseGitHubRepositoryRemote(await store.gitConfig(`remote.${remote}.url`));
   if (!repository) throw new Error(`Release ${remote} remote is not a supported GitHub repository.`);
-  return repository.identity;
+  const result = await commandRunner({
+    binary: ghBinary,
+    args: ["repo", "view", repository.fullName, "--json", "nameWithOwner,isPrivate"],
+    cwd: store.repoPath,
+    timeoutMs: 30_000,
+  });
+  const view = JSON.parse(result.stdout);
+  if (String(view.nameWithOwner).toLowerCase() !== repository.key) throw new Error("GitHub returned a different control repository identity.");
+  return { id: repository.identity, isPrivate: view.isPrivate === true };
+}
+
+function assertControlRepository(actual, intent) {
+  assertEqual(actual.id.toLowerCase(), intent.control.repository.id.toLowerCase(), "Release control repository identity changed.");
+  if (!actual.isPrivate) throw new Error("Release control repository is not private.");
 }
 
 async function withTemporaryReleaseNotes(source, action) {

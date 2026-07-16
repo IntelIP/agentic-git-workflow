@@ -44,6 +44,7 @@ export class ReviewCycleManager {
     const record = await this.#read(number);
     const existing = record.value;
     if (existing) validateReviewCycle(existing);
+    const priorEvents = eventsWithLegacyReadiness(existing);
     const timestamp = now.toISOString();
     const feedback = mergeProviderFeedback(existing?.feedback ?? [], [
       ...reviews.map((value) => reviewFeedback(value, timestamp)),
@@ -81,7 +82,7 @@ export class ReviewCycleManager {
       feedback,
       fixes,
       checks,
-      events: appendEvent(existing?.events ?? [], event("synced", actor, timestamp, `Synced ${feedback.length} feedback items at ${changeRequest.source.commit}.`)),
+      events: appendEvent(priorEvents, event("synced", actor, timestamp, `Synced ${feedback.length} feedback items at ${changeRequest.source.commit}.`)),
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
       integrity: { algorithm: "sha256", digest: "0".repeat(64) },
@@ -261,6 +262,10 @@ export class ReviewCycleManager {
 export function reviewCycleHasReadyEvidence(cycle, headCommit) {
   return Array.isArray(cycle?.events)
     && cycle.events.some((item) => item.type === "ready" && item.detail === headCommit);
+}
+
+export function reviewCycleHasReleaseReadiness(cycle, headCommit) {
+  return reviewCycleHasReadyEvidence(cycle, headCommit) && readinessStatus(cycle) === "ready";
 }
 
 export function validateReviewCycle(value) {
@@ -483,15 +488,24 @@ function feedback({
 function deriveStatus(cycle) {
   if (cycle.changeRequest.state === "merged") return "merged";
   if (cycle.changeRequest.state === "closed") return "closed";
-  if (cycle.changeRequest.draft) return "draft";
-  if (cycle.changeRequest.mergeable === false) return "blocked";
-  if (["error", "failure", "failed"].includes(cycle.checks.state)) return "blocked";
+  return readinessStatus(cycle);
+}
+
+function readinessStatus(cycle) {
   const live = cycle.feedback.filter((item) => item.providerState !== "stale");
-  if (live.some((item) => item.disposition === "pending")) return "needs_triage";
-  if (live.some((item) => item.disposition === "actionable" && item.resolution === "open")) return "changes_requested";
-  if (cycle.fixes.some((fix) => fix.published !== true)) return "update_required";
-  if (["none", "pending", "running"].includes(cycle.checks.state)) return "validating";
-  return "ready";
+  const matchingStatus = [
+    { active: cycle.changeRequest.draft, status: "draft" },
+    { active: cycle.changeRequest.mergeable === false, status: "blocked" },
+    { active: ["error", "failure", "failed"].includes(cycle.checks.state), status: "blocked" },
+    { active: live.some((item) => item.disposition === "pending"), status: "needs_triage" },
+    {
+      active: live.some((item) => item.disposition === "actionable" && item.resolution === "open"),
+      status: "changes_requested",
+    },
+    { active: cycle.fixes.some((fix) => fix.published !== true), status: "update_required" },
+    { active: ["none", "pending", "running"].includes(cycle.checks.state), status: "validating" },
+  ].find(({ active }) => active);
+  return matchingStatus ? matchingStatus.status : "ready";
 }
 
 function cycleDigest(value) {
@@ -537,6 +551,13 @@ function event(type, actor, at, detail) {
 
 function appendEvent(events, next) {
   return [...events, next].slice(-100);
+}
+
+function eventsWithLegacyReadiness(existing) {
+  if (!existing) return [];
+  if (existing.status !== "ready") return existing.events;
+  if (reviewCycleHasReadyEvidence(existing, existing.changeRequest.headCommit)) return existing.events;
+  return appendEvent(existing.events, event("ready", readinessActor(existing.events), existing.updatedAt, existing.changeRequest.headCommit));
 }
 
 function recordReadyEvidence(cycle, status) {

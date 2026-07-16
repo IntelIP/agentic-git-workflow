@@ -6,6 +6,7 @@ import test from "node:test";
 import { runGit } from "../scripts/lib/git-process.mjs";
 import { runPreflight, validatePreflightResult } from "../scripts/lib/preflight.mjs";
 import { createFixture, identityEnv } from "./helpers/git-fixture.mjs";
+import { platformFixture } from "./helpers/platform-fixture.mjs";
 
 test("preflight proves GitHub and Entire readiness without exposing credentials", async (t) => {
   const fixture = await preparedFixture(t);
@@ -103,7 +104,7 @@ async function preparedFixture(t) {
   await runGit({ args: ["remote", "add", "control", "git@github.com:example/repository-control.git"], cwd: fixture.seed });
   await mkdir(join(fixture.seed, ".codex"), { recursive: true });
   await writeEntireHooks(fixture.seed, (command) => `entire hooks codex ${command}`);
-  await writeFile(join(fixture.seed, "tabellio.platform.json"), JSON.stringify(platform()));
+  await writeFile(join(fixture.seed, "tabellio.platform.json"), JSON.stringify(platformFixture()));
   return fixture;
 }
 
@@ -138,28 +139,4 @@ function fakeCommands({ trusted, privateControl = true }) {
 
 function result(stdout, stderr = "") {
   return { stdout, stderr, exitCode: 0, signal: null };
-}
-
-function platform() {
-  return {
-    schemaVersion: "tabellio-platform/v0.3",
-    codeStorage: {
-      provider: "github",
-      remoteName: "origin",
-      publicSurface: "code-and-thin-pr",
-      codeRef: "refs/heads/main",
-      allowedRefPrefixes: ["refs/heads/", "refs/tags/"],
-    },
-    workflow: {
-      stackManager: "git-spice",
-      controlState: "external",
-      controlProvider: "github",
-      controlRemoteName: "control",
-      controlRefs: ["refs/tabellio/reviews", "refs/tabellio/validations", "refs/heads/entire/checkpoints/v1"],
-      publishControlRefsToCodeStorage: false,
-    },
-    ledger: { provider: "entire", storage: "external", checkpointRef: "refs/heads/entire/checkpoints/v1" },
-    validation: { runner: "tabellio-validate", manifest: "tabellio.validation.json", storage: "external", resultRef: "refs/tabellio/validations" },
-    reviews: { provider: "tabellio", storage: "external", stateRef: "refs/tabellio/reviews" },
-  };
 }
