@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:tabellio:schema:review-cycle:v0.2",
+  "$id": "urn:tabellio:schema:review-cycle:v0.3",
   "title": "Tabellio Review Cycle",
   "type": "object",
   "required": ["schemaVersion", "id", "repository", "provider", "changeRequest", "status", "round", "feedback", "fixes", "checks", "events", "createdAt", "updatedAt", "integrity"],
   "additionalProperties": false,
   "properties": {
-    "schemaVersion": { "const": "tabellio-review-cycle/v0.2" },
+    "schemaVersion": { "const": "tabellio-review-cycle/v0.3" },
     "id": { "type": "string", "minLength": 1 },
     "repository": {
       "type": "object",

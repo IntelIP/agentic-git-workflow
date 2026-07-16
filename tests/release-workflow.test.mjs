@@ -219,7 +219,7 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
   assert.notEqual(alternateTagObject, approvedTagObject);
   await runGit({ args: ["push", "--force", "origin", intent.tag], cwd: fixture.seed });
   await runGit({ args: ["update-ref", `refs/tags/${intent.tag}`, approvedTagObject], cwd: fixture.seed });
-  await assert.rejects(executor.execute({ intent, approval, now }), /annotated tag objects differ/);
+  await assert.rejects(executor.execute({ intent, approval, now }), /noncanonical metadata/);
   await runGit({ args: ["push", "--force", "origin", intent.tag], cwd: fixture.seed });
 
   existingRelease = {

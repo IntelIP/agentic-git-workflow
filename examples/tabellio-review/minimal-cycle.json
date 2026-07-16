@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "tabellio-review-cycle/v0.2",
+  "schemaVersion": "tabellio-review-cycle/v0.3",
   "id": "review-example-001",
   "repository": { "id": "example/tabellio" },
   "provider": { "id": "github", "owner": "example", "repo": "tabellio" },
@@ -55,6 +55,6 @@
   "updatedAt": "2026-07-10T12:00:00.000Z",
   "integrity": {
     "algorithm": "sha256",
-    "digest": "0cd789f42ee49845ae468f299ef16b311728d16d091d44b8b68ed380c04f9651"
+    "digest": "4bc32c6f6161c4c3a2bb22924e7587734c579bf6edb4b056615cbd9737385985"
   }
 }

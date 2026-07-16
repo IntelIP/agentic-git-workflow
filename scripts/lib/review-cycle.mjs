@@ -4,7 +4,8 @@ import { runGit } from "./git-process.mjs";
 import { digestObject } from "./stack-operation.mjs";
 import { latestValidationResult } from "./validation-runner.mjs";
 
-const REVIEW_CYCLE_SCHEMA_VERSION = "tabellio-review-cycle/v0.2";
+const REVIEW_CYCLE_SCHEMA_VERSION_V2 = "tabellio-review-cycle/v0.2";
+const REVIEW_CYCLE_SCHEMA_VERSION_V3 = "tabellio-review-cycle/v0.3";
 const AGENT_REVIEW_SCHEMA_VERSION = "tabellio-agent-review/v0.1";
 const MAX_FEEDBACK_ITEMS = 5_000;
 const MAX_AGENT_FINDINGS = 1_000;
@@ -59,7 +60,7 @@ export class ReviewCycleManager {
     )));
     const headChanged = existing && existing.changeRequest.headCommit !== changeRequest.source.commit;
     const cycle = {
-      schemaVersion: REVIEW_CYCLE_SCHEMA_VERSION,
+      schemaVersion: REVIEW_CYCLE_SCHEMA_VERSION_V3,
       id: existing?.id ?? cycleId(this.repositoryId, this.owner, this.repo, number),
       repository: { id: this.repositoryId },
       provider: { id: "github", owner: this.owner, repo: this.repo },
@@ -82,7 +83,11 @@ export class ReviewCycleManager {
       feedback,
       fixes,
       checks,
-      events: appendEvent(priorEvents, event("synced", actor, timestamp, `Synced ${feedback.length} feedback items at ${changeRequest.source.commit}.`)),
+      events: appendSyncedEvent(
+        priorEvents,
+        event("synced", actor, timestamp, `Synced ${feedback.length} feedback items at ${changeRequest.source.commit}.`),
+        existing,
+      ),
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
       integrity: { algorithm: "sha256", digest: "0".repeat(64) },
@@ -206,6 +211,7 @@ export class ReviewCycleManager {
   }
 
   async #save(cycle, expectedVersion) {
+    cycle.schemaVersion = REVIEW_CYCLE_SCHEMA_VERSION_V3;
     const status = deriveStatus(cycle);
     recordReadyEvidence(cycle, status);
     cycle.status = status;
@@ -271,7 +277,7 @@ export function reviewCycleHasReleaseReadiness(cycle, headCommit) {
 export function validateReviewCycle(value) {
   object(value, "review cycle");
   exactKeys(value, ["schemaVersion", "id", "repository", "provider", "changeRequest", "status", "round", "feedback", "fixes", "checks", "events", "createdAt", "updatedAt", "integrity"], "review cycle");
-  equals(value.schemaVersion, REVIEW_CYCLE_SCHEMA_VERSION, "schemaVersion");
+  member(value.schemaVersion, [REVIEW_CYCLE_SCHEMA_VERSION_V2, REVIEW_CYCLE_SCHEMA_VERSION_V3], "schemaVersion");
   requiredString(value.id, "id");
   object(value.repository, "repository");
   exactKeys(value.repository, ["id"], "repository");
@@ -307,7 +313,7 @@ export function validateReviewCycle(value) {
   validateChecks(value.checks);
   if (!Array.isArray(value.events)) throw new Error("events must be an array.");
   if (value.events.length > 100) throw new Error("events must contain at most 100 entries.");
-  value.events.forEach((item, index) => validateEvent(item, `events[${index}]`));
+  value.events.forEach((item, index) => validateEvent(item, `events[${index}]`, value.schemaVersion));
   date(value.createdAt, "createdAt");
   date(value.updatedAt, "updatedAt");
   object(value.integrity, "integrity");
@@ -553,6 +559,15 @@ function appendEvent(events, next) {
   return [...events, next].slice(-100);
 }
 
+function appendSyncedEvent(events, next, existing) {
+  const appended = appendEvent(events, next);
+  if (!existing) return appended;
+  const headCommit = existing.changeRequest.headCommit;
+  if (!reviewCycleHasReadyEvidence(existing, headCommit)) return appended;
+  if (reviewCycleHasReadyEvidence({ events: appended }, headCommit)) return appended;
+  return appendEvent(appended, event("ready", next.actor, next.at, headCommit));
+}
+
 function eventsWithLegacyReadiness(existing) {
   if (!existing) return [];
   if (existing.status !== "ready") return existing.events;
@@ -651,16 +666,25 @@ function validateChecks(value) {
   }
 }
 
-function validateEvent(value, path) {
+function validateEvent(value, path, schemaVersion) {
   object(value, path);
   exactKeys(value, ["id", "type", "actor", "at", "detail"], path);
   requiredString(value.id, `${path}.id`);
-  member(value.type, ["synced", "triaged", "fix-recorded", "agent-review-imported", "ready"], `${path}.type`);
+  member(value.type, reviewEventTypes(schemaVersion), `${path}.type`);
   requiredString(value.actor, `${path}.actor`);
   date(value.at, `${path}.at`);
   requiredString(value.detail, `${path}.detail`);
   maxLength(value.detail, 2_000, `${path}.detail`);
-  if (value.type === "ready") oid(value.detail, `${path}.detail`);
+  validateReadyEvent(value, path, schemaVersion);
+}
+
+function reviewEventTypes(schemaVersion) {
+  const types = ["synced", "triaged", "fix-recorded", "agent-review-imported"];
+  return schemaVersion === REVIEW_CYCLE_SCHEMA_VERSION_V3 ? [...types, "ready"] : types;
+}
+
+function validateReadyEvent(value, path, schemaVersion) {
+  if (schemaVersion === REVIEW_CYCLE_SCHEMA_VERSION_V3 && value.type === "ready") oid(value.detail, `${path}.detail`);
 }
 
 function exactKeys(value, expected, path) {

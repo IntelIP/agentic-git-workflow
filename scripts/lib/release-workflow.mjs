@@ -152,13 +152,14 @@ class ReleaseActions {
   async #publishTag({ intent }) {
     const repositoryId = await this.codeRepositoryReader(this.store);
     assertRepositoryIdentity(repositoryId, intent.repository.id, "Release repository identity changed before tag publication.");
+    const canonicalObject = await canonicalTagObject(this.store.repoPath, intent);
     let local = await localTagState(this.store.repoPath, intent.tag);
     const remote = await remoteTagState(this.store.repoPath, intent.code.remote, intent.tag);
-    assertTagTarget(local, intent, "locally");
-    assertTagTarget(remote, intent, "remotely");
-    await ensureLocalTag(this.store.repoPath, intent, local, remote);
+    assertTagTarget(local, intent, "locally", canonicalObject);
+    assertTagTarget(remote, intent, "remotely", canonicalObject);
+    await ensureLocalTag(this.store.repoPath, intent, local, remote, canonicalObject);
     local = await localTagState(this.store.repoPath, intent.tag);
-    assertTagTarget(local, intent, "locally");
+    assertTagTarget(local, intent, "locally", canonicalObject);
     assertMatchingTagObjects(local, remote, intent.tag);
     await ensureRemoteTag(this.store.repoPath, intent, remote);
     return { tag: intent.tag, commit: intent.revision.commit, status: tagPublishStatus(remote) };
@@ -265,11 +266,12 @@ function assertReleaseArtifacts(actual, intent) {
   controlPublicationState(actual.refs, intent.control.intent.refs);
 }
 
-function assertTagTarget(target, intent, location) {
+function assertTagTarget(target, intent, location, canonicalObject) {
   if (!target) return;
   assertAnnotatedTag(target, intent.tag, location);
   assertTagCommit(target, intent, location);
   assertTagMessage(target, intent, location);
+  assertCanonicalTag(target, intent.tag, location, canonicalObject);
 }
 
 function assertAnnotatedTag(target, tag, location) {
@@ -284,25 +286,48 @@ function assertTagMessage(target, intent, location) {
   if (target.message !== intent.release.title) throw new Error(`${intent.tag} exists ${location} with a different annotation.`);
 }
 
+function assertCanonicalTag(target, tag, location, canonicalObject) {
+  if (target.object !== canonicalObject) throw new Error(`${tag} exists ${location} with noncanonical metadata.`);
+}
+
 function assertMatchingTagObjects(local, remote, tag) {
   if (local && remote && local.object !== remote.object) throw new Error(`${tag} local and remote annotated tag objects differ.`);
 }
 
-async function ensureLocalTag(repoPath, intent, local, remote) {
+async function ensureLocalTag(repoPath, intent, local, remote, canonicalObject) {
   if (local) return;
   if (remote) {
     await runGit({ args: ["update-ref", `refs/tags/${intent.tag}`, remote.object], cwd: repoPath });
     return;
   }
-  await runGit({
-    args: ["tag", "-a", "--cleanup=verbatim", intent.tag, "-m", intent.release.title, intent.revision.commit],
-    cwd: repoPath,
-    env: {
-      GIT_COMMITTER_NAME: "Tabellio Release Automation",
-      GIT_COMMITTER_EMAIL: "release@tabellio.invalid",
-      GIT_COMMITTER_DATE: intent.createdAt,
-    },
-  });
+  const written = await canonicalTagObject(repoPath, intent, { write: true });
+  assertEqual(written, canonicalObject, "Canonical release tag object changed while writing.");
+  await runGit({ args: ["update-ref", `refs/tags/${intent.tag}`, written], cwd: repoPath });
+}
+
+async function canonicalTagObject(repoPath, intent, { write = false } = {}) {
+  const directory = await mkdtemp(join(tmpdir(), "tabellio-tag-object-"));
+  const path = join(directory, "tag");
+  try {
+    await writeFile(path, canonicalTagPayload(intent), { mode: 0o600 });
+    const result = await runGit({ args: ["hash-object", ...(write ? ["-w"] : []), "-t", "tag", path], cwd: repoPath });
+    return result.stdout.trim();
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function canonicalTagPayload(intent) {
+  const timestamp = Math.floor(Date.parse(intent.createdAt) / 1_000);
+  return [
+    `object ${intent.revision.commit}`,
+    "type commit",
+    `tag ${intent.tag}`,
+    `tagger Tabellio Release Automation <release@tabellio.invalid> ${timestamp} +0000`,
+    "",
+    intent.release.title,
+    "",
+  ].join("\n");
 }
 
 async function ensureRemoteTag(repoPath, intent, remote) {

@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:tabellio:schema:validation-result:v0.1",
+  "$id": "urn:tabellio:schema:validation-result:v0.2",
   "title": "Tabellio Validation Result",
   "type": "object",
-  "required": ["schemaVersion", "runId", "repository", "revision", "suite", "runner", "status", "checkpoints", "commands", "startedAt", "completedAt", "integrity"],
+  "required": ["schemaVersion", "runId", "repository", "revision", "checkpointRevision", "suite", "runner", "status", "checkpoints", "commands", "startedAt", "completedAt", "integrity"],
   "additionalProperties": false,
   "properties": {
-    "schemaVersion": { "const": "tabellio-validation-result/v0.1" },
+    "schemaVersion": { "const": "tabellio-validation-result/v0.2" },
     "runId": { "type": "string", "minLength": 1 },
     "repository": {
       "type": "object",

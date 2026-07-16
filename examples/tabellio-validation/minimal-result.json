@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "tabellio-validation-result/v0.1",
+  "schemaVersion": "tabellio-validation-result/v0.2",
   "runId": "validation-example-001",
   "repository": { "id": "example/tabellio" },
   "revision": {
@@ -49,6 +49,6 @@
   "completedAt": "2026-07-10T12:00:01.000Z",
   "integrity": {
     "algorithm": "sha256",
-    "digest": "caf2abe98c754e85c4be89c702dc13511d08006db8827ac67c8d6b79c3e03d2a"
+    "digest": "eefca7fe3e063446cfdc3151ad9238c5015e577741e3023ffb2e0d06fcbf194d"
   }
 }
