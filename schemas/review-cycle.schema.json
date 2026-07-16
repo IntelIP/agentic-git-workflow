@@ -151,11 +151,15 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "type": { "enum": ["synced", "triaged", "fix-recorded", "agent-review-imported"] },
+        "type": { "enum": ["synced", "triaged", "fix-recorded", "agent-review-imported", "ready"] },
         "actor": { "type": "string", "minLength": 1 },
         "at": { "type": "string", "format": "date-time" },
         "detail": { "type": "string", "minLength": 1, "maxLength": 2000 }
-      }
+      },
+      "allOf": [{
+        "if": { "properties": { "type": { "const": "ready" } }, "required": ["type"] },
+        "then": { "properties": { "detail": { "$ref": "#/$defs/oid" } } }
+      }]
     }
   }
 }

@@ -5,11 +5,11 @@ import { createControlRefIntent, snapshotControlRefs } from "./control-ref-trans
 import { contract } from "./contract-checks.mjs";
 import { runExternalCommand } from "./external-command.mjs";
 import { GitJsonLedger } from "./git-json-ledger.mjs";
-import { parseGitHubRepositoryRemote } from "./github-repository.mjs";
+import { parseGitHubRepositoryRemote, sameGitHubRepository } from "./github-repository.mjs";
 import { runGit } from "./git-process.mjs";
 import { runPreflight } from "./preflight.mjs";
 import { createReleaseIntent } from "./release-operation.mjs";
-import { ReviewCycleManager } from "./review-cycle.mjs";
+import { ReviewCycleManager, reviewCycleHasReadyEvidence } from "./review-cycle.mjs";
 import { ValidationRunner } from "./validation-runner.mjs";
 import { GitHubProvider } from "../providers/github-provider.mjs";
 import { NativeGitStore } from "../providers/native-git-store.mjs";
@@ -38,7 +38,8 @@ export async function planRelease({
   const store = await NativeGitStore.open(resolve(repoPath));
   const preflight = await preflightRunner({ repoPath: store.repoPath, profile: "release", ghBinary, commandRunner, controlRemote });
   assertReadyPreflight(preflight);
-  const repositoryId = await bindReleaseRepository(store, { owner, repo, explicitRepositoryId });
+  const repositories = await bindReleaseRepositories(store, { owner, repo, explicitRepositoryId, controlRemote });
+  const repositoryId = repositories.code.identity;
   const evidence = await loadReleaseEvidence({ store, notesPath, ghBinary, owner, repo, number, commandRunner });
   const { headCommit, parentCommit, notesSource, pr } = validateReleaseEvidence(evidence, { version, number });
   const validationLedger = await GitJsonLedger.open({ repoPath: store.repoPath, ref: "refs/tabellio/validations" });
@@ -52,6 +53,7 @@ export async function planRelease({
     revision: { commit: headCommit, parent: parentCommit },
     pullRequest: { number, headCommit: pr.headRefOid, mergeCommit: pr.mergeCommit.oid },
     controlIntent,
+    controlRepository: { id: repositories.control.identity },
     validation: {
       runId: validation.result.runId,
       resultVersion: validation.version,
@@ -72,12 +74,19 @@ function validatePlanInput({ owner, repo, number, version, notesPath, controlRem
   contract.equals(controlRemote, "control", "controlRemote");
 }
 
-async function bindReleaseRepository(store, { owner, repo, explicitRepositoryId }) {
-  const origin = parseGitHubRepositoryRemote(await store.gitConfig("remote.origin.url"));
+async function bindReleaseRepositories(store, { owner, repo, explicitRepositoryId, controlRemote }) {
+  const [originUrl, controlUrl] = await Promise.all([
+    store.gitConfig("remote.origin.url"),
+    store.gitConfig(`remote.${controlRemote}.url`),
+  ]);
+  const origin = parseGitHubRepositoryRemote(originUrl);
   if (!origin) throw new Error("origin must be a supported GitHub repository remote.");
+  const control = parseGitHubRepositoryRemote(controlUrl);
+  if (!control) throw new Error(`${controlRemote} must be a supported GitHub repository remote.`);
+  if (sameGitHubRepository(origin, control)) throw new Error("Control repository must differ from the code repository.");
   assertRequestedRepository(origin, owner, repo);
   assertExplicitRepositoryId(origin, explicitRepositoryId);
-  return origin.identity;
+  return { code: origin, control };
 }
 
 function assertRequestedRepository(origin, owner, repo) {
@@ -164,6 +173,9 @@ async function assertMergedReview({ store, validationLedger, provider, repositor
   });
   const review = await manager.sync({ number, actor: runnerId, now });
   if (review.cycle.status !== "merged") throw new Error(`Review cycle ${number} is ${review.cycle.status}, not merged.`);
+  if (!reviewCycleHasReadyEvidence(review.cycle, review.cycle.changeRequest.headCommit)) {
+    throw new Error(`Review cycle ${number} has no ready evidence for the merged pull-request head.`);
+  }
 }
 
 async function planControlPublication({ store, repositoryId, controlRemote, now }) {

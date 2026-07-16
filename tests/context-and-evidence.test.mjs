@@ -262,11 +262,14 @@ test("core runtime and adoption docs do not require GitHub Actions", async () =>
 });
 
 test("stable schema identifiers keep external references resolvable", async () => {
-  const [evidenceSchema, policySchema] = await Promise.all([
+  const [evidenceSchema, policySchema, releaseSchema, controlSchema] = await Promise.all([
     readFile(`${projectRoot}/schemas/evidence-envelope.schema.json`, "utf8").then(JSON.parse),
     readFile(`${projectRoot}/schemas/external-action-policy.schema.json`, "utf8").then(JSON.parse),
+    readFile(`${projectRoot}/schemas/release-operation.schema.json`, "utf8").then(JSON.parse),
+    readFile(`${projectRoot}/schemas/control-ref-operation.schema.json`, "utf8").then(JSON.parse),
   ]);
   assert.equal(evidenceSchema.properties.externalActionPolicy.$ref, policySchema.$id);
+  assert.equal(releaseSchema.properties.control.properties.intent.$ref, controlSchema.$id);
 });
 
 test("required repository validation is recorded in evidence", async (t) => {

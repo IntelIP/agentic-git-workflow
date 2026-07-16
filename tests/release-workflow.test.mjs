@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,6 +12,7 @@ import { createReleaseIntent, validateReleaseApproval, validateReleaseIntent } f
 import { planRelease } from "../scripts/lib/release-planner.mjs";
 import { repositoryIdentity } from "../scripts/lib/repository-identity.mjs";
 import { ReleaseExecutor } from "../scripts/lib/release-workflow.mjs";
+import { ReviewCycleManager } from "../scripts/lib/review-cycle.mjs";
 import { NativeGitStore } from "../scripts/providers/native-git-store.mjs";
 import { createFixture, identityEnv } from "./helpers/git-fixture.mjs";
 
@@ -30,6 +31,7 @@ test("release intent binds merged commit, validation, control refs, notes, and a
   assert.throws(() => validateReleaseIntent(tampered), /integrity.digest/);
   const longApproval = { ...approval, expiresAt: "2026-07-15T13:01:00.001Z" };
   assert.throws(() => validateReleaseApproval(longApproval, intent, { now }), /must not exceed one hour/);
+  assert.throws(() => exampleIntent({ releaseCreatedAt: "1" }), /ISO date-time/);
 });
 
 test("release executor resumes failed phases without repeating completed work", async (t) => {
@@ -58,7 +60,7 @@ test("release executor resumes failed phases without repeating completed work", 
   await assert.rejects(executor.execute({ intent, approval, now }), /simulated tag failure/);
   const receipt = await executor.execute({ intent, approval, now });
   assert.equal(receipt.status, "succeeded");
-  assert.deepEqual(calls, ["verify", "control-refs", "tag", "tag", "github-release"]);
+  assert.deepEqual(calls, ["verify", "control-refs", "tag", "verify", "tag", "github-release"]);
   assert.equal(receipt.phases.every((phase) => phase.status === "completed"), true);
 });
 
@@ -123,6 +125,7 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
     revision: { commit: head, parent },
     pullRequest: { number: 7, headCommit: parent, mergeCommit: head },
     controlIntent,
+    controlRepository: { id: "github.com/example/repository-control" },
     validation: { runId: "validation-test", resultVersion: validationWrite.version, status: "passed", headCommit: head },
     release: { title: "Tabellio v1.2.3", notesPath, notesDigest: digest("Release 1.2.3\n") },
     createdAt,
@@ -141,21 +144,35 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
     return { stdout: "https://github.com/example/repository/releases/tag/v1.2.3\n", stderr: "", exitCode: 0, signal: null };
   };
   const stateRoot = join(fixture.root, "release-state");
+  let liveReads = 0;
+  let currentControlIdentity = intent.control.repository.id;
   const executor = await ReleaseExecutor.open({
     repoPath: fixture.seed,
     stateRoot,
     commandRunner,
-    remoteRefReader: async () => head,
+    remoteRefReader: async () => { liveReads += 1; return head; },
+    remoteRepositoryReader: async () => currentControlIdentity,
   });
   const approval = approvalFor(intent, "publish-release");
   await runGit({ args: ["tag", intent.tag, head], cwd: fixture.seed });
   await runGit({ args: ["push", "origin", intent.tag], cwd: fixture.seed });
   await runGit({ args: ["tag", "-d", intent.tag], cwd: fixture.seed });
+  const rejectControl = join(control, "hooks", "pre-receive");
+  await writeFile(rejectControl, "#!/bin/sh\nexit 1\n");
+  await chmod(rejectControl, 0o755);
+  await assert.rejects(executor.execute({ intent, approval, now }), /git push/);
+  await rm(rejectControl);
+  currentControlIdentity = "github.com/example/retargeted-control";
+  await assert.rejects(executor.execute({ intent, approval, now }), /control repository identity changed/);
+  currentControlIdentity = intent.control.repository.id;
   await assert.rejects(executor.execute({ intent, approval, now }), /remotely as a lightweight tag/);
   await runGit({ args: ["push", "origin", `:refs/tags/${intent.tag}`], cwd: fixture.seed });
   await writeFile(join(fixture.seed, notesPath), "MUTATED WORKTREE NOTES\n");
+  await assert.rejects(executor.execute({ intent, approval, now }), /clean worktree/);
+  await runGit({ args: ["restore", notesPath], cwd: fixture.seed });
   const receipt = await executor.execute({ intent, approval, now });
   assert.equal(receipt.status, "succeeded");
+  assert.equal(liveReads, 5);
   assert.equal(ghCalls.length, 2);
   assert.deepEqual(publishedNotes, ["Release 1.2.3\n"]);
   const remoteTag = await runGit({ args: ["ls-remote", "--tags", "origin", "refs/tags/v1.2.3^{}"], cwd: fixture.seed });
@@ -165,7 +182,6 @@ test("approved release publishes exact control ref, annotated tag, and GitHub re
   const stored = JSON.parse(await readFile(join(stateRoot, "publish-release.json"), "utf8"));
   assert.equal(stored.status, "succeeded");
 
-  await runGit({ args: ["restore", notesPath], cwd: fixture.seed });
   existingRelease = {
     tagName: intent.tag,
     name: intent.release.title,
@@ -206,11 +222,23 @@ test("release planning binds merged PR proof after exact validation and terminal
   });
   await runGit({ args: ["push", "origin", "main"], cwd: fixture.seed });
   await runGit({ args: ["remote", "set-url", "origin", "https://github.com/example/repository.git"], cwd: fixture.seed });
+  await runGit({ args: ["remote", "set-url", "control", "https://github.com/example/repository-control.git"], cwd: fixture.seed });
+  await runGit({ args: ["config", `url.file://${control}.insteadOf`, "https://github.com/example/repository-control.git"], cwd: fixture.seed });
   const store = await NativeGitStore.open(fixture.seed);
   const head = await store.resolveRef("HEAD");
   const parent = await store.resolveRef("HEAD^");
   await runGit({ args: ["update-ref", "refs/heads/entire/checkpoints/v1", head], cwd: fixture.seed });
   const provider = mergedProvider({ head: parent, base: parent });
+  const reviewLedger = await GitJsonLedger.open({ repoPath: fixture.seed, ref: "refs/tabellio/reviews" });
+  const readyManager = new ReviewCycleManager({
+    store,
+    ledger: reviewLedger,
+    provider: readyProvider({ head: parent, base: parent }),
+    repositoryId: "github.com/example/repository",
+    owner: "example",
+    repo: "repository",
+  });
+  assert.equal((await readyManager.sync({ number: 9, actor: "test", now })).cycle.status, "ready");
   const commandRunner = async ({ args }) => {
     if (args[0] === "pr" && args[1] === "view") {
       return { stdout: JSON.stringify({ state: "MERGED", headRefOid: parent, mergeCommit: { oid: head } }), stderr: "", exitCode: 0, signal: null };
@@ -244,6 +272,7 @@ test("release planning binds merged PR proof after exact validation and terminal
   assert.equal(intent.revision.commit, head);
   assert.equal(intent.pullRequest.headCommit, parent);
   assert.equal(intent.validation.status, "passed");
+  assert.equal(intent.control.repository.id, "github.com/example/repository-control");
   assert.equal(intent.control.intent.refs.length, 3);
   assert.equal(validateReleaseIntent(intent), intent);
 });
@@ -263,7 +292,7 @@ test("release receipt schema fixes every phase to its canonical position", async
   assert.equal(schema.$defs.githubReleasePhase.allOf[1].properties.id.const, "github-release");
 });
 
-function exampleIntent() {
+function exampleIntent({ releaseCreatedAt = createdAt } = {}) {
   const controlIntent = createControlRefIntent({
     operation: "publish",
     repositoryId: "github.com/example/repository",
@@ -277,9 +306,10 @@ function exampleIntent() {
     revision: { commit: "d".repeat(40), parent: "a".repeat(40) },
     pullRequest: { number: 7, headCommit: "c".repeat(40), mergeCommit: "d".repeat(40) },
     controlIntent,
+    controlRepository: { id: "github.com/example/repository-control" },
     validation: { runId: "validation-example", resultVersion: "e".repeat(40), status: "passed", headCommit: "d".repeat(40) },
     release: { title: "Tabellio v1.2.3", notesPath: "docs/releases/v1.2.3.md", notesDigest: digest("notes") },
-    createdAt,
+    createdAt: releaseCreatedAt,
   });
 }
 
@@ -327,5 +357,15 @@ function mergedProvider({ head, base }) {
     async listReviewComments() { return []; },
     async listIssueComments() { return []; },
     async commitStatus() { return { commit: head, state: "success", total: 0, statuses: [] }; },
+  };
+}
+
+function readyProvider({ head, base }) {
+  const provider = mergedProvider({ head, base });
+  return {
+    ...provider,
+    async changeRequest() {
+      return { ...await provider.changeRequest(), state: "open", mergeable: true };
+    },
   };
 }

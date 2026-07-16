@@ -13,6 +13,7 @@ export function createReleaseIntent({
   revision,
   pullRequest,
   controlIntent,
+  controlRepository,
   validation,
   release,
   createdAt = new Date().toISOString(),
@@ -25,7 +26,7 @@ export function createReleaseIntent({
     revision,
     pullRequest,
     code: { remote: "origin", branch: "main" },
-    control: { intent: controlIntent },
+    control: { repository: controlRepository, intent: controlIntent },
     validation,
     release,
     createdAt,
@@ -72,7 +73,10 @@ export function validateReleaseIntent(value) {
   contract.equals(value.code.branch, "main", "intent.code.branch");
 
   contract.object(value.control, "intent.control");
-  contract.exactKeys(value.control, ["intent"], "intent.control");
+  contract.exactKeys(value.control, ["repository", "intent"], "intent.control");
+  contract.object(value.control.repository, "intent.control.repository");
+  contract.exactKeys(value.control.repository, ["id"], "intent.control.repository");
+  contract.string(value.control.repository.id, "intent.control.repository.id");
   validateControlRefIntent(value.control.intent);
   contract.equals(value.control.intent.operation, "publish", "intent.control.intent.operation");
   contract.equals(value.control.intent.remote, "control", "intent.control.intent.remote");

@@ -50,8 +50,16 @@
     "control": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["intent"],
-      "properties": { "intent": { "$ref": "control-ref-operation.schema.json" } }
+      "required": ["repository", "intent"],
+      "properties": {
+        "repository": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id"],
+          "properties": { "id": { "type": "string", "minLength": 1 } }
+        },
+        "intent": { "$ref": "urn:tabellio:schema:control-ref-operation:v0.1" }
+      }
     },
     "validation": {
       "type": "object",

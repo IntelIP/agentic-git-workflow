@@ -216,11 +216,19 @@ async function readPlatformConfig(store) {
 
 function hasEntireHook(entries, expectedCommand) {
   if (!Array.isArray(entries)) return false;
-  const commandPattern = new RegExp(`(?:^|[\\s;&|'\"])(?:exec\\s+)?entire\\s+hooks\\s+codex\\s+${expectedCommand}(?=$|[\\s;&|'\"])`);
-  return entries.some((entry) => Array.isArray(entry?.hooks) && entry.hooks.some((hook) => {
-    if (hook?.type !== "command" || typeof hook.command !== "string") return false;
-    return commandPattern.test(hook.command);
-  }));
+  const direct = new RegExp(`^(?:exec )?entire hooks codex ${expectedCommand}$`);
+  const guarded = new RegExp(`^sh -c 'if ! command -v entire >/dev/null 2>&1; then .+; fi; exec entire hooks codex ${expectedCommand}'$`);
+  return entries.some((entry) => hookCommands(entry).some((hook) => matchesEntireHook(hook, direct, guarded)));
+}
+
+function hookCommands(entry) {
+  return Array.isArray(entry?.hooks) ? entry.hooks : [];
+}
+
+function matchesEntireHook(hook, direct, guarded) {
+  if (hook?.type !== "command") return false;
+  if (typeof hook.command !== "string") return false;
+  return [direct, guarded].some((pattern) => pattern.test(hook.command));
 }
 
 function firstBlocker(rules, fallback) {

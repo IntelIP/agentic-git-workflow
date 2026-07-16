@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -8,7 +8,7 @@ import {
   snapshotControlRefs,
 } from "./control-ref-transport.mjs";
 import { runExternalCommand } from "./external-command.mjs";
-import { readRemoteRefOid } from "./github-repository.mjs";
+import { parseGitHubRepositoryRemote, readRemoteRefOid } from "./github-repository.mjs";
 import { runGit } from "./git-process.mjs";
 import { withOperationLock } from "./operation-lock.mjs";
 import { repositoryIdentity } from "./repository-identity.mjs";
@@ -31,11 +31,12 @@ export class ReleaseExecutor {
     ghBinary = "gh",
     commandRunner = runExternalCommand,
     remoteRefReader = readRemoteRefOid,
+    remoteRepositoryReader = githubRemoteRepositoryIdentity,
   } = {}) {
     const store = await NativeGitStore.open(resolve(repoPath));
     const common = (await runGit({ args: ["rev-parse", "--git-common-dir"], cwd: store.repoPath })).stdout.trim();
     const root = stateRoot ? resolve(stateRoot) : resolve(store.repoPath, common, "tabellio", "release-operations");
-    const actions = new ReleaseActions({ store, ghBinary, commandRunner, remoteRefReader });
+    const actions = new ReleaseActions({ store, ghBinary, commandRunner, remoteRefReader, remoteRepositoryReader });
     return new ReleaseExecutor({ repoPath: store.repoPath, stateRoot: root, actions });
   }
 
@@ -57,7 +58,9 @@ export class ReleaseExecutor {
     let state = resumeOrCreate(existing, intent, approval, now);
     if (state.status === "succeeded") return { ...state, receiptPath: path };
 
-    for (const phase of PHASES) {
+    const verification = state.phases.find((entry) => entry.id === "verify");
+    state = await executePhase({ state, current: verification, phase: "verify", path, actions: this.actions, intent, approval, now });
+    for (const phase of PHASES.slice(1)) {
       const current = state.phases.find((entry) => entry.id === phase);
       if (current.status === "completed") continue;
       state = await executePhase({ state, current, phase, path, actions: this.actions, intent, approval, now });
@@ -68,11 +71,18 @@ export class ReleaseExecutor {
 }
 
 class ReleaseActions {
-  constructor({ store, ghBinary = "gh", commandRunner = runExternalCommand, remoteRefReader = readRemoteRefOid }) {
+  constructor({
+    store,
+    ghBinary = "gh",
+    commandRunner = runExternalCommand,
+    remoteRefReader = readRemoteRefOid,
+    remoteRepositoryReader = githubRemoteRepositoryIdentity,
+  }) {
     this.store = store;
     this.ghBinary = ghBinary;
     this.commandRunner = commandRunner;
     this.remoteRefReader = remoteRefReader;
+    this.remoteRepositoryReader = remoteRepositoryReader;
   }
 
   async run(phase, context) {
@@ -87,8 +97,9 @@ class ReleaseActions {
   }
 
   async #verify({ intent }) {
-    const [repositoryId, head, trackedMain, packageResult, notesSource, refs] = await Promise.all([
+    const [repositoryId, controlRepositoryId, head, trackedMain, packageResult, notesSource, refs] = await Promise.all([
       repositoryIdentity(this.store),
+      this.remoteRepositoryReader(this.store, intent.control.intent.remote),
       this.store.resolveRef("HEAD"),
       this.store.resolveRef("origin/main"),
       runGit({ args: ["show", `${intent.revision.commit}:package.json`], cwd: this.store.repoPath }),
@@ -102,12 +113,14 @@ class ReleaseActions {
     const liveMain = await this.remoteRefReader({ repoPath: this.store.repoPath, remote: "origin", ref: "refs/heads/main" });
     const status = await runGit({ args: ["status", "--porcelain=v1"], cwd: this.store.repoPath });
     const branch = await runGit({ args: ["branch", "--show-current"], cwd: this.store.repoPath });
-    assertReleaseRepository({ repositoryId, head, trackedMain, liveMain, branch: branch.stdout, status: status.stdout }, intent);
+    assertReleaseRepository({ repositoryId, controlRepositoryId, head, trackedMain, liveMain, branch: branch.stdout, status: status.stdout }, intent);
     assertReleaseArtifacts({ packageSource: packageResult.stdout, notesSource, refs }, intent);
     return { commit: head, version: intent.version, controlIntentDigest: intent.control.intent.integrity.digest };
   }
 
   async #publishControl({ intent, approval, now }) {
+    const controlRepositoryId = await this.remoteRepositoryReader(this.store, intent.control.intent.remote);
+    assertEqual(controlRepositoryId.toLowerCase(), intent.control.repository.id.toLowerCase(), "Release control repository identity changed.");
     const snapshot = await snapshotControlRefs({
       repoPath: this.store.repoPath,
       remote: intent.control.intent.remote,
@@ -119,7 +132,7 @@ class ReleaseActions {
     }
     const controlApproval = {
       schemaVersion: "tabellio-control-ref-approval/v0.1",
-      id: `${approval.id.slice(0, 110)}-control`,
+      id: `${approval.id.slice(0, 80)}-control-${randomUUID()}`,
       intentDigest: intent.control.intent.integrity.digest,
       approved: true,
       approvedBy: approval.approvedBy,
@@ -138,6 +151,8 @@ class ReleaseActions {
   }
 
   async #publishTag({ intent }) {
+    const repositoryId = await repositoryIdentity(this.store);
+    assertEqual(repositoryId, intent.repository.id, "Release repository identity changed before tag publication.");
     let local = await localTagState(this.store.repoPath, intent.tag);
     const remote = await remoteTagState(this.store.repoPath, intent.code.remote, intent.tag);
     assertTagTarget(local, intent, "locally");
@@ -229,6 +244,7 @@ function assertReleaseRepository(actual, intent) {
 
 function assertReleaseRevision(actual, intent) {
   assertEqual(actual.repositoryId, intent.repository.id, "Release repository identity changed.");
+  assertEqual(actual.controlRepositoryId.toLowerCase(), intent.control.repository.id.toLowerCase(), "Release control repository identity changed.");
   assertEqual(actual.head, intent.revision.commit, "Release HEAD changed after planning.");
   assertEqual(actual.trackedMain, actual.head, "Release commit no longer equals tracked origin/main.");
   assertEqual(actual.liveMain, actual.head, "Release commit no longer equals live origin/main.");
@@ -372,6 +388,12 @@ function assertEqual(actual, expected, message) {
 
 async function sourceAtCommit(repoPath, commit, path) {
   return (await runGit({ args: ["show", `${commit}:${path}`], cwd: repoPath })).stdout;
+}
+
+async function githubRemoteRepositoryIdentity(store, remote) {
+  const repository = parseGitHubRepositoryRemote(await store.gitConfig(`remote.${remote}.url`));
+  if (!repository) throw new Error(`Release ${remote} remote is not a supported GitHub repository.`);
+  return repository.identity;
 }
 
 async function withTemporaryReleaseNotes(source, action) {

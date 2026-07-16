@@ -2,6 +2,8 @@ function ensure(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
 export const contract = Object.freeze({
   object(value, path) {
     ensure(Object.prototype.toString.call(value) === "[object Object]", `${path} must be an object.`);
@@ -47,6 +49,7 @@ export const contract = Object.freeze({
 
   date(value, path) {
     this.string(value, path);
+    ensure(ISO_DATE_TIME.test(value), `${path} must be an ISO date-time string.`);
     ensure(!Number.isNaN(Date.parse(value)), `${path} must be an ISO date-time string.`);
   },
 

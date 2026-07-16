@@ -21,6 +21,9 @@
     "branch": "main"
   },
   "control": {
+    "repository": {
+      "id": "github.com/example/repository-control"
+    },
     "intent": {
       "schemaVersion": "tabellio-control-ref-operation/v0.1",
       "operation": "publish",
@@ -66,6 +69,6 @@
   "createdAt": "2026-07-15T12:00:00.000Z",
   "integrity": {
     "algorithm": "sha256",
-    "digest": "de270b5038fa12d0301426fe260652bd4c6cdbe69bc668006a395f10df430726"
+    "digest": "7a5bbc64a02e37356acb82576698584e8e21f3f0539a6a572d1cf8083a6b7c7c"
   }
 }

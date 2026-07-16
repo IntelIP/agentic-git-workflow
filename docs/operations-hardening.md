@@ -30,11 +30,11 @@ Do not maintain a second merge authority. Independent squash or rebase merges cr
 
 ## Control-State Publication
 
-Review cycles, validation results, and Entire checkpoints are published together with `git push --atomic`, explicit force-with-lease expectations, and a one-use approval. Publication rejects non-fast-forward updates, divergence, changed local or remote object IDs, expired approvals, and reused approval IDs.
+Review cycles, validation results, and Entire checkpoints are published together with `git push --atomic`, explicit force-with-lease expectations, and a one-use approval. Publication rejects non-fast-forward updates, divergence, changed local or remote object IDs, expired approvals, and reused approval IDs. Release retries derive a fresh one-use control approval from the still-active release approval after re-verifying the exact repositories and OIDs.
 
 Automatic Entire session pushes to `origin` remain disabled. The approved control-ref transport publishes `refs/heads/entire/checkpoints/v1` with the review and validation refs only to a separately configured private GitHub repository. Planning and execution reject `origin`.
 
-Release planning is local and credentialed-read-only: it requires clean merged `main`, runs exact-head validation, synchronizes terminal review state, and snapshots the resulting control OIDs. Remote publication requires a separate short-lived release approval. Execution writes an atomic local receipt before each phase and reconciles already-published control refs, tags, and releases during retry. Pull-request merge remains a separate explicit action because an approval cannot safely bind a squash commit that does not exist yet.
+Release planning is local and credentialed-read-only: it requires clean merged `main`, runs exact-head validation, requires durable proof that the exact pull-request head reached `ready` before merge, binds both GitHub repository identities, and snapshots the resulting control OIDs. Remote publication requires a separate release approval capped at one hour. Execution re-verifies code and control repositories before every resumed write, writes an atomic local receipt before each phase, and reconciles already-published control refs, tags, and releases during retry. Pull-request merge remains a separate explicit action because an approval cannot safely bind a squash commit that does not exist yet.
 
 ## Production Checklist
 

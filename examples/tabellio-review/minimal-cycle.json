@@ -35,17 +35,26 @@
       "updatedAt": "2026-07-10T12:00:00.000Z"
     }]
   },
-  "events": [{
-    "id": "event-example-001",
-    "type": "synced",
-    "actor": "example-agent",
-    "at": "2026-07-10T12:00:00.000Z",
-    "detail": "Synced 0 feedback items at example head."
-  }],
+  "events": [
+    {
+      "id": "event-example-001",
+      "type": "synced",
+      "actor": "example-agent",
+      "at": "2026-07-10T12:00:00.000Z",
+      "detail": "Synced 0 feedback items at example head."
+    },
+    {
+      "id": "event-example-002",
+      "type": "ready",
+      "actor": "example-agent",
+      "at": "2026-07-10T12:00:00.000Z",
+      "detail": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
   "createdAt": "2026-07-10T12:00:00.000Z",
   "updatedAt": "2026-07-10T12:00:00.000Z",
   "integrity": {
     "algorithm": "sha256",
-    "digest": "88a01451f8b6e7f9d7df66c89dcc0e44234dcc89f78c18e5fef3ca750341e040"
+    "digest": "0cd789f42ee49845ae468f299ef16b311728d16d091d44b8b68ed380c04f9651"
   }
 }

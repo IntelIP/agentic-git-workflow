@@ -54,6 +54,10 @@ test("preflight requires executable Entire hook commands, not empty event keys",
   const hooks = result.checks.find((check) => check.id === "codex-hooks");
   assert.equal(hooks.status, "blocked");
   assert.match(hooks.detail, /sessionstart/);
+
+  await writeEntireHooks(fixture.seed, (command) => `false && entire hooks codex ${command}`);
+  const disabled = await runPreflight({ repoPath: fixture.seed, commandRunner: fakeCommands({ trusted: true }) });
+  assert.equal(disabled.checks.find((check) => check.id === "codex-hooks").status, "blocked");
 });
 
 test("preflight normalizes GitHub remote identities and requires private control storage", async (t) => {
@@ -98,16 +102,23 @@ async function preparedFixture(t) {
   await runGit({ args: ["remote", "set-url", "origin", "https://github.com/example/repository.git"], cwd: fixture.seed });
   await runGit({ args: ["remote", "add", "control", "git@github.com:example/repository-control.git"], cwd: fixture.seed });
   await mkdir(join(fixture.seed, ".codex"), { recursive: true });
-  await writeFile(join(fixture.seed, ".codex", "hooks.json"), JSON.stringify({
-    hooks: Object.fromEntries([
-      ["SessionStart", "session-start"],
-      ["UserPromptSubmit", "user-prompt-submit"],
-      ["Stop", "stop"],
-      ["PostToolUse", "post-tool-use"],
-    ].map(([event, command]) => [event, [{ hooks: [{ type: "command", command: `entire hooks codex ${command}` }] }]])),
-  }));
+  await writeEntireHooks(fixture.seed, (command) => `entire hooks codex ${command}`);
   await writeFile(join(fixture.seed, "tabellio.platform.json"), JSON.stringify(platform()));
   return fixture;
+}
+
+async function writeEntireHooks(repoPath, commandFor) {
+  const commands = [
+    ["SessionStart", "session-start"],
+    ["UserPromptSubmit", "user-prompt-submit"],
+    ["Stop", "stop"],
+    ["PostToolUse", "post-tool-use"],
+  ];
+  const hooks = Object.fromEntries(commands.map(([event, command]) => [
+    event,
+    [{ hooks: [{ type: "command", command: commandFor(command) }] }],
+  ]));
+  await writeFile(join(repoPath, ".codex", "hooks.json"), JSON.stringify({ hooks }));
 }
 
 function fakeCommands({ trusted, privateControl = true }) {

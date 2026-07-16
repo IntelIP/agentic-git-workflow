@@ -205,7 +205,9 @@ export class ReviewCycleManager {
   }
 
   async #save(cycle, expectedVersion) {
-    cycle.status = deriveStatus(cycle);
+    const status = deriveStatus(cycle);
+    recordReadyEvidence(cycle, status);
+    cycle.status = status;
     cycle.integrity = { algorithm: "sha256", digest: cycleDigest(cycle) };
     validateReviewCycle(cycle);
     const path = cyclePath(this.repositoryId, this.owner, this.repo, cycle.changeRequest.number);
@@ -254,6 +256,11 @@ export class ReviewCycleManager {
     });
     return matches.length === 1 ? { ...fix, commit: matches[0], published: true } : { ...fix, published: false };
   }
+}
+
+export function reviewCycleHasReadyEvidence(cycle, headCommit) {
+  return Array.isArray(cycle?.events)
+    && cycle.events.some((item) => item.type === "ready" && item.detail === headCommit);
 }
 
 export function validateReviewCycle(value) {
@@ -532,6 +539,17 @@ function appendEvent(events, next) {
   return [...events, next].slice(-100);
 }
 
+function recordReadyEvidence(cycle, status) {
+  if (status !== "ready") return;
+  if (reviewCycleHasReadyEvidence(cycle, cycle.changeRequest.headCommit)) return;
+  cycle.events = appendEvent(cycle.events, event("ready", readinessActor(cycle.events), cycle.updatedAt, cycle.changeRequest.headCommit));
+}
+
+function readinessActor(events) {
+  const latest = events.at(-1);
+  return latest ? latest.actor : "tabellio";
+}
+
 function validateChangeRequest(value) {
   object(value, "changeRequest");
   exactKeys(value, ["id", "number", "url", "title", "state", "draft", "mergeable", "headBranch", "headCommit", "baseBranch", "baseCommit", "updatedAt"], "changeRequest");
@@ -616,11 +634,12 @@ function validateEvent(value, path) {
   object(value, path);
   exactKeys(value, ["id", "type", "actor", "at", "detail"], path);
   requiredString(value.id, `${path}.id`);
-  member(value.type, ["synced", "triaged", "fix-recorded", "agent-review-imported"], `${path}.type`);
+  member(value.type, ["synced", "triaged", "fix-recorded", "agent-review-imported", "ready"], `${path}.type`);
   requiredString(value.actor, `${path}.actor`);
   date(value.at, `${path}.at`);
   requiredString(value.detail, `${path}.detail`);
   maxLength(value.detail, 2_000, `${path}.detail`);
+  if (value.type === "ready") oid(value.detail, `${path}.detail`);
 }
 
 function exactKeys(value, expected, path) {
