@@ -16,6 +16,16 @@ import { NativeGitStore } from "../scripts/providers/native-git-store.mjs";
 import { createFixture, identityEnv } from "./helpers/git-fixture.mjs";
 
 test("validation runner executes exact committed manifests and stores bounded results", async (t) => {
+  const previousArtifactBaseUri = process.env.TABELLIO_ARTIFACT_BASE_URI;
+  const previousTestSecret = process.env.TABELLIO_TEST_SECRET;
+  process.env.TABELLIO_ARTIFACT_BASE_URI = "artifact+test://validation/run/";
+  process.env.TABELLIO_TEST_SECRET = "must-not-cross-boundary";
+  t.after(() => {
+    if (previousArtifactBaseUri === undefined) delete process.env.TABELLIO_ARTIFACT_BASE_URI;
+    else process.env.TABELLIO_ARTIFACT_BASE_URI = previousArtifactBaseUri;
+    if (previousTestSecret === undefined) delete process.env.TABELLIO_TEST_SECRET;
+    else process.env.TABELLIO_TEST_SECRET = previousTestSecret;
+  });
   const fixture = await createFixture();
   t.after(() => rm(fixture.root, { recursive: true, force: true }));
   await runGit({ args: ["switch", "feature"], cwd: fixture.seed });
@@ -23,6 +33,8 @@ test("validation runner executes exact committed manifests and stores bounded re
   await writeFile(manifestPath, JSON.stringify(manifest([
     command("tests", [process.execPath, "-e", 'process.stdout.write("x".repeat(20000))']),
     command("isolated-home", [process.execPath, "-e", 'if (!process.env.HOME.includes("validation-workspaces")) process.exit(2)']),
+    command("artifact-uri", [process.execPath, "-e", 'if (process.env.TABELLIO_ARTIFACT_BASE_URI !== "artifact+test://validation/run/") process.exit(2)']),
+    command("secret-isolated", [process.execPath, "-e", 'if (process.env.TABELLIO_TEST_SECRET !== undefined) process.exit(2)']),
     command("readonly-cache", [process.execPath, "-e", 'const fs=require("node:fs");const p=process.env.HOME+"/go/pkg/mod/example/.github";fs.mkdirSync(p,{recursive:true});fs.chmodSync(p,0o500);fs.chmodSync(process.env.HOME+"/go/pkg/mod/example",0o500)']),
   ]), null, 2));
   await commit(fixture.seed, "Add passing validation", "validation-pass");
@@ -46,6 +58,8 @@ test("validation runner executes exact committed manifests and stores bounded re
   assert.equal(Buffer.byteLength(passed.result.commands[0].stdout.tail), 16 * 1024);
   assert.equal(passed.result.commands[1].status, "passed");
   assert.equal(passed.result.commands[2].status, "passed");
+  assert.equal(passed.result.commands[3].status, "passed");
+  assert.equal(passed.result.commands[4].status, "passed");
   assert.equal(validateValidationResult(passed.result), passed.result);
   assert.deepEqual(await latestValidationResult(ledger, passingHead), passed.result);
   const otherRepository = await runner.run({

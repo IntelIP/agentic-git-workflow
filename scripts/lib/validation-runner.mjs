@@ -865,7 +865,7 @@ function validationResultDigest(value) {
 }
 
 function validationEnvironment(home) {
-  const allowed = ["PATH", "LANG", "LC_ALL", "TERM"];
+  const allowed = ["PATH", "LANG", "LC_ALL", "TERM", "TABELLIO_ARTIFACT_BASE_URI"];
   const env = Object.fromEntries(allowed.flatMap((key) => process.env[key] === undefined ? [] : [[key, process.env[key]]]));
   return { ...env, HOME: home, TMPDIR: resolve(home, "tmp"), CI: "1", NO_COLOR: "1", GIT_TERMINAL_PROMPT: "0" };
 }
