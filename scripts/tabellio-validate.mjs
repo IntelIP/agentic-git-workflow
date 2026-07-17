@@ -2,7 +2,7 @@
 
 import { resolve } from "node:path";
 
-import { reportCliError } from "./lib/cli-options.mjs";
+import { parseCommandOptions, reportCliError } from "./lib/cli-options.mjs";
 import { GitJsonLedger } from "./lib/git-json-ledger.mjs";
 import { repositoryIdentity } from "./lib/repository-identity.mjs";
 import { latestValidationResult, ValidationRunner } from "./lib/validation-runner.mjs";
@@ -37,20 +37,9 @@ try {
 }
 
 function parseArgs(args) {
-  const command = args[0];
-  if (!["run", "gate", "latest"].includes(command)) throw new Error("Expected command: run, gate, or latest.");
-  const values = {};
-  for (let index = 1; index < args.length; index += 2) {
-    const flag = args[index];
-    const value = args[index + 1];
-    if (!flag?.startsWith("--") || value === undefined) throw new Error(`Expected a value after ${flag ?? command}.`);
-    const key = flag.slice(2).replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
-    if (Object.hasOwn(values, key)) throw new Error(`Duplicate option: ${flag}.`);
-    values[key] = value;
-  }
-  const allowed = ["run", "gate"].includes(command)
-    ? ["repo", "repoId", "commit", "base", "manifest", "runnerId", "ledgerRef"]
-    : ["repo", "commit", "ledgerRef"];
-  for (const key of Object.keys(values)) if (!allowed.includes(key)) throw new Error(`Unsupported option: --${key}.`);
-  return { command, ...values };
+  return parseCommandOptions(args, {
+    run: ["repo", "repoId", "commit", "base", "manifest", "runnerId", "ledgerRef"],
+    gate: ["repo", "repoId", "commit", "base", "manifest", "runnerId", "ledgerRef"],
+    latest: ["repo", "commit", "ledgerRef"],
+  });
 }

@@ -4,6 +4,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { parseCommandOptions } from "./lib/cli-options.mjs";
+
 import { reportCliError } from "./lib/cli-options.mjs";
 import { runGit } from "./lib/git-process.mjs";
 import { repositoryIdentity } from "./lib/repository-identity.mjs";
@@ -115,21 +117,11 @@ async function currentBranch(cwd) {
 }
 
 function parseArgs(args) {
-  const command = args[0];
-  if (!["plan", "execute"].includes(command)) throw new Error("Expected command: plan or execute.");
-  const values = {};
-  for (let index = 1; index < args.length; index += 2) {
-    const flag = args[index];
-    const value = args[index + 1];
-    if (!flag?.startsWith("--") || value === undefined) throw new Error(`Expected a value after ${flag ?? command}.`);
-    const key = flag.slice(2).replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
-    if (Object.hasOwn(values, key)) throw new Error(`Duplicate option: ${flag}.`);
-    values[key] = value;
-  }
-  const allowed = command === "plan"
-    ? ["operation", "repo", "repoId", "branch", "out", "title", "bodyFile", "draft", "restack", "method", "readyTimeout", "mergeTimeout"]
-    : ["repo", "repoId", "intent", "approval", "stateRoot", "binary", "tokenFile", "gitUsername"];
-  for (const key of Object.keys(values)) if (!allowed.includes(key)) throw new Error(`Unsupported option: --${key}.`);
+  const values = parseCommandOptions(args, {
+    plan: ["operation", "repo", "repoId", "branch", "out", "title", "bodyFile", "draft", "restack", "method", "readyTimeout", "mergeTimeout"],
+    execute: ["repo", "repoId", "intent", "approval", "stateRoot", "binary", "tokenFile", "gitUsername"],
+  });
+  const { command } = values;
   if (command === "plan" && !STACK_OPERATIONS.includes(values.operation)) {
     throw new Error(`--operation must be one of: ${STACK_OPERATIONS.join(", ")}.`);
   }
@@ -137,7 +129,7 @@ function parseArgs(args) {
     if (!values.intent) throw new Error("execute requires --intent.");
     if (!values.approval) throw new Error("execute requires --approval.");
   }
-  return { command, ...values };
+  return values;
 }
 
 function booleanOption(value, defaultValue, path) {

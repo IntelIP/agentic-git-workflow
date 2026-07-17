@@ -52,6 +52,8 @@ jobs:
           fallow audit \
             --base "origin/${{ github.base_ref }}" \
             --gate new-only \
+            --health-baseline quality-baselines/fallow-health.json \
+            --dupes-baseline quality-baselines/fallow-dupes.json \
             --format json \
             --quiet \
             --explain \

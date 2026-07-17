@@ -9,6 +9,15 @@ export function parseOptionPairs(args, context) {
   return values;
 }
 
+export function parseCommandOptions(args, allowedByCommand) {
+  const command = args[0];
+  const allowed = allowedByCommand[command];
+  if (!allowed) throw new Error(`Expected command: ${Object.keys(allowedByCommand).join(" or ")}.`);
+  const values = parseOptionPairs(args.slice(1), command);
+  assertAllowedOptions(values, allowed);
+  return { command, ...values };
+}
+
 export function assertAllowedOptions(values, allowed) {
   for (const key of Object.keys(values)) {
     if (!allowed.includes(key)) throw new Error(`Unsupported option: --${toKebabCase(key)}.`);
