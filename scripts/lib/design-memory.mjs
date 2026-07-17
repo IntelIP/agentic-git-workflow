@@ -61,9 +61,9 @@ export function validateProductDesignProfile(value) {
     surfaceIds.add(surface.id);
     if (!new Set(["route", "component"]).has(surface.kind)) throw new TypeError(`${label}.kind must be route or component.`);
     string(surface.target, `${label}.target`);
-    stringArray(surface.viewports, `${label}.viewports`, 1, 20);
-    stringArray(surface.themes, `${label}.themes`, 1, 3);
-    stringArray(surface.states, `${label}.states`, 1, 50);
+    uniqueStringArray(surface.viewports, `${label}.viewports`, 1, 20);
+    uniqueStringArray(surface.themes, `${label}.themes`, 1, 3);
+    uniqueStringArray(surface.states, `${label}.states`, 1, 50);
   }
   stringArray(value.policy.forbiddenPatterns, "design profile.policy.forbiddenPatterns", 0, 100);
   object(value.policy.accessibility, "design profile.policy.accessibility");
@@ -330,6 +330,11 @@ function string(value, label, min = 1, max = 500) {
 function stringArray(value, label, min, max, itemValidator = null) {
   if (!Array.isArray(value) || value.length < min || value.length > max) throw new TypeError(`${label} must contain ${min} to ${max} entries.`);
   for (const [index, entry] of value.entries()) itemValidator ? itemValidator(entry, `${label}[${index}]`) : string(entry, `${label}[${index}]`);
+}
+
+function uniqueStringArray(value, label, min, max) {
+  stringArray(value, label, min, max);
+  if (new Set(value).size !== value.length) throw new TypeError(`${label} must contain unique entries.`);
 }
 
 function enumArray(value, allowed, label, min, max) {
