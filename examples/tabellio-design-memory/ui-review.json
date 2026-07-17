@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "tabellio-ui-review/v0.1",
+  "productId": "example/product",
+  "sourceCommit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "profileDigest": "1304dd93039569be68388cd313c60621d85a289e196738f3e25a84a995f34767",
+  "reviewer": {
+    "provider": "example",
+    "model": "visual-review-model"
+  },
+  "cost": {
+    "telemetry": "available",
+    "currency": "USD",
+    "amount": 0.01,
+    "inputTokens": 1000,
+    "outputTokens": 250
+  },
+  "captures": [
+    {
+      "id": "home-desktop-light-default",
+      "artifactDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "summary": "The rendered surface matches the approved visual hierarchy and interaction vocabulary.",
+  "findings": [],
+  "verdict": "passed",
+  "blockers": []
+}

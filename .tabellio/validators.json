@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "tabellio-adapter/v0.1",
+  "profiles": {
+    "static": {
+      "commands": [["npm", "run", "check"]],
+      "metrics": [],
+      "cost": {"telemetry": "not_applicable", "usd": null, "modelCalls": null, "toolCalls": null},
+      "summary": "Control-plane tests and repository checks"
+    },
+    "schema": {
+      "commands": [["npm", "run", "tabellio:platform:check"]],
+      "metrics": [{"name": "platform_contract_pass", "unit": "boolean", "passValue": 1, "failValue": 0}],
+      "cost": {"telemetry": "available", "usd": 0, "modelCalls": 0, "toolCalls": 0},
+      "summary": "Platform and schema contract checks"
+    },
+    "semantic": {
+      "commands": [["npm", "run", "tabellio:validate:example:check"]],
+      "metrics": [{"name": "validation_contract_examples_pass", "unit": "boolean", "passValue": 1, "failValue": 0}],
+      "cost": {"telemetry": "available", "usd": 0, "modelCalls": 0, "toolCalls": 0},
+      "summary": "Typed validation examples and evidence contracts"
+    },
+    "workflow": {
+      "commands": [["npm", "run", "tabellio:run:example:check"], ["npm", "run", "tabellio:review:example:check"]],
+      "metrics": [{"name": "run_review_workflows_pass", "unit": "boolean", "passValue": 1, "failValue": 0}],
+      "cost": {"telemetry": "available", "usd": 0, "modelCalls": 0, "toolCalls": 0},
+      "summary": "Agent run and review lifecycle examples"
+    },
+    "security": {
+      "commands": [["node", "scripts/check-tabellio-external-actions.mjs", "--evidence", "examples/tabellio-evidence/minimal-evidence.json"]],
+      "metrics": [{"name": "external_action_policy_pass", "unit": "boolean", "passValue": 1, "failValue": 0}],
+      "cost": {"telemetry": "available", "usd": 0, "modelCalls": 0, "toolCalls": 0},
+      "summary": "External-action and side-effect policy checks"
+    }
+  }
+}

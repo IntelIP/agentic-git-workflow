@@ -2,7 +2,7 @@
 
 import { resolve } from "node:path";
 
-import { reportCliError } from "./lib/cli-options.mjs";
+import { parseCommandOptions, reportCliError } from "./lib/cli-options.mjs";
 import { GitJsonLedger } from "./lib/git-json-ledger.mjs";
 import { repositoryIdentity } from "./lib/repository-identity.mjs";
 import { latestValidationResult, ValidationRunner } from "./lib/validation-runner.mjs";
@@ -15,7 +15,7 @@ try {
     repoPath: store.repoPath,
     ref: options.ledgerRef ?? "refs/tabellio/validations",
   });
-  if (options.command === "run") {
+  if (["run", "gate"].includes(options.command)) {
     const runner = new ValidationRunner({ store, ledger });
     const result = await runner.run({
       repositoryId: await repositoryIdentity(store, options.repoId),
@@ -25,6 +25,7 @@ try {
       runnerId: options.runnerId ?? "local",
     });
     console.log(JSON.stringify({ ok: true, ...result }, null, 2));
+    if (options.command === "gate" && result.result.status !== "passed") process.exitCode = 1;
   } else {
     const commit = await store.resolveRef(options.commit ?? "HEAD");
     const result = await latestValidationResult(ledger, commit);
@@ -36,20 +37,9 @@ try {
 }
 
 function parseArgs(args) {
-  const command = args[0];
-  if (!["run", "latest"].includes(command)) throw new Error("Expected command: run or latest.");
-  const values = {};
-  for (let index = 1; index < args.length; index += 2) {
-    const flag = args[index];
-    const value = args[index + 1];
-    if (!flag?.startsWith("--") || value === undefined) throw new Error(`Expected a value after ${flag ?? command}.`);
-    const key = flag.slice(2).replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
-    if (Object.hasOwn(values, key)) throw new Error(`Duplicate option: ${flag}.`);
-    values[key] = value;
-  }
-  const allowed = command === "run"
-    ? ["repo", "repoId", "commit", "base", "manifest", "runnerId", "ledgerRef"]
-    : ["repo", "commit", "ledgerRef"];
-  for (const key of Object.keys(values)) if (!allowed.includes(key)) throw new Error(`Unsupported option: --${key}.`);
-  return { command, ...values };
+  return parseCommandOptions(args, {
+    run: ["repo", "repoId", "commit", "base", "manifest", "runnerId", "ledgerRef"],
+    gate: ["repo", "repoId", "commit", "base", "manifest", "runnerId", "ledgerRef"],
+    latest: ["repo", "commit", "ledgerRef"],
+  });
 }

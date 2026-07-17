@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "tabellio-validator-evidence/v0.1",
+  "validatorId": "semantic-golden-set",
+  "status": "passed",
+  "summary": "Eight of ten required scenarios passed the strict semantic rubric.",
+  "metrics": [
+    {
+      "name": "strict_pass_rate",
+      "value": 0.8,
+      "unit": "ratio"
+    }
+  ],
+  "cost": {
+    "telemetry": "available",
+    "usd": 0.18,
+    "modelCalls": 10,
+    "toolCalls": 24
+  },
+  "artifacts": []
+}

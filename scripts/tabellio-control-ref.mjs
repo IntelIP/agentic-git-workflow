@@ -11,6 +11,7 @@ import {
   readControlRefFile,
   snapshotControlRefs,
 } from "./lib/control-ref-transport.mjs";
+import { parseCommandOptions } from "./lib/cli-options.mjs";
 import { repositoryIdentity } from "./lib/repository-identity.mjs";
 import { NativeGitStore } from "./providers/native-git-store.mjs";
 
@@ -72,21 +73,11 @@ async function output(value, path) {
 }
 
 function parse(args) {
-  const command = args[0];
-  if (!["plan", "execute"].includes(command)) throw new Error("Expected command: plan or execute.");
-  const values = { command };
-  for (let index = 1; index < args.length; index += 2) {
-    const flag = args[index];
-    const value = args[index + 1];
-    if (!flag?.startsWith("--") || value === undefined) throw new Error(`Expected a value after ${flag ?? command}.`);
-    const key = flag.slice(2).replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase());
-    if (Object.hasOwn(values, key)) throw new Error(`Duplicate option: ${flag}.`);
-    values[key] = value;
-  }
-  const allowed = command === "plan"
-    ? ["command", "operation", "repo", "repoId", "remote", "refs", "out", "tokenFile", "gitUsername"]
-    : ["command", "repo", "repoId", "intent", "approval", "stateRoot", "tokenFile", "gitUsername"];
-  for (const key of Object.keys(values)) if (!allowed.includes(key)) throw new Error(`Unsupported option: --${key}.`);
+  const values = parseCommandOptions(args, {
+    plan: ["operation", "repo", "repoId", "remote", "refs", "out", "tokenFile", "gitUsername"],
+    execute: ["repo", "repoId", "intent", "approval", "stateRoot", "tokenFile", "gitUsername"],
+  });
+  const { command } = values;
   if (command === "plan" && !["publish", "fetch"].includes(values.operation)) throw new Error("plan requires --operation publish or fetch.");
   if (command === "execute" && (!values.intent || !values.approval)) throw new Error("execute requires --intent and --approval.");
   if (values.tokenFile && !values.gitUsername) values.gitUsername = "git";

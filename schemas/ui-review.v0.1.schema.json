@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:ui-review:v0.1",
+  "title": "Tabellio UI Review",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "productId", "sourceCommit", "profileDigest", "reviewer", "cost", "captures", "summary", "findings", "verdict", "blockers"],
+  "properties": {
+    "schemaVersion": {"const": "tabellio-ui-review/v0.1"},
+    "productId": {"type": "string", "minLength": 1},
+    "sourceCommit": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+    "profileDigest": {"$ref": "#/$defs/digest"},
+    "reviewer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model"],
+      "properties": {
+        "provider": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1}
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["telemetry", "currency", "amount", "inputTokens", "outputTokens"],
+      "properties": {
+        "telemetry": {"enum": ["available", "unknown", "not_applicable"]},
+        "currency": {"type": ["string", "null"], "minLength": 3, "maxLength": 3},
+        "amount": {"type": ["number", "null"], "minimum": 0},
+        "inputTokens": {"type": ["integer", "null"], "minimum": 0},
+        "outputTokens": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "captures": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "artifactDigest"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "artifactDigest": {"$ref": "#/$defs/digest"}
+        }
+      }
+    },
+    "summary": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "findings": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "category", "surface", "evidence", "recommendation"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "severity": {"enum": ["info", "warning", "error", "critical"]},
+          "category": {"type": "string", "minLength": 1},
+          "surface": {"type": "string", "minLength": 1},
+          "evidence": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "recommendation": {"type": "string", "minLength": 1, "maxLength": 2000}
+        }
+      }
+    },
+    "verdict": {"enum": ["passed", "failed", "blocked"]},
+    "blockers": {"type": "array", "maxItems": 100, "items": {"type": "string", "minLength": 1}}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"cost": {"properties": {"telemetry": {"const": "available"}}}}},
+      "then": {"properties": {"cost": {"properties": {"currency": {"type": "string"}, "amount": {"type": "number"}, "inputTokens": {"type": "integer"}, "outputTokens": {"type": "integer"}}}}},
+      "else": {"properties": {"cost": {"properties": {"currency": {"type": "null"}, "amount": {"type": "null"}, "inputTokens": {"type": "null"}, "outputTokens": {"type": "null"}}}}}
+    },
+    {
+      "if": {"properties": {"cost": {"properties": {"telemetry": {"const": "unknown"}}}}},
+      "then": {"properties": {"verdict": {"const": "blocked"}, "blockers": {"minItems": 1}}}
+    }
+  ],
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

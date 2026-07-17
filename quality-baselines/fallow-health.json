@@ -1,0 +1,273 @@
+{
+  "finding_counts": {
+    "scripts/capture-tabellio-context.mjs": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/check-tabellio-evidence-envelope.mjs": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 4
+      }
+    },
+    "scripts/check-tabellio-external-actions.mjs": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/check-tabellio-stack-operation.mjs": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "scripts/lib/agent-run.mjs": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 4
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "scripts/lib/capture-context.mjs": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "scripts/lib/context-packet.mjs": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "scripts/lib/control-ref-transport.mjs": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "scripts/lib/design-memory.mjs": {
+      "complexity_critical": {
+        "count": 4
+      },
+      "crap_critical": {
+        "count": 5
+      },
+      "crap_moderate": {
+        "count": 5
+      }
+    },
+    "scripts/lib/git-json-ledger.mjs": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "scripts/lib/git-process.mjs": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "scripts/lib/ledger-provider.mjs": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "scripts/lib/operation-lock.mjs": {
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/lib/repository-identity.mjs": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "scripts/lib/review-cycle.mjs": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 6
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "scripts/lib/stack-manager.mjs": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/lib/stack-operation.mjs": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/lib/validation-runner.mjs": {
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 6
+      },
+      "crap_moderate": {
+        "count": 14
+      }
+    },
+    "scripts/lib/workspace-manager.mjs": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/providers/entire-ledger-provider.mjs": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "scripts/providers/git-spice-operations.mjs": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "scripts/providers/git-spice-stack-manager.mjs": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "scripts/providers/native-git-store.mjs": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 3
+      },
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "scripts/tabellio-control-ref.mjs": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "scripts/tabellio-run.mjs": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "scripts/tabellio-stack-operation.mjs": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "scripts/tabellio-validate.mjs": {
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "scripts/tabellio-validator.mjs": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 5
+      }
+    },
+    "scripts/write-tabellio-evidence-envelope.mjs": {
+      "crap_high": {
+        "count": 3
+      }
+    }
+  },
+  "runtime_coverage_findings": [],
+  "target_keys": [
+    "scripts/lib/control-ref-transport.mjs:high impact",
+    "scripts/lib/stack-operation.mjs:high impact",
+    "scripts/lib/validation-runner.mjs:high impact",
+    "scripts/tabellio-stack-operation.mjs:untested risk",
+    "scripts/providers/git-spice-stack-manager.mjs:high impact",
+    "scripts/lib/context-packet.mjs:high impact",
+    "scripts/lib/repository-identity.mjs:high impact",
+    "scripts/lib/cli-options.mjs:high impact",
+    "scripts/lib/review-cycle.mjs:high impact",
+    "scripts/lib/preflight.mjs:high impact",
+    "scripts/lib/github-repository.mjs:high impact",
+    "scripts/lib/design-memory.mjs:high impact",
+    "scripts/lib/agent-run.mjs:high impact",
+    "scripts/lib/contract-checks.mjs:high impact",
+    "scripts/lib/operation-lock.mjs:high impact",
+    "scripts/lib/approval-validation.mjs:high impact",
+    "scripts/lib/ledger-provider.mjs:high impact",
+    "scripts/lib/stack-manager.mjs:high impact",
+    "scripts/tabellio-validator.mjs:untested risk"
+  ]
+}

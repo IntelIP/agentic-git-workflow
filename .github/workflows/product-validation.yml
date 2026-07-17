@@ -1,0 +1,42 @@
+name: product-validation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: {node-version: 22}
+      - name: Validate exact candidate
+        run: |
+          set -o pipefail
+          install -m 755 scripts/tabellio-validator.mjs "$RUNNER_TEMP/tabellio-validator"
+          PATH="$RUNNER_TEMP:$PATH" node scripts/tabellio-validate.mjs gate \
+            --repo . \
+            --repo-id IntelIP/Tabellio \
+            --base origin/main \
+            --commit HEAD \
+            --manifest tabellio.validation.json | tee tabellio-validation-result.json
+      - name: Upload validation result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tabellio-validation-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            tabellio-validation-result.json
+            refs/tabellio/validations/
+          if-no-files-found: warn
