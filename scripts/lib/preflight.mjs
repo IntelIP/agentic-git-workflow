@@ -30,6 +30,7 @@ export async function runPreflight({
   profile = "agent",
   entireBinary = "entire",
   ghBinary = "gh",
+  codexBinary = "codex",
   commandRunner = runExternalCommand,
   controlRemote = null,
   remoteRefReader = readRemoteRefOid,
@@ -43,6 +44,7 @@ export async function runPreflight({
   const resolvedRepo = resolve(repoPath);
   let store = null;
   let repositoryId = null;
+  let codexConfigReady = false;
 
   await record(checks, "node-version", async () => {
     if (majorVersion(nodeVersion) < 20) return blocked(`Node ${nodeVersion} is below required major 20.`, "Install Node.js 20 or later.");
@@ -79,10 +81,23 @@ export async function runPreflight({
 
   await record(checks, "entire-metadata", () => checkEntireMetadataBranches(store));
 
-  await record(checks, "codex-hook-trust", () => checkCodexHookTrust({
-    repoPath: resolvedRepo,
-    codexConfigPath,
-  }));
+  await record(checks, "codex-config", async () => {
+    const result = await commandRunner({
+      binary: codexBinary,
+      args: ["features", "list"],
+      cwd: store?.repoPath ?? resolvedRepo,
+      timeoutMs: 30_000,
+    });
+    if (!/^hooks\s+\S+\s+true\s*$/m.test(result.stdout)) {
+      return blocked("Codex hooks are disabled in the effective configuration.", "Enable Codex hooks, then rerun preflight.");
+    }
+    codexConfigReady = true;
+    return passed("Codex configuration is valid and hooks are effectively enabled.");
+  });
+
+  await record(checks, "codex-hook-trust", () => codexConfigReady
+    ? checkCodexHookTrust({ repoPath: store.repoPath, codexConfigPath })
+    : blocked("Codex configuration validity is unproven.", "Correct the Codex configuration, then rerun preflight."));
 
   await record(checks, "github-auth", async () => {
     await commandRunner({ binary: ghBinary, args: ["auth", "status", "--hostname", "github.com"], cwd: resolvedRepo, timeoutMs: 30_000 });
@@ -134,24 +149,14 @@ async function checkEntireMetadataBranches(store) {
   if (missing.length > 0) {
     return blocked(`Entire metadata branch missing: ${missing.join(", ")}.`, "Restore or fetch the checkpoint metadata branch, then rerun preflight.");
   }
-  const result = await runGit({
-    args: ["merge-base", localRef, remoteRef],
-    cwd: store.repoPath,
-    gitDir: store.gitDir,
-    acceptableExitCodes: [0, 1],
-  });
-  if (!hasMergeBase(result)) {
-    return blocked("Local and remote Entire metadata branches are disconnected.", "Repair the checkpoint metadata branches explicitly, then rerun preflight.");
+  if (!(await store.isAncestor(remoteRef, localRef))) {
+    return blocked("The remote Entire metadata branch is ahead, divergent, or disconnected from local metadata.", "Fetch and reconcile the checkpoint metadata branch explicitly, then rerun preflight.");
   }
-  return passed("Local and remote Entire checkpoint metadata branches share valid history.");
+  return passed("Remote Entire checkpoint metadata is contained in the valid local history.");
 }
 
 function missingMetadataRefs({ hasLocal, localRef, hasRemote, remoteRef }) {
   return [[hasLocal, localRef], [hasRemote, remoteRef]].filter(([present]) => !present).map(([, ref]) => ref);
-}
-
-function hasMergeBase(result) {
-  return result.exitCode === 0 && result.stdout.trim().length > 0;
 }
 
 function codexHookTrustResult(expected, states) {
@@ -189,7 +194,7 @@ function expectedHookInGroups(groups, required, hooksPath) {
 }
 
 function codexHookHash(event, group, handler) {
-  const normalized = normalizedHookHandler(handler);
+  const normalized = normalizedHookHandler(handler, event);
   const identity = {
     event_name: event,
     ...normalizedMatcher(event, group.matcher),
@@ -198,13 +203,13 @@ function codexHookHash(event, group, handler) {
   return `sha256:${createHash("sha256").update(JSON.stringify(canonicalJson(identity))).digest("hex")}`;
 }
 
-function normalizedHookHandler(handler) {
+function normalizedHookHandler(handler, event) {
   return {
     type: "command",
     command: platformHookCommand(handler),
     timeout: normalizedHookTimeout(handler.timeout),
     async: handler.async === true,
-    ...optionalHookFields(handler),
+    ...optionalHookFields(handler, event),
   };
 }
 
@@ -217,10 +222,10 @@ function normalizedHookTimeout(timeout) {
   return Math.max(1, timeout ?? 600);
 }
 
-function optionalHookFields(handler) {
+function optionalHookFields(handler, event) {
   return Object.fromEntries([
     ["statusMessage", handler.statusMessage],
-    ["additionalContextLimit", normalizedAdditionalContextLimit(handler.additionalContextLimit)],
+    ["additionalContextLimit", event === "stop" ? undefined : normalizedAdditionalContextLimit(handler.additionalContextLimit)],
   ].filter(([, value]) => value != null));
 }
 

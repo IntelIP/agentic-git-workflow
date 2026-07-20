@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -62,9 +62,16 @@ test("preflight requires active hooks and a trusted project layer", async (t) =>
   await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { literalKeys: true });
   const literal = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.equal(literal.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
+
+  const hooksPath = join(fixture.seed, ".codex", "hooks.json");
+  const hooks = JSON.parse(await readFile(hooksPath, "utf8"));
+  hooks.hooks.Stop[0].hooks[0].additionalContextLimit = 999;
+  await writeFile(hooksPath, JSON.stringify(hooks));
+  const stopContext = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.equal(stopContext.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
 });
 
-test("preflight verifies Entire metadata history without repairing it", async (t) => {
+test("preflight verifies Entire metadata ancestry without repairing it", async (t) => {
   const fixture = await preparedFixture(t);
   const remoteRef = "refs/remotes/control/entire/checkpoints/v1";
   await runGit({ args: ["update-ref", "-d", remoteRef], cwd: fixture.seed });
@@ -80,6 +87,28 @@ test("preflight verifies Entire metadata history without repairing it", async (t
   await runGit({ args: ["update-ref", remoteRef, isolated], cwd: fixture.seed });
   const disconnected = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(disconnected.checks.find((check) => check.id === "entire-metadata").detail, /disconnected/);
+
+  const remoteAhead = (await runGit({
+    args: ["commit-tree", tree, "-p", "HEAD", "-m", "Remote checkpoint metadata"],
+    cwd: fixture.seed,
+    env: identityEnv(),
+  })).stdout.trim();
+  await runGit({ args: ["update-ref", remoteRef, remoteAhead], cwd: fixture.seed });
+  const ahead = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(ahead.checks.find((check) => check.id === "entire-metadata").detail, /ahead/);
+});
+
+test("preflight uses the repository root and rejects invalid Codex configuration", async (t) => {
+  const fixture = await preparedFixture(t);
+  const nested = join(fixture.seed, "nested", "path");
+  await mkdir(nested, { recursive: true });
+  const rooted = await runPreparedPreflight(fixture, { repoPath: nested, commandRunner: fakeCommands() });
+  assert.equal(rooted.status, "ready");
+
+  await writeFile(fixture.codexConfigPath, "[features]\nhooks = true\n[features]\nhooks = true\n");
+  const invalid = await runPreparedPreflight(fixture, { commandRunner: fakeCommands({ invalidCodexConfig: true }) });
+  assert.equal(invalid.checks.find((check) => check.id === "codex-config").status, "blocked");
+  assert.match(invalid.checks.find((check) => check.id === "codex-hook-trust").detail, /unproven/);
 });
 
 test("release preflight requires clean main equal to origin main", async (t) => {
@@ -237,10 +266,14 @@ async function writeEntireHooks(repoPath, commandFor) {
   await writeFile(join(repoPath, ".codex", "hooks.json"), JSON.stringify({ hooks }));
 }
 
-function fakeCommands({ privateControl = true } = {}) {
+function fakeCommands({ privateControl = true, invalidCodexConfig = false } = {}) {
   const commands = new Map([
     ["entire:--version", () => result("Entire CLI 0.7.7\n")],
     ["entire:status", () => result('{"enabled":true,"agents":["Codex"],"active_sessions":[]}\n')],
+    ["codex:features", () => {
+      if (invalidCodexConfig) throw new Error("Codex config.toml contains a duplicate table.");
+      return result("hooks stable true\n");
+    }],
     ["gh:auth", () => result("", "Logged in with gho_secret\n")],
     ["gh:repo", () => result(`${JSON.stringify({ nameWithOwner: "example/repository-control", isPrivate: privateControl })}\n`)],
   ]);
