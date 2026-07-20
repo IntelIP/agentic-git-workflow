@@ -4,7 +4,35 @@ All notable changes to Tabellio are recorded here.
 
 ## Unreleased
 
-## 0.4.0 - 2026-07-16
+## 0.5.0 - 2026-07-20
+
+This is the first publication candidate after v0.2.0. Versions 0.3.0 and 0.4.0 were development milestones and were not tagged, released on GitHub, or published to npm.
+
+### Added
+
+- Product-validity and cost-aware validation from the unpublished v0.4.0 milestone.
+- Deterministic release planning and resumable publication from the unpublished v0.3.0 milestone.
+
+### Changed
+
+- Post-merge exact-head validation now compares landed push commits with `HEAD^` while pull-request validation continues to compare with `origin/main`.
+- Validation worktrees, isolated homes, caches, and generated output now use private external temporary sessions.
+- Preflight reads Codex hook-trust state directly and no longer invokes the repair-oriented `entire doctor` command.
+
+### Fixed
+
+- Validation fails closed when workspace containment or Git worktree cleanup cannot be proven.
+- Partial Git worktree registrations are removed after checkout failure.
+
+### Release Gates
+
+- `tabellio-preflight --profile release`
+- `npm run check`
+- Fallow whole-repository and changed-code scans
+- `npm pack --dry-run --json`
+- Exact merged-head Tabellio validation
+
+## 0.4.0 - 2026-07-16 (unpublished development milestone)
 
 ### Added
 
@@ -28,7 +56,7 @@ All notable changes to Tabellio are recorded here.
 - `npm pack --dry-run --json`
 - Exact merged-head Tabellio validation
 
-## 0.3.0 - 2026-07-15
+## 0.3.0 - 2026-07-15 (unpublished development milestone)
 
 ### Added
 

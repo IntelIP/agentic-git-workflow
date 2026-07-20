@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { readFile, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { runExternalCommand } from "./external-command.mjs";
@@ -27,6 +28,7 @@ export async function runPreflight({
   remoteRefReader = readRemoteRefOid,
   remoteRepositoryReader = effectiveGitHubRepository,
   nodeVersion = process.versions.node,
+  codexConfigPath = defaultCodexConfigPath(),
   now = new Date(),
 } = {}) {
   if (!PROFILES.has(profile)) throw new Error("profile must be agent or release.");
@@ -68,17 +70,10 @@ export async function runPreflight({
     return passed("Entire enabled for Codex.");
   });
 
-  await record(checks, "entire-doctor", async () => {
-    const result = await commandRunner({ binary: entireBinary, args: ["doctor"], cwd: resolvedRepo, timeoutMs: 30_000 });
-    const output = `${result.stdout}\n${result.stderr}`;
-    if (!/Metadata branches:\s*OK/i.test(output)) {
-      return blocked("Entire metadata branches are unhealthy or unverifiable.", "Run entire doctor and resolve metadata branch errors.");
-    }
-    if (!/^Codex hook trust:\s*OK\s*$/im.test(output)) {
-      return blocked("Codex Entire hook trust is unhealthy or unverifiable.", "Open /hooks in Codex, approve all four repository hooks, then rerun preflight.");
-    }
-    return passed("Entire metadata and Codex hook trust healthy.");
-  });
+  await record(checks, "codex-hook-trust", () => checkCodexHookTrust({
+    repoPath: resolvedRepo,
+    codexConfigPath,
+  }));
 
   await record(checks, "github-auth", async () => {
     await commandRunner({ binary: ghBinary, args: ["auth", "status", "--hostname", "github.com"], cwd: resolvedRepo, timeoutMs: 30_000 });
@@ -94,6 +89,52 @@ export async function runPreflight({
     checks,
     checkedAt: now.toISOString(),
   });
+}
+
+async function checkCodexHookTrust({ repoPath, codexConfigPath }) {
+  const hooksPath = await realpath(resolve(repoPath, ".codex", "hooks.json"));
+  const config = await readFile(codexConfigPath, "utf8");
+  const trusted = trustedHookEvents(config, hooksPath);
+  const missing = ["session_start", "user_prompt_submit", "stop", "post_tool_use"]
+    .filter((event) => !trusted.has(event));
+  if (missing.length > 0) {
+    return blocked(
+      `Codex Entire hook trust missing: ${missing.join(", ")}.`,
+      "Open /hooks in Codex, approve all four repository hooks, then rerun preflight.",
+    );
+  }
+  return passed("Four required Codex Entire hooks are trusted.");
+}
+
+function trustedHookEvents(config, hooksPath) {
+  const trusted = new Set();
+  let event = null;
+  for (const line of config.split(/\r?\n/)) {
+    const header = line.match(/^\[hooks\.state\."(.+)"\]\s*$/);
+    if (header) {
+      event = hookEventFromStateKey(header[1], hooksPath);
+      continue;
+    }
+    if (/^\[.+\]\s*$/.test(line)) {
+      event = null;
+      continue;
+    }
+    if (event && /^trusted_hash\s*=\s*"sha256:[a-f0-9]{64}"\s*$/.test(line.trim())) {
+      trusted.add(event);
+    }
+  }
+  return trusted;
+}
+
+function hookEventFromStateKey(key, hooksPath) {
+  const prefix = `${hooksPath}:`;
+  if (!key.startsWith(prefix)) return null;
+  const match = key.slice(prefix.length).match(/^(session_start|user_prompt_submit|stop|post_tool_use):\d+:\d+$/);
+  return match?.[1] ?? null;
+}
+
+function defaultCodexConfigPath() {
+  return resolve(process.env.CODEX_HOME || resolve(homedir(), ".codex"), "config.toml");
 }
 
 export function validatePreflightResult(value) {

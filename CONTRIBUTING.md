@@ -93,6 +93,7 @@ Avoid:
 Before tagging a release:
 
 - run `node scripts/tabellio-preflight.mjs --profile release`
+- keep preflight read-only; run `entire doctor` only as an explicit operator-approved repair step
 - update `CHANGELOG.md`
 - confirm README examples use the intended release tag
 - run local checks

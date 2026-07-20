@@ -78,7 +78,7 @@ node scripts/tabellio-preflight.mjs --profile agent
 node scripts/tabellio-preflight.mjs --profile release
 ```
 
-`entire doctor` must report healthy metadata and trusted Codex hooks. When trust is missing, open `/hooks` in Codex and approve the four repository hooks.
+Preflight performs read-only checks of Entire enablement and Codex hook-trust state. When trust is missing, open `/hooks` in Codex and approve the four repository hooks. Run `entire doctor` separately only when an operator explicitly intends to diagnose and repair Entire state.
 
 After explicit PR merge, create the exact release plan:
 
@@ -87,8 +87,8 @@ node scripts/tabellio-release.mjs plan \
   --owner example \
   --remote-repo repository \
   --number 42 \
-  --version 0.3.0 \
-  --notes docs/releases/v0.3.0.md \
+  --version 0.5.0 \
+  --notes docs/releases/v0.5.0.md \
   --out /tmp/tabellio-release-intent.json
 ```
 
