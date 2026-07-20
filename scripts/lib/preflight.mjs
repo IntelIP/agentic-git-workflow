@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { readFile, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -17,6 +18,12 @@ import { NativeGitStore } from "../providers/native-git-store.mjs";
 const PREFLIGHT_VERSION = "tabellio-preflight/v0.1";
 const PROFILES = new Set(["agent", "release"]);
 const MINIMUM_ENTIRE_VERSION = [0, 7, 7];
+const REQUIRED_CODEX_HOOKS = [
+  { configEvent: "SessionStart", event: "session_start", command: "session-start" },
+  { configEvent: "UserPromptSubmit", event: "user_prompt_submit", command: "user-prompt-submit" },
+  { configEvent: "Stop", event: "stop", command: "stop" },
+  { configEvent: "PostToolUse", event: "post_tool_use", command: "post-tool-use" },
+];
 
 export async function runPreflight({
   repoPath = process.cwd(),
@@ -92,33 +99,152 @@ export async function runPreflight({
 }
 
 async function checkCodexHookTrust({ repoPath, codexConfigPath }) {
+  const canonicalRepo = await realpath(repoPath);
   const hooksPath = await realpath(resolve(repoPath, ".codex", "hooks.json"));
-  const config = await readFile(codexConfigPath, "utf8");
-  const trusted = trustedHookEvents(config, hooksPath);
-  const missing = ["session_start", "user_prompt_submit", "stop", "post_tool_use"]
-    .filter((event) => !trusted.has(event));
-  if (missing.length > 0) {
-    return blocked(
-      `Codex Entire hook trust missing: ${missing.join(", ")}.`,
-      "Open /hooks in Codex, approve all four repository hooks, then rerun preflight.",
-    );
+  const [config, hooksSource] = await Promise.all([
+    readFile(codexConfigPath, "utf8"),
+    readFile(hooksPath, "utf8"),
+  ]);
+  const configBlocker = codexHookConfigBlocker(config, canonicalRepo);
+  if (configBlocker) return configBlocker;
+  const expected = expectedEntireHookTrust(JSON.parse(hooksSource), hooksPath);
+  const states = codexHookStates(config);
+  return codexHookTrustResult(expected, states);
+}
+
+function codexHookConfigBlocker(config, canonicalRepo) {
+  return [
+    [codexHooksDisabled(config), blocked("Codex hooks are disabled in config.toml.", "Enable [features].hooks, then rerun preflight.")],
+    [!codexProjectTrusted(config, canonicalRepo), blocked("The repository project layer is not trusted by Codex.", "Trust this repository in Codex, then rerun preflight.")],
+  ].find(([applies]) => applies)?.[1] ?? null;
+}
+
+function codexHookTrustResult(expected, states) {
+  const untrusted = expected.filter((hook) => !hookStateMatches(states.get(hook.key), hook.hash));
+  if (expected.length === REQUIRED_CODEX_HOOKS.length && untrusted.length === 0) {
+    return passed("Four current Entire hook definitions are enabled and trusted by Codex.");
   }
-  return passed("Four required Codex Entire hooks are trusted.");
+  const events = untrusted.map((hook) => hook.event);
+  return blocked(
+    `Codex Entire hook trust missing or stale: ${events.join(", ") || "required hook definitions"}.`,
+    "Open /hooks in Codex, approve all four repository hooks, then rerun preflight.",
+  );
 }
 
-function trustedHookEvents(config, hooksPath) {
-  const sections = config.matchAll(/^\[hooks\.state\."([^"]+)"\]\s*\r?\n((?:(?!^\[)[\s\S])*)/gm);
-  return new Set([...sections]
-    .filter((match) => /^trusted_hash\s*=\s*"sha256:[a-f0-9]{64}"\s*$/m.test(match[2]))
-    .map((match) => hookEventFromStateKey(match[1], hooksPath))
-    .filter((event) => event !== null));
+function expectedEntireHookTrust(hooksConfig, hooksPath) {
+  return REQUIRED_CODEX_HOOKS.flatMap((required) => {
+    const groups = hooksConfig?.hooks?.[required.configEvent];
+    return expectedHookInGroups(groups, required, hooksPath);
+  });
 }
 
-function hookEventFromStateKey(key, hooksPath) {
-  const prefix = `${hooksPath}:`;
-  if (!key.startsWith(prefix)) return null;
-  const match = key.slice(prefix.length).match(/^(session_start|user_prompt_submit|stop|post_tool_use):\d+:\d+$/);
-  return match?.[1] ?? null;
+function expectedHookInGroups(groups, required, hooksPath) {
+  if (!Array.isArray(groups)) return [];
+  for (const [groupIndex, group] of groups.entries()) {
+    const handlerIndex = hookCommands(group).findIndex((hook) => matchesRequiredEntireHook(hook, required.command));
+    if (handlerIndex < 0) continue;
+    const handler = group.hooks[handlerIndex];
+    return [{
+      event: required.event,
+      key: `${hooksPath}:${required.event}:${groupIndex}:${handlerIndex}`,
+      hash: codexHookHash(required.event, group, handler),
+    }];
+  }
+  return [];
+}
+
+function codexHookHash(event, group, handler) {
+  const normalized = normalizedHookHandler(handler);
+  const identity = {
+    event_name: event,
+    ...normalizedMatcher(event, group.matcher),
+    hooks: [normalized],
+  };
+  return `sha256:${createHash("sha256").update(JSON.stringify(canonicalJson(identity))).digest("hex")}`;
+}
+
+function normalizedHookHandler(handler) {
+  return {
+    type: "command",
+    command: platformHookCommand(handler),
+    timeout: normalizedHookTimeout(handler.timeout),
+    async: handler.async === true,
+    ...optionalHookFields(handler),
+  };
+}
+
+function platformHookCommand(handler) {
+  if (process.platform !== "win32") return handler.command;
+  return handler.commandWindows ?? handler.command;
+}
+
+function normalizedHookTimeout(timeout) {
+  return Math.max(1, timeout ?? 600);
+}
+
+function optionalHookFields(handler) {
+  return Object.fromEntries([
+    ["statusMessage", handler.statusMessage],
+    ["additionalContextLimit", normalizedAdditionalContextLimit(handler.additionalContextLimit)],
+  ].filter(([, value]) => value != null));
+}
+
+function normalizedAdditionalContextLimit(value) {
+  return value === 2_500 ? undefined : value;
+}
+
+function normalizedMatcher(event, matcher) {
+  if (["user_prompt_submit", "stop"].includes(event) || matcher == null) return {};
+  return { matcher };
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalJson(value[key])]));
+}
+
+function codexHookStates(config) {
+  const sections = config.matchAll(/^\[hooks\.state\."((?:\\.|[^"])*)"\]\s*\r?\n((?:(?!^\[)[\s\S])*)/gm);
+  return new Map([...sections].flatMap(hookStateEntry));
+}
+
+function hookStateEntry(match) {
+  const key = decodeTomlBasicString(match[1]);
+  if (key === null) return [];
+  const digest = match[2].match(/^trusted_hash\s*=\s*"(sha256:[a-f0-9]{64})"\s*$/m);
+  return [[key, {
+    enabled: !/^enabled\s*=\s*false\s*$/m.test(match[2]),
+    trustedHash: digest?.[1] ?? null,
+  }]];
+}
+
+function hookStateMatches(state, expectedHash) {
+  return state?.enabled === true && state.trustedHash === expectedHash;
+}
+
+function codexHooksDisabled(config) {
+  const features = tomlSectionBody(config, "features");
+  return /^(?:hooks|codex_hooks)\s*=\s*false\s*$/m.test(features);
+}
+
+function codexProjectTrusted(config, repoPath) {
+  const sections = config.matchAll(/^\[projects\."((?:\\.|[^"])*)"\]\s*\r?\n((?:(?!^\[)[\s\S])*)/gm);
+  return [...sections].some((match) => decodeTomlBasicString(match[1]) === repoPath
+    && /^trust_level\s*=\s*"trusted"\s*$/m.test(match[2]));
+}
+
+function tomlSectionBody(config, section) {
+  const escaped = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return config.match(new RegExp(`^\\[${escaped}\\]\\s*\\r?\\n((?:(?!^\\[)[\\s\\S])*)`, "m"))?.[1] ?? "";
+}
+
+function decodeTomlBasicString(value) {
+  try {
+    return JSON.parse(`"${value}"`);
+  } catch {
+    return null;
+  }
 }
 
 function defaultCodexConfigPath() {
@@ -232,18 +358,18 @@ async function readPlatformConfig(store) {
 
 function hasEntireHook(entries, expectedCommand) {
   if (!Array.isArray(entries)) return false;
-  const direct = new RegExp(`^(?:exec )?entire hooks codex ${expectedCommand}$`);
-  const guarded = new RegExp(`^sh -c 'if ! command -v entire >/dev/null 2>&1; then .+; fi; exec entire hooks codex ${expectedCommand}'$`);
-  return entries.some((entry) => hookCommands(entry).some((hook) => matchesEntireHook(hook, direct, guarded)));
+  return entries.some((entry) => hookCommands(entry).some((hook) => matchesRequiredEntireHook(hook, expectedCommand)));
 }
 
 function hookCommands(entry) {
   return Array.isArray(entry?.hooks) ? entry.hooks : [];
 }
 
-function matchesEntireHook(hook, direct, guarded) {
+function matchesRequiredEntireHook(hook, expectedCommand) {
   if (hook?.type !== "command") return false;
   if (typeof hook.command !== "string") return false;
+  const direct = new RegExp(`^(?:exec )?entire hooks codex ${expectedCommand}$`);
+  const guarded = new RegExp(`^sh -c 'if ! command -v entire >/dev/null 2>&1; then .+; fi; exec entire hooks codex ${expectedCommand}'$`);
   return [direct, guarded].some((pattern) => pattern.test(hook.command));
 }
 

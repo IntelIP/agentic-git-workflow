@@ -30,17 +30,28 @@ test("preflight fails early with exact Codex hook approval remedy", async (t) =>
   assert.equal(trust.status, "blocked");
   assert.match(trust.resolution, /Open \/hooks in Codex/);
 
-  await writeCodexTrust(fixture, ["session_start", "user_prompt_submit", "stop", "post_tool_use"], "not-a-digest");
-  const malformed = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.equal(malformed.checks.find((check) => check.id === "codex-hook-trust").status, "blocked");
+  await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { digest: "sha256:" + "a".repeat(64) });
+  const stale = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(stale.checks.find((check) => check.id === "codex-hook-trust").detail, /stale/);
+});
 
-  await writeFile(fixture.codexConfigPath, [
-    `[hooks.state."${join(await realpath(fixture.seed), ".codex", "hooks.json")}:post_tool_use:0:0"]`,
-    "[unrelated]",
-    `trusted_hash = "sha256:${"a".repeat(64)}"`,
-  ].join("\n"));
-  const unrelated = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.equal(unrelated.checks.find((check) => check.id === "codex-hook-trust").status, "blocked");
+test("preflight requires active hooks and a trusted project layer", async (t) => {
+  const fixture = await preparedFixture(t);
+  await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { hooksEnabled: false });
+  const disabled = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(disabled.checks.find((check) => check.id === "codex-hook-trust").detail, /disabled/);
+
+  await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { disabledEvent: "stop" });
+  const handlerDisabled = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(handlerDisabled.checks.find((check) => check.id === "codex-hook-trust").detail, /stop/);
+
+  await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { projectTrusted: false });
+  const untrusted = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(untrusted.checks.find((check) => check.id === "codex-hook-trust").detail, /project layer/);
+
+  await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { encodeKeys: true });
+  const escaped = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.equal(escaped.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
 });
 
 test("release preflight requires clean main equal to origin main", async (t) => {
@@ -137,13 +148,42 @@ async function runPreparedPreflight(fixture, options = {}) {
   });
 }
 
-async function writeCodexTrust(fixture, events, digest = "sha256:" + "a".repeat(64)) {
-  const hooksPath = join(await realpath(fixture.seed), ".codex", "hooks.json");
+const FIXTURE_HOOK_HASHES = {
+  session_start: "sha256:a6399ffe129edf2146be06d4ee584e8cb8a7fbb40da326d8ff1c2deb22876ca5",
+  user_prompt_submit: "sha256:9c424e2158a618f360a1ae34341d492b8a09a42e920d0bde75da7850c54dd3ef",
+  stop: "sha256:edd6678b7563e9c0a42fa2fecbd802d9e228ecb62c8eda3ea033d16cc1f66b54",
+  post_tool_use: "sha256:17eefa5e04078c56f71cc43407b870a4590c2b8ed5d9a8b3b70f07e825cd1b8a",
+};
+
+async function writeCodexTrust(fixture, events, {
+  digest = null,
+  hooksEnabled = true,
+  projectTrusted = true,
+  encodeKeys = false,
+  disabledEvent = null,
+} = {}) {
+  const repoPath = await realpath(fixture.seed);
+  const hooksPath = join(repoPath, ".codex", "hooks.json");
   const sections = events.map((event) => [
-    `[hooks.state."${hooksPath}:${event}:0:0"]`,
-    `trusted_hash = "${digest}"`,
+    `[hooks.state."${tomlKey(`${hooksPath}:${event}:0:0`, encodeKeys)}"]`,
+    `trusted_hash = "${digest ?? FIXTURE_HOOK_HASHES[event]}"`,
+    ...(event === disabledEvent ? ["enabled = false"] : []),
   ].join("\n"));
-  await writeFile(fixture.codexConfigPath, sections.join("\n\n") + "\n");
+  const config = [
+    "[features]",
+    `hooks = ${hooksEnabled}`,
+    "",
+    `[projects."${tomlKey(repoPath, false)}"]`,
+    `trust_level = "${projectTrusted ? "trusted" : "untrusted"}"`,
+    "",
+    ...sections,
+  ].join("\n\n");
+  await writeFile(fixture.codexConfigPath, config + "\n");
+}
+
+function tomlKey(value, encode) {
+  const escaped = JSON.stringify(value).slice(1, -1);
+  return encode ? escaped.replaceAll("/", "\\u002f") : escaped;
 }
 
 async function writeEntireHooks(repoPath, commandFor) {
