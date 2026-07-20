@@ -74,6 +74,15 @@ test("preflight requires active hooks and a trusted project layer", async (t) =>
   await writeFile(hooksPath, JSON.stringify(hooks));
   const stopContext = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.equal(stopContext.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
+
+  hooks.hooks.Stop[0].hooks.push({ ...hooks.hooks.Stop[0].hooks[0] });
+  await writeFile(hooksPath, JSON.stringify(hooks));
+  await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { disabledEvent: "stop" });
+  const config = await readFile(fixture.codexConfigPath, "utf8");
+  const canonicalHooksPath = await realpath(hooksPath);
+  await writeFile(fixture.codexConfigPath, `${config}\n${tomlTable("hooks.state", `${canonicalHooksPath}:stop:0:1`)}\ntrusted_hash = "${FIXTURE_HOOK_HASHES.stop}"\n`);
+  const duplicate = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.equal(duplicate.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
 });
 
 test("preflight verifies Entire metadata ancestry without repairing it", async (t) => {
@@ -112,6 +121,30 @@ test("preflight verifies Entire metadata ancestry without repairing it", async (
   fixture.liveControlOid = codeCommit;
   const invalidContents = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(invalidContents.checks.find((check) => check.id === "entire-metadata").detail, /no checkpoint metadata/);
+
+  await runGit({ args: ["update-ref", localRef, "HEAD"], cwd: fixture.seed });
+  fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
+  const metadataPath = join(fixture.seed, "ab", "cdef123456", "metadata.json");
+  const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+  await writeFile(metadataPath, JSON.stringify({ ...metadata, partial: true }));
+  await runGit({ args: ["add", "--", "ab/cdef123456/metadata.json"], cwd: fixture.seed });
+  await runGit({ args: ["commit", "-m", "Make checkpoint metadata partial"], cwd: fixture.seed, env: identityEnv() });
+  await runGit({ args: ["update-ref", localRef, "HEAD"], cwd: fixture.seed });
+  fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
+  const partial = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(partial.checks.find((check) => check.id === "entire-metadata").detail, /invalid/);
+
+  const empty = (await runGit({
+    args: ["commit-tree", "4b825dc642cb6eb9a060e54bf8d69288fbee4904", "-m", "Initialize empty checkpoint metadata"],
+    cwd: fixture.seed,
+    env: identityEnv(),
+  })).stdout.trim();
+  await runGit({ args: ["update-ref", localRef, empty], cwd: fixture.seed });
+  fixture.liveControlOid = empty;
+  const emptyAgent = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.equal(emptyAgent.checks.find((check) => check.id === "entire-metadata").status, "passed");
+  const emptyRelease = await runPreparedPreflight(fixture, { profile: "release", commandRunner: fakeCommands() });
+  assert.match(emptyRelease.checks.find((check) => check.id === "entire-metadata").detail, /no checkpoint metadata/);
 });
 
 test("preflight uses the repository root and rejects invalid Codex configuration", async (t) => {

@@ -80,7 +80,7 @@ export async function runPreflight({
   });
 
   await record(checks, "entire-metadata", () => store
-    ? checkEntireMetadataBranches(store, remoteRefReader)
+    ? checkEntireMetadataBranches(store, remoteRefReader, profile)
     : blocked("Entire metadata storage could not be inspected.", "Open a Git repository, then rerun preflight."));
 
   await record(checks, "codex-config", async () => {
@@ -137,7 +137,7 @@ function codexHookConfigBlocker(config, canonicalRepo) {
     : blocked("The repository project layer is not trusted by Codex.", "Trust this repository in Codex, then rerun preflight.");
 }
 
-async function checkEntireMetadataBranches(store, remoteRefReader) {
+async function checkEntireMetadataBranches(store, remoteRefReader, profile) {
   const platform = await readPlatformConfig(store);
   const localRef = platform.ledger.checkpointRef;
   if (!(await store.hasRef(localRef))) {
@@ -152,23 +152,37 @@ async function checkEntireMetadataBranches(store, remoteRefReader) {
   if (!(await store.isAncestor(liveRemote, localRef))) {
     return blocked("The live remote Entire metadata branch is ahead, divergent, or disconnected from local metadata.", "Fetch and reconcile the checkpoint metadata branch explicitly, then rerun preflight.");
   }
-  return checkEntireMetadataContents(store, localRef);
+  return checkEntireMetadataContents(store, localRef, { allowEmpty: profile === "agent" });
 }
 
-async function checkEntireMetadataContents(store, localRef) {
+async function checkEntireMetadataContents(store, localRef, { allowEmpty }) {
   const files = await store.listFiles(localRef);
+  const emptyResult = emptyMetadataResult(files, allowEmpty);
+  if (emptyResult) return emptyResult;
   const metadataPaths = files.filter((path) => /^[0-9a-f]{2}\/[0-9a-f]{10}\/metadata\.json$/.test(path));
   if (metadataPaths.length === 0) {
     return blocked("Entire metadata branch contains no checkpoint metadata.", "Restore usable Entire checkpoint metadata, then rerun preflight.");
   }
+  const invalidPath = await firstInvalidMetadataPath(store, localRef, metadataPaths, files);
+  return invalidPath
+    ? blocked(`Entire checkpoint metadata is invalid: ${invalidPath}.`, "Repair the checkpoint metadata branch explicitly, then rerun preflight.")
+    : passed("Live remote Entire metadata is contained locally and checkpoint contents are valid.");
+}
+
+function emptyMetadataResult(files, allowEmpty) {
+  if (files.length !== 0) return null;
+  return allowEmpty
+    ? passed("Live remote Entire metadata is contained locally; initialized agent metadata is empty.")
+    : blocked("Entire metadata branch contains no checkpoint metadata.", "Create a checkpoint before release preflight, then rerun.");
+}
+
+async function firstInvalidMetadataPath(store, localRef, metadataPaths, files) {
   for (const path of metadataPaths) {
     const result = await runGit({ args: ["show", `${localRef}:${path}`], cwd: store.repoPath, gitDir: store.gitDir });
     const metadata = JSON.parse(result.stdout);
-    if (!validCheckpointMetadata(metadata, path, new Set(files))) {
-      return blocked(`Entire checkpoint metadata is invalid: ${path}.`, "Repair the checkpoint metadata branch explicitly, then rerun preflight.");
-    }
+    if (!validCheckpointMetadata(metadata, path, new Set(files))) return path;
   }
-  return passed("Live remote Entire metadata is contained locally and checkpoint contents are valid.");
+  return null;
 }
 
 function validCheckpointMetadata(metadata, path, files) {
@@ -179,7 +193,15 @@ function validCheckpointMetadata(metadata, path, files) {
 }
 
 function validCheckpointEnvelope(metadata, checkpointId) {
-  return metadata?.checkpoint_id === checkpointId && Array.isArray(metadata.sessions) && metadata.sessions.length > 0;
+  if (!metadata || typeof metadata !== "object") return false;
+  const sessions = Array.isArray(metadata.sessions) ? metadata.sessions : [];
+  const checks = [
+    metadata.partial !== true,
+    metadata.checkpoint_id === checkpointId,
+    sessions === metadata.sessions,
+    sessions.length > 0,
+  ];
+  return checks.filter(Boolean).length === checks.length;
 }
 
 function validCheckpointSession(session, prefix, files) {
@@ -189,13 +211,14 @@ function validCheckpointSession(session, prefix, files) {
 }
 
 function codexHookTrustResult(expected, states) {
-  const untrusted = expected.filter((hook) => !hookStateMatches(states.get(hook.key), hook.hash));
-  if (expected.length === REQUIRED_CODEX_HOOKS.length && untrusted.length === 0) {
+  const events = REQUIRED_CODEX_HOOKS.map((hook) => hook.event);
+  const untrusted = events.filter((event) => !expected.some((hook) => hook.event === event
+    && hookStateMatches(states.get(hook.key), hook.hash)));
+  if (untrusted.length === 0) {
     return passed("Four current Entire hook definitions are enabled and trusted by Codex.");
   }
-  const events = untrusted.map((hook) => hook.event);
   return blocked(
-    `Codex Entire hook trust missing or stale: ${events.join(", ") || "required hook definitions"}.`,
+    `Codex Entire hook trust missing or stale: ${untrusted.join(", ") || "required hook definitions"}.`,
     "Open /hooks in Codex, approve all four repository hooks, then rerun preflight.",
   );
 }
@@ -209,17 +232,13 @@ function expectedEntireHookTrust(hooksConfig, hooksPath) {
 
 function expectedHookInGroups(groups, required, hooksPath) {
   if (!Array.isArray(groups)) return [];
-  for (const [groupIndex, group] of groups.entries()) {
-    const handlerIndex = hookCommands(group).findIndex((hook) => matchesRequiredEntireHook(hook, required.command));
-    if (handlerIndex < 0) continue;
-    const handler = group.hooks[handlerIndex];
-    return [{
+  return groups.flatMap((group, groupIndex) => hookCommands(group).flatMap((handler, handlerIndex) => (
+    matchesRequiredEntireHook(handler, required.command) ? [{
       event: required.event,
       key: `${hooksPath}:${required.event}:${groupIndex}:${handlerIndex}`,
       hash: codexHookHash(required.event, group, handler),
-    }];
-  }
-  return [];
+    }] : []
+  )));
 }
 
 function codexHookHash(event, group, handler) {
