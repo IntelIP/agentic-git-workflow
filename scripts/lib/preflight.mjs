@@ -120,24 +120,21 @@ export async function runPreflight({
 async function checkCodexHookTrust({ repoPath, codexConfigPath }) {
   const canonicalRepo = await realpath(repoPath);
   const hooksPath = await realpath(resolve(repoPath, ".codex", "hooks.json"));
-  const [config, projectConfig, hooksSource] = await Promise.all([
+  const [config, hooksSource] = await Promise.all([
     readFile(codexConfigPath, "utf8"),
-    readOptionalFile(resolve(repoPath, ".codex", "config.toml")),
     readFile(hooksPath, "utf8"),
   ]);
-  const configBlocker = codexHookConfigBlocker({ config, projectConfig, canonicalRepo });
+  const configBlocker = codexHookConfigBlocker(config, canonicalRepo);
   if (configBlocker) return configBlocker;
   const expected = expectedEntireHookTrust(JSON.parse(hooksSource), hooksPath);
   const states = codexHookStates(config);
   return codexHookTrustResult(expected, states);
 }
 
-function codexHookConfigBlocker({ config, projectConfig, canonicalRepo }) {
-  return [
-    [codexHooksDisabled(config), blocked("Codex hooks are disabled in config.toml.", "Enable [features].hooks, then rerun preflight.")],
-    [codexHooksDisabled(projectConfig), blocked("Codex hooks are disabled in the project .codex/config.toml.", "Enable [features].hooks in the project config, then rerun preflight.")],
-    [!codexProjectTrusted(config, canonicalRepo), blocked("The repository project layer is not trusted by Codex.", "Trust this repository in Codex, then rerun preflight.")],
-  ].find(([applies]) => applies)?.[1] ?? null;
+function codexHookConfigBlocker(config, canonicalRepo) {
+  return codexProjectTrusted(config, canonicalRepo)
+    ? null
+    : blocked("The repository project layer is not trusted by Codex.", "Trust this repository in Codex, then rerun preflight.");
 }
 
 async function checkEntireMetadataBranches(store, remoteRefReader) {
@@ -155,7 +152,40 @@ async function checkEntireMetadataBranches(store, remoteRefReader) {
   if (!(await store.isAncestor(liveRemote, localRef))) {
     return blocked("The live remote Entire metadata branch is ahead, divergent, or disconnected from local metadata.", "Fetch and reconcile the checkpoint metadata branch explicitly, then rerun preflight.");
   }
-  return passed("Live remote Entire checkpoint metadata is contained in the valid local history.");
+  return checkEntireMetadataContents(store, localRef);
+}
+
+async function checkEntireMetadataContents(store, localRef) {
+  const files = await store.listFiles(localRef);
+  const metadataPaths = files.filter((path) => /^[0-9a-f]{2}\/[0-9a-f]{10}\/metadata\.json$/.test(path));
+  if (metadataPaths.length === 0) {
+    return blocked("Entire metadata branch contains no checkpoint metadata.", "Restore usable Entire checkpoint metadata, then rerun preflight.");
+  }
+  for (const path of metadataPaths) {
+    const result = await runGit({ args: ["show", `${localRef}:${path}`], cwd: store.repoPath, gitDir: store.gitDir });
+    const metadata = JSON.parse(result.stdout);
+    if (!validCheckpointMetadata(metadata, path, new Set(files))) {
+      return blocked(`Entire checkpoint metadata is invalid: ${path}.`, "Repair the checkpoint metadata branch explicitly, then rerun preflight.");
+    }
+  }
+  return passed("Live remote Entire metadata is contained locally and checkpoint contents are valid.");
+}
+
+function validCheckpointMetadata(metadata, path, files) {
+  const prefix = path.slice(0, -"metadata.json".length);
+  const checkpointId = prefix.replaceAll("/", "");
+  if (!validCheckpointEnvelope(metadata, checkpointId)) return false;
+  return metadata.sessions.every((session) => validCheckpointSession(session, prefix, files));
+}
+
+function validCheckpointEnvelope(metadata, checkpointId) {
+  return metadata?.checkpoint_id === checkpointId && Array.isArray(metadata.sessions) && metadata.sessions.length > 0;
+}
+
+function validCheckpointSession(session, prefix, files) {
+  return [session?.metadata, session?.transcript, session?.content_hash].every((path) => typeof path === "string"
+    && path.startsWith(`/${prefix}`)
+    && files.has(path.slice(1)));
 }
 
 function codexHookTrustResult(expected, states) {
@@ -259,19 +289,9 @@ function hookStateMatches(state, expectedHash) {
   return state?.enabled === true && state.trustedHash === expectedHash;
 }
 
-function codexHooksDisabled(config) {
-  const features = tomlSectionBody(config, "features");
-  return ["hooks", "codex_hooks"].some((key) => tomlBooleanAssignment(features, key) === false);
-}
-
 function codexProjectTrusted(config, repoPath) {
   return tomlQuotedTableSections(config, "projects").some((section) => section.key === repoPath
     && tomlStringAssignment(section.body, "trust_level") === "trusted");
-}
-
-function tomlSectionBody(config, section) {
-  const escaped = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return config.match(new RegExp(`^\\[${escaped}\\]\\s*\\r?\\n((?:(?!^\\[)[\\s\\S])*)`, "m"))?.[1] ?? "";
 }
 
 function decodeTomlBasicString(value) {
@@ -320,13 +340,6 @@ function stripTomlComment(line) {
     if (token[0] === "#") return line.slice(0, token.index);
   }
   return line;
-}
-
-async function readOptionalFile(path) {
-  return readFile(path, "utf8").catch((error) => {
-    if (error?.code === "ENOENT") return "";
-    throw error;
-  });
 }
 
 function defaultCodexConfigPath() {

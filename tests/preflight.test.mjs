@@ -38,13 +38,18 @@ test("preflight fails early with exact Codex hook approval remedy", async (t) =>
 test("preflight requires active hooks and a trusted project layer", async (t) => {
   const fixture = await preparedFixture(t);
   await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { hooksEnabled: false, hooksComment: true });
-  const disabled = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.match(disabled.checks.find((check) => check.id === "codex-hook-trust").detail, /disabled/);
+  const disabled = await runPreparedPreflight(fixture, { commandRunner: fakeCommands({ effectiveHooks: false }) });
+  assert.match(disabled.checks.find((check) => check.id === "codex-config").detail, /disabled/);
 
   await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES));
   await writeFile(join(fixture.seed, ".codex", "config.toml"), "[features]\nhooks = false # project override\n");
-  const projectDisabled = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.match(projectDisabled.checks.find((check) => check.id === "codex-hook-trust").detail, /project \.codex/);
+  const projectDisabled = await runPreparedPreflight(fixture, { commandRunner: fakeCommands({ effectiveHooks: false }) });
+  assert.match(projectDisabled.checks.find((check) => check.id === "codex-config").detail, /disabled/);
+
+  await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { hooksEnabled: false });
+  await writeFile(join(fixture.seed, ".codex", "config.toml"), "[features]\nhooks = true # effective project override\n");
+  const projectEnabled = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.equal(projectEnabled.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
   await rm(join(fixture.seed, ".codex", "config.toml"));
 
   await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { disabledEvent: "stop" });
@@ -101,6 +106,12 @@ test("preflight verifies Entire metadata ancestry without repairing it", async (
   fixture.liveControlOid = "f".repeat(40);
   const unfetched = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(unfetched.checks.find((check) => check.id === "entire-metadata").detail, /not available locally/);
+
+  const codeCommit = (await runGit({ args: ["rev-parse", "HEAD^"], cwd: fixture.seed })).stdout.trim();
+  await runGit({ args: ["update-ref", localRef, codeCommit], cwd: fixture.seed });
+  fixture.liveControlOid = codeCommit;
+  const invalidContents = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(invalidContents.checks.find((check) => check.id === "entire-metadata").detail, /no checkpoint metadata/);
 });
 
 test("preflight uses the repository root and rejects invalid Codex configuration", async (t) => {
@@ -213,6 +224,21 @@ async function preparedFixture(t) {
   fixture.codexConfigPath = join(fixture.root, "codex-config.toml");
   await writeCodexTrust(fixture, ["session_start", "user_prompt_submit", "stop", "post_tool_use"]);
   await writeFile(join(fixture.seed, "tabellio.platform.json"), JSON.stringify(platformFixture()));
+  const checkpointDir = join(fixture.seed, "ab", "cdef123456");
+  await mkdir(join(checkpointDir, "0"), { recursive: true });
+  await writeFile(join(checkpointDir, "metadata.json"), JSON.stringify({
+    checkpoint_id: "abcdef123456",
+    sessions: [{
+      metadata: "/ab/cdef123456/0/metadata.json",
+      transcript: "/ab/cdef123456/0/full.jsonl",
+      content_hash: "/ab/cdef123456/0/content_hash.txt",
+    }],
+  }));
+  await writeFile(join(checkpointDir, "0", "metadata.json"), "{}\n");
+  await writeFile(join(checkpointDir, "0", "full.jsonl"), "{}\n");
+  await writeFile(join(checkpointDir, "0", "content_hash.txt"), "fixture\n");
+  await runGit({ args: ["add", "--", "ab"], cwd: fixture.seed });
+  await runGit({ args: ["commit", "-m", "Add checkpoint metadata fixture"], cwd: fixture.seed, env: identityEnv() });
   await runGit({ args: ["update-ref", "refs/heads/entire/checkpoints/v1", "HEAD"], cwd: fixture.seed });
   await runGit({ args: ["update-ref", "refs/remotes/control/entire/checkpoints/v1", "HEAD"], cwd: fixture.seed });
   fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
@@ -287,13 +313,13 @@ async function writeEntireHooks(repoPath, commandFor) {
   await writeFile(join(repoPath, ".codex", "hooks.json"), JSON.stringify({ hooks }));
 }
 
-function fakeCommands({ privateControl = true, invalidCodexConfig = false } = {}) {
+function fakeCommands({ privateControl = true, invalidCodexConfig = false, effectiveHooks = true } = {}) {
   const commands = new Map([
     ["entire:--version", () => result("Entire CLI 0.7.7\n")],
     ["entire:status", () => result('{"enabled":true,"agents":["Codex"],"active_sessions":[]}\n')],
     ["codex:features", () => {
       if (invalidCodexConfig) throw new Error("Codex config.toml contains a duplicate table.");
-      return result("hooks stable true\n");
+      return result(`hooks stable ${effectiveHooks}\n`);
     }],
     ["gh:auth", () => result("", "Logged in with gho_secret\n")],
     ["gh:repo", () => result(`${JSON.stringify({ nameWithOwner: "example/repository-control", isPrivate: privateControl })}\n`)],
