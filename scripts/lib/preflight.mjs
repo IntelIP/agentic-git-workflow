@@ -79,7 +79,9 @@ export async function runPreflight({
     return passed("Entire enabled for Codex.");
   });
 
-  await record(checks, "entire-metadata", () => checkEntireMetadataBranches(store));
+  await record(checks, "entire-metadata", () => store
+    ? checkEntireMetadataBranches(store, remoteRefReader)
+    : blocked("Entire metadata storage could not be inspected.", "Open a Git repository, then rerun preflight."));
 
   await record(checks, "codex-config", async () => {
     const result = await commandRunner({
@@ -138,25 +140,22 @@ function codexHookConfigBlocker({ config, projectConfig, canonicalRepo }) {
   ].find(([applies]) => applies)?.[1] ?? null;
 }
 
-async function checkEntireMetadataBranches(store) {
-  if (!store) return blocked("Entire metadata storage could not be inspected.", "Open a Git repository, then rerun preflight.");
+async function checkEntireMetadataBranches(store, remoteRefReader) {
   const platform = await readPlatformConfig(store);
   const localRef = platform.ledger.checkpointRef;
-  const branch = localRef.slice("refs/heads/".length);
-  const remoteRef = `refs/remotes/${platform.workflow.controlRemoteName}/${branch}`;
-  const [hasLocal, hasRemote] = await Promise.all([store.hasRef(localRef), store.hasRef(remoteRef)]);
-  const missing = missingMetadataRefs({ hasLocal, localRef, hasRemote, remoteRef });
-  if (missing.length > 0) {
-    return blocked(`Entire metadata branch missing: ${missing.join(", ")}.`, "Restore or fetch the checkpoint metadata branch, then rerun preflight.");
+  if (!(await store.hasRef(localRef))) {
+    return blocked(`Entire metadata branch missing: ${localRef}.`, "Restore the local checkpoint metadata branch, then rerun preflight.");
   }
-  if (!(await store.isAncestor(remoteRef, localRef))) {
-    return blocked("The remote Entire metadata branch is ahead, divergent, or disconnected from local metadata.", "Fetch and reconcile the checkpoint metadata branch explicitly, then rerun preflight.");
+  const remote = platform.workflow.controlRemoteName;
+  const liveRemote = await remoteRefReader({ repoPath: store.repoPath, remote, ref: localRef });
+  const localObject = await store.resolveRef(liveRemote).catch(() => null);
+  if (!localObject) {
+    return blocked("The live remote Entire metadata commit is not available locally.", "Fetch the checkpoint metadata branch, then rerun preflight.");
   }
-  return passed("Remote Entire checkpoint metadata is contained in the valid local history.");
-}
-
-function missingMetadataRefs({ hasLocal, localRef, hasRemote, remoteRef }) {
-  return [[hasLocal, localRef], [hasRemote, remoteRef]].filter(([present]) => !present).map(([, ref]) => ref);
+  if (!(await store.isAncestor(liveRemote, localRef))) {
+    return blocked("The live remote Entire metadata branch is ahead, divergent, or disconnected from local metadata.", "Fetch and reconcile the checkpoint metadata branch explicitly, then rerun preflight.");
+  }
+  return passed("Live remote Entire checkpoint metadata is contained in the valid local history.");
 }
 
 function codexHookTrustResult(expected, states) {
@@ -449,11 +448,19 @@ function hookCommands(entry) {
 }
 
 function matchesRequiredEntireHook(hook, expectedCommand) {
-  if (hook?.type !== "command") return false;
-  if (typeof hook.command !== "string") return false;
+  if (!validEntireHookShape(hook)) return false;
   const direct = new RegExp(`^(?:exec )?entire hooks codex ${expectedCommand}$`);
   const guarded = new RegExp(`^sh -c 'if ! command -v entire >/dev/null 2>&1; then .+; fi; exec entire hooks codex ${expectedCommand}'$`);
-  return [direct, guarded].some((pattern) => pattern.test(hook.command));
+  const commands = [hook.command, hook.commandWindows].filter((command) => command != null);
+  return commands.every((command) => requiredHookCommandMatches(command, [direct, guarded]));
+}
+
+function validEntireHookShape(hook) {
+  return hook?.type === "command" && hook.async !== true && typeof hook.command === "string";
+}
+
+function requiredHookCommandMatches(command, patterns) {
+  return typeof command === "string" && patterns.some((pattern) => pattern.test(command));
 }
 
 function firstBlocker(rules, fallback) {

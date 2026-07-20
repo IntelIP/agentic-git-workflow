@@ -73,10 +73,11 @@ test("preflight requires active hooks and a trusted project layer", async (t) =>
 
 test("preflight verifies Entire metadata ancestry without repairing it", async (t) => {
   const fixture = await preparedFixture(t);
-  const remoteRef = "refs/remotes/control/entire/checkpoints/v1";
-  await runGit({ args: ["update-ref", "-d", remoteRef], cwd: fixture.seed });
+  const localRef = "refs/heads/entire/checkpoints/v1";
+  await runGit({ args: ["update-ref", "-d", localRef], cwd: fixture.seed });
   const missing = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(missing.checks.find((check) => check.id === "entire-metadata").detail, /missing/);
+  await runGit({ args: ["update-ref", localRef, "HEAD"], cwd: fixture.seed });
 
   const tree = (await runGit({ args: ["rev-parse", "HEAD^{tree}"], cwd: fixture.seed })).stdout.trim();
   const isolated = (await runGit({
@@ -84,7 +85,7 @@ test("preflight verifies Entire metadata ancestry without repairing it", async (
     cwd: fixture.seed,
     env: identityEnv(),
   })).stdout.trim();
-  await runGit({ args: ["update-ref", remoteRef, isolated], cwd: fixture.seed });
+  fixture.liveControlOid = isolated;
   const disconnected = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(disconnected.checks.find((check) => check.id === "entire-metadata").detail, /disconnected/);
 
@@ -93,9 +94,13 @@ test("preflight verifies Entire metadata ancestry without repairing it", async (
     cwd: fixture.seed,
     env: identityEnv(),
   })).stdout.trim();
-  await runGit({ args: ["update-ref", remoteRef, remoteAhead], cwd: fixture.seed });
+  fixture.liveControlOid = remoteAhead;
   const ahead = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(ahead.checks.find((check) => check.id === "entire-metadata").detail, /ahead/);
+
+  fixture.liveControlOid = "f".repeat(40);
+  const unfetched = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(unfetched.checks.find((check) => check.id === "entire-metadata").detail, /not available locally/);
 });
 
 test("preflight uses the repository root and rejects invalid Codex configuration", async (t) => {
@@ -135,6 +140,20 @@ test("preflight requires executable Entire hook commands, not empty event keys",
   await writeEntireHooks(fixture.seed, (command) => `false && entire hooks codex ${command}`);
   const disabled = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.equal(disabled.checks.find((check) => check.id === "codex-hooks").status, "blocked");
+
+  await writeEntireHooks(fixture.seed, (command) => `entire hooks codex ${command}`);
+  const hooksPath = join(fixture.seed, ".codex", "hooks.json");
+  const platformHooks = JSON.parse(await readFile(hooksPath, "utf8"));
+  platformHooks.hooks.Stop[0].hooks[0].commandWindows = "exit 0";
+  await writeFile(hooksPath, JSON.stringify(platformHooks));
+  const windowsOverride = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(windowsOverride.checks.find((check) => check.id === "codex-hooks").detail, /stop/);
+
+  delete platformHooks.hooks.Stop[0].hooks[0].commandWindows;
+  platformHooks.hooks.Stop[0].hooks[0].async = true;
+  await writeFile(hooksPath, JSON.stringify(platformHooks));
+  const asynchronous = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(asynchronous.checks.find((check) => check.id === "codex-hooks").detail, /stop/);
 });
 
 test("preflight normalizes GitHub remote identities and requires private control storage", async (t) => {
@@ -196,6 +215,7 @@ async function preparedFixture(t) {
   await writeFile(join(fixture.seed, "tabellio.platform.json"), JSON.stringify(platformFixture()));
   await runGit({ args: ["update-ref", "refs/heads/entire/checkpoints/v1", "HEAD"], cwd: fixture.seed });
   await runGit({ args: ["update-ref", "refs/remotes/control/entire/checkpoints/v1", "HEAD"], cwd: fixture.seed });
+  fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
   return fixture;
 }
 
@@ -203,6 +223,7 @@ async function runPreparedPreflight(fixture, options = {}) {
   return runPreflight({
     repoPath: fixture.seed,
     codexConfigPath: fixture.codexConfigPath,
+    remoteRefReader: async () => fixture.liveControlOid,
     ...options,
   });
 }
