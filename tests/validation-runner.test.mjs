@@ -139,6 +139,17 @@ test("validation runner accepts external workspace roots and rejects repository-
     /outside the repository and Git common directory/,
   );
 
+  const missingGitAliasChild = join(gitAlias, "tabellio-validation-created");
+  const canonicalMissingGitAlias = new ValidationRunner({ store, ledger, workspaceRoot: missingGitAliasChild });
+  await assert.rejects(
+    canonicalMissingGitAlias.run({ repositoryId: "example/repository", commit: "HEAD", base: "main" }),
+    /outside the repository and Git common directory/,
+  );
+  assert.equal(
+    await stat(join(fixture.seed, ".git", "tabellio-validation-created")).catch((error) => error.code),
+    "ENOENT",
+  );
+
   const repositoryAlias = join(fixture.root, "RepositoryAlias");
   await symlink(fixture.seed, repositoryAlias);
   const canonicalRepositoryAlias = new ValidationRunner({ store, ledger, workspaceRoot: repositoryAlias });

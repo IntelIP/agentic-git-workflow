@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { LedgerConflictError } from "./git-json-ledger.mjs";
 import { runGit } from "./git-process.mjs";
@@ -115,12 +115,30 @@ export class ValidationRunner {
 async function validationWorkspaceBase({ repoPath, gitCommonDirectory, configuredRoot }) {
   const base = resolve(configuredRoot ?? tmpdir());
   assertExternalWorkspaceRoot(base, repoPath, gitCommonDirectory);
-  await mkdir(base, { recursive: true, mode: 0o700 });
-  const canonicalBase = await realpath(base);
   const canonicalRepo = await realpath(repoPath);
   const canonicalGit = await realpath(gitCommonDirectory);
+  const creationBase = await canonicalPathForCreation(base);
+  assertExternalWorkspaceRoot(creationBase, canonicalRepo, canonicalGit);
+  await mkdir(creationBase, { recursive: true, mode: 0o700 });
+  const canonicalBase = await realpath(creationBase);
   assertExternalWorkspaceRoot(canonicalBase, canonicalRepo, canonicalGit);
   return canonicalBase;
+}
+
+async function canonicalPathForCreation(path) {
+  let existingAncestor = resolve(path);
+  const missingSegments = [];
+  while (true) {
+    try {
+      return resolve(await realpath(existingAncestor), ...missingSegments.reverse());
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      const parent = dirname(existingAncestor);
+      if (parent === existingAncestor) throw error;
+      missingSegments.push(basename(existingAncestor));
+      existingAncestor = parent;
+    }
+  }
 }
 
 function assertExternalWorkspaceRoot(candidate, repoPath, gitCommonDirectory) {
