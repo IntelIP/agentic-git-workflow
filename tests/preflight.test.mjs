@@ -214,8 +214,32 @@ test("preflight verifies Entire metadata ancestry without repairing it", async (
   const mismatchedCount = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(mismatchedCount.checks.find((check) => check.id === "entire-metadata").detail, /invalid/);
 
+  const sessionMetadataPath = join(fixture.seed, "ab", "cdef123456", "0", "metadata.json");
+  await writeFile(metadataPath, JSON.stringify(metadata));
+  await writeFile(sessionMetadataPath, "{}\n");
+  await runGit({ args: ["add", "--", "ab/cdef123456"], cwd: fixture.seed });
+  await runGit({ args: ["commit", "-m", "Invalidate referenced session metadata"], cwd: fixture.seed, env: identityEnv() });
+  await runGit({ args: ["update-ref", localRef, "HEAD"], cwd: fixture.seed });
+  fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
+  const invalidSession = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(invalidSession.checks.find((check) => check.id === "entire-metadata").detail, /invalid/);
+
+  await writeFile(sessionMetadataPath, JSON.stringify({
+    checkpoint_id: "abcdef123456",
+    session_id: "session-fixture",
+  }) + "\n");
+  const contentHashPath = join(fixture.seed, "ab", "cdef123456", "0", "content_hash.txt");
+  await writeFile(contentHashPath, `sha256:${"0".repeat(64)}\n`);
+  await runGit({ args: ["add", "--", "ab/cdef123456"], cwd: fixture.seed });
+  await runGit({ args: ["commit", "-m", "Invalidate referenced transcript hash"], cwd: fixture.seed, env: identityEnv() });
+  await runGit({ args: ["update-ref", localRef, "HEAD"], cwd: fixture.seed });
+  fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
+  const invalidHash = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(invalidHash.checks.find((check) => check.id === "entire-metadata").detail, /invalid/);
+
+  await writeFile(contentHashPath, "sha256:ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356\n");
   await writeFile(metadataPath, JSON.stringify({ ...metadata, partial: true }));
-  await runGit({ args: ["add", "--", "ab/cdef123456/metadata.json"], cwd: fixture.seed });
+  await runGit({ args: ["add", "--", "ab/cdef123456"], cwd: fixture.seed });
   await runGit({ args: ["commit", "-m", "Make checkpoint metadata partial"], cwd: fixture.seed, env: identityEnv() });
   await runGit({ args: ["update-ref", localRef, "HEAD"], cwd: fixture.seed });
   fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
@@ -265,6 +289,13 @@ test("preflight uses the repository root and rejects invalid Codex configuration
   const invalid = await runPreparedPreflight(fixture, { commandRunner: fakeCommands({ invalidCodexConfig: true }) });
   assert.equal(invalid.checks.find((check) => check.id === "codex-config").status, "blocked");
   assert.match(invalid.checks.find((check) => check.id === "codex-hook-trust").detail, /unproven/);
+
+  const unavailable = await runPreparedPreflight(fixture, {
+    codexBinary: "/bin/false",
+    codexStateReader: undefined,
+    commandRunner: fakeCommands(),
+  });
+  assert.equal(unavailable.checks.find((check) => check.id === "codex-config").status, "blocked");
 });
 
 test("release preflight requires clean main equal to origin main", async (t) => {
@@ -402,9 +433,12 @@ async function preparedFixture(t) {
       content_hash: "/ab/cdef123456/0/content_hash.txt",
     }],
   }));
-  await writeFile(join(checkpointDir, "0", "metadata.json"), "{}\n");
+  await writeFile(join(checkpointDir, "0", "metadata.json"), JSON.stringify({
+    checkpoint_id: "abcdef123456",
+    session_id: "session-fixture",
+  }) + "\n");
   await writeFile(join(checkpointDir, "0", "full.jsonl"), "{}\n");
-  await writeFile(join(checkpointDir, "0", "content_hash.txt"), "fixture\n");
+  await writeFile(join(checkpointDir, "0", "content_hash.txt"), "sha256:ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356\n");
   await runGit({ args: ["add", "--", "ab", ".entire/settings.json"], cwd: fixture.seed });
   await runGit({ args: ["commit", "-m", "Add checkpoint metadata fixture"], cwd: fixture.seed, env: identityEnv() });
   await runGit({ args: ["update-ref", "refs/heads/entire/checkpoints/v1", "HEAD"], cwd: fixture.seed });
@@ -417,7 +451,10 @@ async function runPreparedPreflight(fixture, options = {}) {
   return runPreflight({
     repoPath: fixture.seed,
     codexConfigPath: fixture.codexConfigPath,
-    codexRequirementsReader: async () => fixture.codexRequirements,
+    codexStateReader: async () => ({
+      requirements: fixture.codexRequirements,
+      hooks: effectiveManagedHooks(fixture.codexRequirements),
+    }),
     remoteRefReader: async () => fixture.liveControlOid,
     remoteRefsReader: async () => fixture.liveCheckpointRefs ?? new Map(),
     ...options,
@@ -521,4 +558,18 @@ function managedEntireRequirements() {
       [{ hooks: [{ type: "command", command: `entire hooks codex ${command}`, async: false }] }],
     ])),
   };
+}
+
+function effectiveManagedHooks(requirements) {
+  return Object.entries(requirements?.hooks ?? {}).flatMap(([event, groups]) => groups.flatMap((group) => (
+    group.hooks.map((handler) => ({
+      isManaged: true,
+      enabled: true,
+      trustStatus: "managed",
+      eventName: event[0].toLowerCase() + event.slice(1),
+      handlerType: handler.type,
+      command: handler.command,
+      matcher: group.matcher ?? null,
+    }))
+  )));
 }

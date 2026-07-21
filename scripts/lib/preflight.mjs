@@ -39,7 +39,7 @@ export async function runPreflight({
   remoteRepositoryReader = effectiveGitHubRepository,
   nodeVersion = process.versions.node,
   codexConfigPath = defaultCodexConfigPath(),
-  codexRequirementsReader = readEffectiveCodexRequirements,
+  codexStateReader = readEffectiveCodexState,
   entireCheckpointsPrimary = process.env.ENTIRE_CHECKPOINTS_PRIMARY ?? null,
   now = new Date(),
 } = {}) {
@@ -89,11 +89,12 @@ export async function runPreflight({
 
   const codexCwd = store ? store.repoPath : resolvedRepo;
   await record(checks, "codex-config", async () => {
-    const hookPolicy = await codexHookPolicy(await codexRequirementsReader({
+    const codexState = await codexStateReader({
       binary: codexBinary,
       cwd: codexCwd,
       timeoutMs: 30_000,
-    }));
+    });
+    const hookPolicy = await codexHookPolicy(codexState.requirements, codexState.hooks);
     codexHookMode = hookPolicy.mode;
     codexManagedEvents = hookPolicy.managedEvents;
     const result = await checkCodexConfig({
@@ -177,8 +178,8 @@ async function checkCodexConfig({ commandRunner, codexBinary, cwd, hookPolicy })
   return passed("Codex configuration is valid and hooks are effectively enabled.");
 }
 
-async function codexHookPolicy(requirements) {
-  const managedEvents = managedEntireHookEvents(requirementsHooks(requirements));
+async function codexHookPolicy(requirements, effectiveHooks) {
+  const managedEvents = managedEntireHookEvents(effectiveHooks);
   const missing = REQUIRED_CODEX_HOOKS.filter((required) => !managedEvents.includes(required.configEvent)).map((required) => required.event);
   if (missing.length === 0) return { mode: "managed", blocker: null, managedEvents };
   if (managedHooksOnly(requirements)) {
@@ -191,10 +192,6 @@ async function codexHookPolicy(requirements) {
   return { mode: projectHookMode(managedEvents), blocker: null, managedEvents };
 }
 
-function requirementsHooks(requirements) {
-  return requirements == null ? null : requirements.hooks;
-}
-
 function projectHookMode(managedEvents) {
   return managedEvents.length > 0 ? "mixed" : "project";
 }
@@ -204,15 +201,38 @@ function managedHooksOnly(requirements) {
 }
 
 function managedEntireHookEvents(hooks) {
-  return REQUIRED_CODEX_HOOKS.filter((required) => (hooks?.[required.configEvent] ?? [])
-    .filter((group) => hookGroupAppliesToAll(group, required.configEvent))
-    .flatMap(hookCommands)
-    .some((handler) => matchesRequiredEntireHook(handler, required.command)))
+  const inventory = Array.isArray(hooks) ? hooks : [];
+  return REQUIRED_CODEX_HOOKS.filter((required) => inventory.some((hook) => managedHookMatches(hook, required)))
     .map((required) => required.configEvent);
 }
 
-async function readEffectiveCodexRequirements({ binary, cwd, timeoutMs }) {
-  return new Promise((resolveRequirements, rejectRequirements) => {
+function managedHookMatches(hook, required) {
+  const candidate = Object.assign({}, hook);
+  const identity = JSON.stringify({
+    isManaged: candidate.isManaged,
+    enabled: candidate.enabled,
+    trustStatus: candidate.trustStatus,
+    eventName: candidate.eventName,
+  });
+  const requiredIdentity = JSON.stringify({
+    isManaged: true,
+    enabled: true,
+    trustStatus: "managed",
+    eventName: lowerCamel(required.configEvent),
+  });
+  return [
+    identity === requiredIdentity,
+    hookGroupAppliesToAll(candidate, required.configEvent),
+    matchesRequiredEntireHook({ type: candidate.handlerType, command: candidate.command, async: false }, required.command),
+  ].every(Boolean);
+}
+
+function lowerCamel(value) {
+  return value[0].toLowerCase() + value.slice(1);
+}
+
+async function readEffectiveCodexState({ binary, cwd, timeoutMs }) {
+  return new Promise((resolveState, rejectState) => {
     const child = spawn(binary, ["app-server", "--stdio"], {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
@@ -222,19 +242,26 @@ async function readEffectiveCodexRequirements({ binary, cwd, timeoutMs }) {
     let settled = false;
     const timer = setTimeout(() => finish(new Error("Codex effective requirements query timed out.")), timeoutMs);
 
-    const finish = (error, requirements = null) => {
+    const finish = (error, result = null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       child.kill();
-      if (error) rejectRequirements(error);
-      else resolveRequirements(requirements);
+      if (error) rejectState(error);
+      else resolveState(result);
     };
-    const send = (message) => child.stdin.write(`${JSON.stringify(message)}\n`);
+    const state = { requirements: undefined, hooks: undefined };
+    const send = (message) => {
+      if (settled || !child.stdin.writable) return;
+      child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
+        if (error) finish(error);
+      });
+    };
     const lines = createInterface({ input: child.stdout });
-    lines.on("line", (line) => handleCodexAppServerLine(line, { send, finish }));
+    lines.on("line", (line) => handleCodexAppServerLine(line, { send, finish, state, cwd }));
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.stdin.on("error", finish);
     child.on("error", finish);
     child.on("exit", (code, signal) => {
       if (!settled) finish(new Error(`Codex effective requirements query exited before response (${code ?? signal ?? "unknown"}): ${stderr.trim()}`));
@@ -243,11 +270,15 @@ async function readEffectiveCodexRequirements({ binary, cwd, timeoutMs }) {
   });
 }
 
-function handleCodexAppServerLine(line, { send, finish }) {
-  const message = parseCodexAppServerLine(line, finish);
+function handleCodexAppServerLine(line, context) {
+  const message = parseCodexAppServerLine(line, context.finish);
   if (message === null) return;
-  if (message.id === 1) handleCodexInitializeResponse(message, { send, finish });
-  if (message.id === 2) handleCodexRequirementsResponse(message, finish);
+  const handlers = {
+    1: handleCodexInitializeResponse,
+    2: handleCodexRequirementsResponse,
+    3: handleCodexHooksResponse,
+  };
+  handlers[message.id]?.(message, context);
 }
 
 function parseCodexAppServerLine(line, finish) {
@@ -259,7 +290,7 @@ function parseCodexAppServerLine(line, finish) {
   }
 }
 
-function handleCodexInitializeResponse(message, { send, finish }) {
+function handleCodexInitializeResponse(message, { send, finish, cwd }) {
   if (message.error) {
     finish(codexRequirementsError(message.error));
     return;
@@ -267,17 +298,48 @@ function handleCodexInitializeResponse(message, { send, finish }) {
   if (message.result) {
     send({ method: "initialized", params: {} });
     send({ id: 2, method: "configRequirements/read", params: null });
+    send({ id: 3, method: "hooks/list", params: { cwds: [cwd] } });
   }
 }
 
-function handleCodexRequirementsResponse(message, finish) {
+function handleCodexRequirementsResponse(message, context) {
   if (message.error) {
-    finish(codexRequirementsError(message.error));
+    context.finish(codexRequirementsError(message.error));
     return;
   }
   if (message.result && Object.hasOwn(message.result, "requirements")) {
-    finish(null, message.result.requirements);
+    context.state.requirements = message.result.requirements;
+    finishCodexStateWhenReady(context);
   }
+}
+
+function handleCodexHooksResponse(message, context) {
+  if (message.error) {
+    context.finish(codexRequirementsError(message.error));
+    return;
+  }
+  try {
+    const entries = message.result.data;
+    const entry = entries.find((candidate) => candidate.cwd === context.cwd) ?? entries[0];
+    requireHookInventory(entry);
+    requireErrorFreeHookInventory(entry.errors);
+    context.state.hooks = entry.hooks;
+    finishCodexStateWhenReady(context);
+  } catch (error) {
+    context.finish(error);
+  }
+}
+
+function requireHookInventory(entry) {
+  if (!Array.isArray(entry?.hooks)) throw new Error("Codex hooks/list returned no hook inventory for the repository.");
+}
+
+function requireErrorFreeHookInventory(errors = []) {
+  if (errors.length > 0) throw new Error(`Codex hooks/list reported errors: ${errors.map((error) => error.message).join(", ")}`);
+}
+
+function finishCodexStateWhenReady({ state, finish }) {
+  if (state.requirements !== undefined && state.hooks !== undefined) finish(null, state);
 }
 
 function codexRequirementsError(error) {
@@ -415,8 +477,65 @@ async function firstInvalidMetadataPath(store, localRef, metadataPaths, files) {
     const result = await runGit({ args: ["show", `${localRef}:${path}`], cwd: store.repoPath, gitDir: store.gitDir });
     const metadata = JSON.parse(result.stdout);
     if (!validCheckpointMetadata(metadata, path, new Set(files))) return path;
+    if (!(await validCheckpointSessionFiles(store, localRef, metadata))) return path;
   }
   return null;
+}
+
+async function validCheckpointSessionFiles(store, localRef, metadata) {
+  const results = await Promise.all(metadata.sessions.map(async (session) => {
+    const [sessionMetadata, transcript, contentHash] = await Promise.all([
+      gitFileText(store, localRef, session.metadata),
+      gitFileText(store, localRef, session.transcript),
+      gitFileText(store, localRef, session.content_hash),
+    ]);
+    return validSessionFiles({ sessionMetadata, transcript, contentHash }, metadata.checkpoint_id);
+  }));
+  return results.every(Boolean);
+}
+
+function validSessionFiles({ sessionMetadata, transcript, contentHash }, checkpointId) {
+  return [
+    validSessionMetadata(sessionMetadata, checkpointId),
+    validTranscript(transcript),
+    validContentHash(contentHash, transcript),
+  ].every(Boolean);
+}
+
+function validContentHash(contentHash, transcript) {
+  if (typeof contentHash !== "string" || typeof transcript !== "string") return false;
+  const expected = `sha256:${createHash("sha256").update(transcript).digest("hex")}`;
+  return contentHash.trim() === expected;
+}
+
+async function gitFileText(store, ref, path) {
+  const result = await runGit({ args: ["show", `${ref}:${path.slice(1)}`], cwd: store.repoPath, gitDir: store.gitDir }).catch(() => null);
+  return result?.stdout ?? null;
+}
+
+function validSessionMetadata(source, checkpointId) {
+  const metadata = parseJson(source);
+  return [
+    metadata?.checkpoint_id === checkpointId,
+    typeof metadata?.session_id === "string",
+    metadata?.session_id !== "",
+  ].every(Boolean);
+}
+
+function parseJson(source) {
+  try { return JSON.parse(source); } catch { return null; }
+}
+
+function validTranscript(source) {
+  if (typeof source !== "string") return false;
+  const lines = source.split(/\r?\n/).filter((line) => line.trim() !== "");
+  if (lines.length === 0) return false;
+  try {
+    lines.forEach((line) => JSON.parse(line));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function validCheckpointMetadata(metadata, path, files, explicitCheckpointId = null) {
