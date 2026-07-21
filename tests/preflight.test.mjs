@@ -114,6 +114,36 @@ test("preflight requires active hooks and a trusted project layer", async (t) =>
   fixture.codexRequirements.hooks.PostToolUse[0].matcher = "^NoSuchTool$";
   const filteredManaged = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(filteredManaged.checks.find((check) => check.id === "codex-config").detail, /post_tool_use/);
+
+  fixture.codexRequirements = managedEntireRequirements();
+  fixture.codexRequirements.allowManagedHooksOnly = false;
+  delete fixture.codexRequirements.hooks.UserPromptSubmit;
+  delete fixture.codexRequirements.hooks.Stop;
+  await writeEntireHooks(fixture.seed, (command) => `entire hooks codex ${command}`);
+  const projectHooks = JSON.parse(await readFile(join(fixture.seed, ".codex", "hooks.json"), "utf8"));
+  delete projectHooks.hooks.SessionStart;
+  delete projectHooks.hooks.PostToolUse;
+  await writeFile(join(fixture.seed, ".codex", "hooks.json"), JSON.stringify(projectHooks));
+  await writeCodexTrust(fixture, ["user_prompt_submit", "stop"]);
+  const mixed = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.equal(mixed.checks.find((check) => check.id === "codex-config").status, "passed");
+  assert.equal(mixed.checks.find((check) => check.id === "codex-hooks").status, "passed");
+  assert.equal(mixed.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
+});
+
+test("preflight resolves Codex project hooks and trust from the root checkout in linked worktrees", async (t) => {
+  const fixture = await preparedFixture(t);
+  await runGit({ args: ["add", "--", ".codex/hooks.json", "tabellio.platform.json"], cwd: fixture.seed });
+  await runGit({ args: ["commit", "-m", "Commit linked worktree inputs"], cwd: fixture.seed, env: identityEnv() });
+  const linked = join(fixture.root, "linked");
+  await runGit({ args: ["worktree", "add", "--detach", linked, "HEAD"], cwd: fixture.seed });
+  try {
+    const result = await runPreparedPreflight(fixture, { repoPath: linked, commandRunner: fakeCommands() });
+    assert.equal(result.checks.find((check) => check.id === "codex-hooks").status, "passed");
+    assert.equal(result.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
+  } finally {
+    await runGit({ args: ["worktree", "remove", "--force", linked], cwd: fixture.seed });
+  }
 });
 
 test("preflight verifies Entire metadata ancestry without repairing it", async (t) => {
@@ -176,6 +206,14 @@ test("preflight verifies Entire metadata ancestry without repairing it", async (
   fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
   const metadataPath = join(fixture.seed, "ab", "cdef123456", "metadata.json");
   const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+  await writeFile(metadataPath, JSON.stringify({ ...metadata, session_count: 2 }));
+  await runGit({ args: ["add", "--", "ab/cdef123456/metadata.json"], cwd: fixture.seed });
+  await runGit({ args: ["commit", "-m", "Mismatch checkpoint session count"], cwd: fixture.seed, env: identityEnv() });
+  await runGit({ args: ["update-ref", localRef, "HEAD"], cwd: fixture.seed });
+  fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
+  const mismatchedCount = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(mismatchedCount.checks.find((check) => check.id === "entire-metadata").detail, /invalid/);
+
   await writeFile(metadataPath, JSON.stringify({ ...metadata, partial: true }));
   await runGit({ args: ["add", "--", "ab/cdef123456/metadata.json"], cwd: fixture.seed });
   await runGit({ args: ["commit", "-m", "Make checkpoint metadata partial"], cwd: fixture.seed, env: identityEnv() });
