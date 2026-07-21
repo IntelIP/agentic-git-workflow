@@ -99,6 +99,16 @@ test("preflight requires active hooks and a trusted project layer", async (t) =>
   assert.equal(managed.checks.find((check) => check.id === "codex-config").status, "passed");
   assert.equal(managed.checks.find((check) => check.id === "codex-hooks").status, "passed");
   assert.match(managed.checks.find((check) => check.id === "codex-hook-trust").detail, /managed Codex policy/);
+
+  fixture.codexRequirements.allowManagedHooksOnly = false;
+  const managedWithoutLockdown = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.equal(managedWithoutLockdown.checks.find((check) => check.id === "codex-config").status, "passed");
+  assert.match(managedWithoutLockdown.checks.find((check) => check.id === "codex-hook-trust").detail, /managed Codex policy/);
+
+  fixture.codexRequirements.allowManagedHooksOnly = true;
+  fixture.codexRequirements.hooks.PostToolUse[0].matcher = "^NoSuchTool$";
+  const filteredManaged = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(filteredManaged.checks.find((check) => check.id === "codex-config").detail, /post_tool_use/);
 });
 
 test("preflight verifies Entire metadata ancestry without repairing it", async (t) => {
@@ -252,7 +262,18 @@ test("preflight requires executable Entire hook commands, not empty event keys",
   const invalidWindowsOverride = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(invalidWindowsOverride.checks.find((check) => check.id === "codex-hooks").detail, /stop/);
 
+  platformHooks.hooks.Stop[0].hooks[0].commandWindows = 'cmd.exe /c "rem entire hooks codex stop"';
+  await writeFile(hooksPath, JSON.stringify(platformHooks));
+  const commentedWindowsOverride = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(commentedWindowsOverride.checks.find((check) => check.id === "codex-hooks").detail, /stop/);
+
   delete platformHooks.hooks.Stop[0].hooks[0].commandWindows;
+  platformHooks.hooks.PostToolUse[0].matcher = "^NoSuchTool$";
+  await writeFile(hooksPath, JSON.stringify(platformHooks));
+  const filtered = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(filtered.checks.find((check) => check.id === "codex-hooks").detail, /posttooluse/);
+
+  platformHooks.hooks.PostToolUse[0].matcher = null;
   platformHooks.hooks.Stop[0].hooks[0].async = true;
   await writeFile(hooksPath, JSON.stringify(platformHooks));
   const asynchronous = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });

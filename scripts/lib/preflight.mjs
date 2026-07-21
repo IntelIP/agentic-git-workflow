@@ -169,21 +169,25 @@ async function checkCodexConfig({ commandRunner, codexBinary, cwd, hookPolicy })
 }
 
 async function codexHookPolicy(requirements) {
-  if (requirements?.allowManagedHooksOnly !== true) {
-    return { mode: "project", blocker: null };
-  }
-  const missing = missingManagedEntireHooks(requirements.hooks);
-  return missing.length === 0
-    ? { mode: "managed", blocker: null }
-    : {
+  const missing = missingManagedEntireHooks(requirements ? requirements.hooks : null);
+  if (missing.length === 0) return { mode: "managed", blocker: null };
+  if (managedHooksOnly(requirements)) {
+    return {
       mode: "managed",
       blocker: blocked(`Managed Codex Entire hooks missing: ${missing.join(", ")}.`, "Install all four required Entire hooks in managed Codex policy, then rerun preflight."),
     };
+  }
+  return { mode: "project", blocker: null };
+}
+
+function managedHooksOnly(requirements) {
+  return requirements != null && requirements.allowManagedHooksOnly === true;
 }
 
 function missingManagedEntireHooks(hooks) {
   return REQUIRED_CODEX_HOOKS.filter((required) => !(hooks?.[required.configEvent] ?? [])
-    .flatMap((group) => group?.hooks ?? [])
+    .filter(unfilteredHookGroup)
+    .flatMap(hookCommands)
     .some((handler) => matchesRequiredEntireHook(handler, required.command)))
     .map((required) => required.event);
 }
@@ -687,7 +691,12 @@ async function readPlatformConfig(store) {
 
 function hasEntireHook(entries, expectedCommand) {
   if (!Array.isArray(entries)) return false;
-  return entries.some((entry) => hookCommands(entry).some((hook) => matchesRequiredEntireHook(hook, expectedCommand)));
+  return entries.filter(unfilteredHookGroup)
+    .some((entry) => hookCommands(entry).some((hook) => matchesRequiredEntireHook(hook, expectedCommand)));
+}
+
+function unfilteredHookGroup(group) {
+  return group?.matcher == null || group.matcher === "";
 }
 
 function hookCommands(entry) {
@@ -714,9 +723,8 @@ function windowsHookCommandMatches(command, expectedCommand) {
   if (typeof command !== "string") return false;
   const direct = new RegExp(`^(?:exec )?entire(?:\\.exe)? hooks codex ${expectedCommand}$`, "i");
   if (direct.test(command)) return true;
-  const shell = /^(?:cmd(?:\.exe)?\b.*\s\/(?:c|k)\b|(?:powershell|pwsh)(?:\.exe)?\b.*\s-(?:command|c)\b)/i;
-  const invocation = new RegExp(`(?:^|[\\s\"'&|;()])entire(?:\\.exe)?\\s+hooks\\s+codex\\s+${expectedCommand}(?=$|[\\s\"'&|;()])`, "i");
-  return shell.test(command) && invocation.test(command);
+  const guardedCmd = new RegExp(`^cmd(?:\\.exe)? /d /s /c \"where entire(?:\\.exe)? >nul 2>nul && entire(?:\\.exe)? hooks codex ${expectedCommand}\"$`, "i");
+  return guardedCmd.test(command);
 }
 
 function firstBlocker(rules, fallback) {
