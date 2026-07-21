@@ -58,7 +58,7 @@ test("preflight requires active hooks and a trusted project layer", async (t) =>
 
   await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { projectTrusted: false });
   const untrusted = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.match(untrusted.checks.find((check) => check.id === "codex-hook-trust").detail, /project layer/);
+  assert.match(untrusted.checks.find((check) => check.id === "codex-hook-trust").detail, /missing or stale/);
 
   await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { encodeKeys: true });
   const escaped = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
@@ -74,15 +74,6 @@ test("preflight requires active hooks and a trusted project layer", async (t) =>
   await writeFile(hooksPath, JSON.stringify(hooks));
   const stopContext = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.equal(stopContext.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
-
-  hooks.hooks.Stop[0].hooks.push({ ...hooks.hooks.Stop[0].hooks[0] });
-  await writeFile(hooksPath, JSON.stringify(hooks));
-  await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { disabledEvent: "stop" });
-  const config = await readFile(fixture.codexConfigPath, "utf8");
-  const canonicalHooksPath = await realpath(hooksPath);
-  await writeFile(fixture.codexConfigPath, `${config}\n${tomlTable("hooks.state", `${canonicalHooksPath}:stop:0:1`)}\ntrusted_hash = "${FIXTURE_HOOK_HASHES.stop}"\n`);
-  const duplicate = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.equal(duplicate.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
 
   await writeCodexTrust(fixture, Object.keys(FIXTURE_HOOK_HASHES), { malformedEnabledEvent: "stop" });
   const malformedState = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
@@ -148,7 +139,7 @@ test("preflight requires active hooks and a trusted project layer", async (t) =>
   assert.equal(mixed.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
 });
 
-test("preflight preserves active declarations while resolving linked-worktree hook trust", async (t) => {
+test("preflight follows Codex's canonical hook source in linked worktrees", async (t) => {
   const fixture = await preparedFixture(t);
   await runGit({ args: ["add", "--", ".codex/hooks.json", "tabellio.platform.json"], cwd: fixture.seed });
   await runGit({ args: ["commit", "-m", "Commit linked worktree inputs"], cwd: fixture.seed, env: identityEnv() });
@@ -164,7 +155,7 @@ test("preflight preserves active declarations while resolving linked-worktree ho
     delete linkedHooks.hooks.Stop;
     await writeFile(linkedHooksPath, JSON.stringify(linkedHooks));
     const staleLinked = await runPreparedPreflight(fixture, { repoPath: linked, commandRunner: fakeCommands() });
-    assert.match(staleLinked.checks.find((check) => check.id === "codex-hooks").detail, /stop/);
+    assert.equal(staleLinked.checks.find((check) => check.id === "codex-hooks").status, "passed");
   } finally {
     await runGit({ args: ["worktree", "remove", "--force", linked], cwd: fixture.seed });
   }
@@ -506,7 +497,10 @@ async function runPreparedPreflight(fixture, options = {}) {
     codexConfigPath: fixture.codexConfigPath,
     codexStateReader: async () => ({
       requirements: fixture.codexRequirements,
-      hooks: effectiveManagedHooks(fixture.codexRequirements),
+      hooks: [
+        ...effectiveManagedHooks(fixture.codexRequirements),
+        ...await effectiveProjectHooks(fixture),
+      ],
     }),
     remoteRefReader: async () => fixture.liveControlOid,
     remoteRefsReader: async () => fixture.liveCheckpointRefs ?? new Map(),
@@ -531,6 +525,13 @@ async function writeCodexTrust(fixture, events, {
   disabledEvent = null,
   malformedEnabledEvent = null,
 } = {}) {
+  fixture.hookTrust = {
+    events: new Set(events),
+    digest,
+    projectTrusted,
+    disabledEvent,
+    malformedEnabledEvent,
+  };
   const repoPath = await realpath(fixture.seed);
   const hooksPath = join(repoPath, ".codex", "hooks.json");
   const sections = events.map((event) => [
@@ -625,6 +626,44 @@ function effectiveManagedHooks(requirements) {
       matcher: group.matcher ?? null,
     }))
   )));
+}
+
+async function effectiveProjectHooks(fixture) {
+  const sourcePath = await realpath(join(fixture.seed, ".codex", "hooks.json"));
+  const config = JSON.parse(await readFile(sourcePath, "utf8"));
+  return Object.entries(config.hooks ?? {}).flatMap(([event, groups]) => groups.flatMap((group, groupIndex) => (
+    group.hooks.map((handler, handlerIndex) => ({
+      isManaged: false,
+      source: "project",
+      sourcePath,
+      currentHash: FIXTURE_HOOK_HASHES[hookConfigEventName(event)],
+      key: `${sourcePath}:${hookConfigEventName(event)}:${groupIndex}:${handlerIndex}`,
+      enabled: projectHookEnabled(fixture.hookTrust, hookConfigEventName(event)),
+      trustStatus: projectHookTrustStatus(fixture.hookTrust, hookConfigEventName(event)),
+      eventName: event[0].toLowerCase() + event.slice(1),
+      handlerType: handler.type,
+      command: handler.command,
+      matcher: group.matcher ?? null,
+    }))
+  )));
+}
+
+function projectHookEnabled(trust, event) {
+  return ![trust?.disabledEvent, trust?.malformedEnabledEvent].includes(event);
+}
+
+function projectHookTrustStatus(trust, event) {
+  const candidate = { events: new Set(), ...trust };
+  const sourceState = [candidate.projectTrusted, candidate.events.has(event)].every(Boolean) ? "trusted" : "untrusted";
+  const digestState = candidate.digest === null ? "current" : "modified";
+  return {
+    "trusted:current": "trusted",
+    "trusted:modified": "modified",
+  }[`${sourceState}:${digestState}`] ?? "untrusted";
+}
+
+function hookConfigEventName(event) {
+  return hookEventSnakeCase(event[0].toLowerCase() + event.slice(1));
 }
 
 function hookEventSnakeCase(eventName) {

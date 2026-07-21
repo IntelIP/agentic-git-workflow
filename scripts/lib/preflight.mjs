@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
-import { homedir } from "node:os";
-import { readFile, realpath } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -38,7 +37,6 @@ export async function runPreflight({
   remoteRefReader = readRemoteRefOid,
   remoteRepositoryReader = effectiveGitHubRepository,
   nodeVersion = process.versions.node,
-  codexConfigPath = defaultCodexConfigPath(),
   codexStateReader = readEffectiveCodexState,
   entireCheckpointsPrimary = process.env.ENTIRE_CHECKPOINTS_PRIMARY ?? null,
   now = new Date(),
@@ -51,6 +49,7 @@ export async function runPreflight({
   let codexConfigReady = false;
   let codexHookMode = null;
   let codexManagedEvents = [];
+  let codexEffectiveHooks = [];
 
   await record(checks, "node-version", async () => {
     if (majorVersion(nodeVersion) < 20) return blocked(`Node ${nodeVersion} is below required major 20.`, "Install Node.js 20 or later.");
@@ -95,6 +94,7 @@ export async function runPreflight({
       timeoutMs: 30_000,
     });
     const hookPolicy = await codexHookPolicy(codexState.requirements, codexState.hooks);
+    codexEffectiveHooks = codexState.hooks;
     codexHookMode = hookPolicy.mode;
     codexManagedEvents = hookPolicy.managedEvents;
     const result = await checkCodexConfig({
@@ -118,10 +118,11 @@ export async function runPreflight({
     remoteRepositoryReader,
     codexHookMode,
     codexManagedEvents,
+    codexEffectiveHooks,
   });
 
   await record(checks, "codex-hook-trust", () => codexConfigReady
-    ? checkCodexHookTrust({ repoPath: store.repoPath, codexConfigPath, managedEvents: codexManagedEvents })
+    ? checkCodexHookTrust({ effectiveHooks: codexEffectiveHooks, managedEvents: codexManagedEvents })
     : blocked("Codex configuration validity is unproven.", "Correct the Codex configuration, then rerun preflight."));
 
   await record(checks, "github-auth", async () => {
@@ -140,25 +141,14 @@ export async function runPreflight({
   });
 }
 
-async function checkCodexHookTrust({ repoPath, codexConfigPath, managedEvents }) {
+function checkCodexHookTrust({ effectiveHooks, managedEvents }) {
   if (managedEvents.length === REQUIRED_CODEX_HOOKS.length) return passed("Four required Entire hooks are enforced by managed Codex policy.");
-  const { canonicalRepo, hooksPath } = await codexProjectHookSource(repoPath);
-  const [config, hooksSource] = await Promise.all([
-    readFile(codexConfigPath, "utf8"),
-    readFile(hooksPath, "utf8"),
-  ]);
-  const configBlocker = codexHookConfigBlocker(config, canonicalRepo);
-  if (configBlocker) return configBlocker;
-  const expected = expectedEntireHookTrust(JSON.parse(hooksSource), hooksPath, managedEvents);
-  const states = codexHookStates(config);
-  return codexHookTrustResult(expected, states, managedEvents);
-}
-
-async function codexProjectHookSource(repoPath) {
-  const result = await runGit({ args: ["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd: repoPath });
-  const canonicalRepo = await realpath(resolve(result.stdout.trim(), ".."));
-  const hooksPath = await realpath(resolve(canonicalRepo, ".codex", "hooks.json"));
-  return { canonicalRepo, hooksPath };
+  const required = REQUIRED_CODEX_HOOKS.filter((hook) => !managedEvents.includes(hook.configEvent));
+  const untrusted = required.filter((hook) => !effectiveHooks.some((candidate) => projectHookInventoryMatches(candidate, hook, true)))
+    .map((hook) => hook.event);
+  return untrusted.length === 0
+    ? passed("Required project Entire hooks are trusted in Codex's effective inventory; managed coverage is enforced by policy.")
+    : blocked(`Codex Entire hook trust missing or stale: ${untrusted.join(", ")}.`, "Open /hooks in Codex, approve all required repository hooks, then rerun preflight.");
 }
 
 async function checkCodexConfig({ commandRunner, codexBinary, cwd, hookPolicy }) {
@@ -231,6 +221,21 @@ function managedHookMatches(hook, required) {
   ].every(Boolean);
 }
 
+function projectHookInventoryMatches(hook, required, requireTrust) {
+  const candidate = Object.assign({}, hook);
+  const identityMatches = candidate.isManaged === false
+    && candidate.source === "project"
+    && candidate.enabled === true;
+  const trustMatches = requireTrust === false || candidate.trustStatus === "trusted";
+  return [
+    identityMatches,
+    trustMatches,
+    managedEventNameMatches(candidate.eventName, required),
+    hookGroupAppliesToAll(candidate, required.configEvent),
+    matchesRequiredEntireHook({ type: candidate.handlerType, command: candidate.command, async: candidate.async }, required.command),
+  ].every(Boolean);
+}
+
 function managedEventNameMatches(eventName, required) {
   return [lowerCamel(required.configEvent), required.event].includes(eventName);
 }
@@ -274,7 +279,14 @@ async function readEffectiveCodexState({ binary, cwd, timeoutMs }) {
     child.on("exit", (code, signal) => {
       if (!settled) finish(new Error(`Codex effective requirements query exited before response (${code ?? signal ?? "unknown"}): ${stderr.trim()}`));
     });
-    send({ id: 1, method: "initialize", params: { clientInfo: { name: "tabellio-preflight", version: PREFLIGHT_VERSION } } });
+    send({
+      id: 1,
+      method: "initialize",
+      params: {
+        clientInfo: { name: "tabellio-preflight", version: PREFLIGHT_VERSION },
+        capabilities: { experimentalApi: true },
+      },
+    });
   });
 }
 
@@ -352,12 +364,6 @@ function finishCodexStateWhenReady({ state, finish }) {
 
 function codexRequirementsError(error) {
   return new Error(`Codex effective requirements query failed: ${error.message ?? "unknown error"}`);
-}
-
-function codexHookConfigBlocker(config, canonicalRepo) {
-  return codexProjectTrusted(config, canonicalRepo)
-    ? null
-    : blocked("The repository project layer is not trusted by Codex.", "Trust this repository in Codex, then rerun preflight.");
 }
 
 async function checkEntireMetadata(store, options) {
@@ -577,163 +583,6 @@ function validCheckpointSession(session, prefix, files) {
     && files.has(path.slice(1)));
 }
 
-function codexHookTrustResult(expected, states, managedEvents) {
-  const events = REQUIRED_CODEX_HOOKS.filter((hook) => !managedEvents.includes(hook.configEvent)).map((hook) => hook.event);
-  const untrusted = events.filter((event) => !expected.some((hook) => hook.event === event
-    && hookStateMatches(states.get(hook.key), hook.hash)));
-  if (untrusted.length === 0) {
-    return passed("Required project Entire hook definitions are enabled and trusted by Codex; managed coverage is enforced by policy.");
-  }
-  return blocked(
-    `Codex Entire hook trust missing or stale: ${untrusted.join(", ") || "required hook definitions"}.`,
-    "Open /hooks in Codex, approve all four repository hooks, then rerun preflight.",
-  );
-}
-
-function expectedEntireHookTrust(hooksConfig, hooksPath, managedEvents) {
-  return REQUIRED_CODEX_HOOKS.filter((required) => !managedEvents.includes(required.configEvent)).flatMap((required) => {
-    const groups = hooksConfig?.hooks?.[required.configEvent];
-    return expectedHookInGroups(groups, required, hooksPath);
-  });
-}
-
-function expectedHookInGroups(groups, required, hooksPath) {
-  if (!Array.isArray(groups)) return [];
-  return groups.flatMap((group, groupIndex) => hookCommands(group).flatMap((handler, handlerIndex) => (
-    matchesRequiredEntireHook(handler, required.command) ? [{
-      event: required.event,
-      key: `${hooksPath}:${required.event}:${groupIndex}:${handlerIndex}`,
-      hash: codexHookHash(required.event, group, handler),
-    }] : []
-  )));
-}
-
-function codexHookHash(event, group, handler) {
-  const normalized = normalizedHookHandler(handler, event);
-  const identity = {
-    event_name: event,
-    ...normalizedMatcher(event, group.matcher),
-    hooks: [normalized],
-  };
-  return `sha256:${createHash("sha256").update(JSON.stringify(canonicalJson(identity))).digest("hex")}`;
-}
-
-function normalizedHookHandler(handler, event) {
-  return {
-    type: "command",
-    command: platformHookCommand(handler),
-    timeout: normalizedHookTimeout(handler.timeout),
-    async: handler.async === true,
-    ...optionalHookFields(handler, event),
-  };
-}
-
-function platformHookCommand(handler) {
-  if (process.platform !== "win32") return handler.command;
-  return handler.commandWindows ?? handler.command;
-}
-
-function normalizedHookTimeout(timeout) {
-  return Math.max(1, timeout ?? 600);
-}
-
-function optionalHookFields(handler, event) {
-  return Object.fromEntries([
-    ["statusMessage", handler.statusMessage],
-    ["additionalContextLimit", event === "stop" ? undefined : normalizedAdditionalContextLimit(handler.additionalContextLimit)],
-  ].filter(([, value]) => value != null));
-}
-
-function normalizedAdditionalContextLimit(value) {
-  return value === 2_500 ? undefined : value;
-}
-
-function normalizedMatcher(event, matcher) {
-  if (["user_prompt_submit", "stop"].includes(event) || matcher == null) return {};
-  return { matcher };
-}
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) return value.map(canonicalJson);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalJson(value[key])]));
-}
-
-function codexHookStates(config) {
-  return new Map(tomlQuotedTableSections(config, "hooks.state").flatMap(hookStateEntry));
-}
-
-function hookStateEntry(section) {
-  const digest = tomlStringAssignment(section.body, "trusted_hash");
-  const enabledSource = tomlAssignment(section.body, "enabled");
-  const enabled = enabledSource === null ? true : tomlBooleanAssignment(section.body, "enabled");
-  return [[section.key, {
-    enabled,
-    trustedHash: /^sha256:[a-f0-9]{64}$/.test(digest ?? "") ? digest : null,
-  }]];
-}
-
-function hookStateMatches(state, expectedHash) {
-  return state?.enabled === true && state.trustedHash === expectedHash;
-}
-
-function codexProjectTrusted(config, repoPath) {
-  return tomlQuotedTableSections(config, "projects").some((section) => section.key === repoPath
-    && tomlStringAssignment(section.body, "trust_level") === "trusted");
-}
-
-function decodeTomlBasicString(value) {
-  try {
-    return JSON.parse(`"${value}"`);
-  } catch {
-    return null;
-  }
-}
-
-function tomlQuotedTableSections(config, prefix) {
-  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`^\\[${escaped}\\.(?:"((?:\\\\.|[^"])*)"|'([^']*)')\\]\\s*(?:#[^\\r\\n]*)?\\r?\\n((?:(?!^\\[)[\\s\\S])*)`, "gm");
-  return [...config.matchAll(pattern)].flatMap((match) => {
-    const key = match[1] === undefined ? match[2] : decodeTomlBasicString(match[1]);
-    return key === null ? [] : [{ key, body: match[3] }];
-  });
-}
-
-function tomlBooleanAssignment(body, key) {
-  const value = tomlAssignment(body, key);
-  if (value === "true") return true;
-  if (value === "false") return false;
-  return null;
-}
-
-function tomlStringAssignment(body, key) {
-  const value = tomlAssignment(body, key);
-  const basic = value?.match(/^"((?:\\.|[^"])*)"$/s);
-  if (basic) return decodeTomlBasicString(basic[1]);
-  return value?.match(/^'([^']*)'$/s)?.[1] ?? null;
-}
-
-function tomlAssignment(body, key) {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  for (const line of body.split(/\r?\n/)) {
-    const source = stripTomlComment(line).trim();
-    const match = source.match(new RegExp(`^${escaped}\\s*=\\s*(.*?)\\s*$`));
-    if (match) return match[1];
-  }
-  return null;
-}
-
-function stripTomlComment(line) {
-  for (const token of line.matchAll(/"(?:\\.|[^"\\])*"|'[^']*'|#/g)) {
-    if (token[0] === "#") return line.slice(0, token.index);
-  }
-  return line;
-}
-
-function defaultCodexConfigPath() {
-  return resolve(process.env.CODEX_HOME || resolve(homedir(), ".codex"), "config.toml");
-}
-
 export function validatePreflightResult(value) {
   contract.object(value, "preflight");
   contract.exactKeys(value, ["schemaVersion", "profile", "repository", "status", "checks", "checkedAt"], "preflight");
@@ -749,13 +598,13 @@ export function validatePreflightResult(value) {
   return value;
 }
 
-async function recordRepositoryChecks({ checks, store, profile, commandRunner, ghBinary, controlRemote, remoteRefReader, remoteRepositoryReader, codexHookMode, codexManagedEvents }) {
+async function recordRepositoryChecks({ checks, store, profile, commandRunner, ghBinary, controlRemote, remoteRefReader, remoteRepositoryReader, codexHookMode, codexManagedEvents, codexEffectiveHooks }) {
   if (!store) return;
   await record(checks, "platform-contract", () => checkPlatformContract(store));
   await record(checks, "github-remotes", () => checkGitHubRemotes({ store, commandRunner, ghBinary, controlRemote, remoteRepositoryReader }));
   await record(checks, "codex-hooks", () => codexHookMode === "managed"
     ? passed("Project hook declarations are skipped because managed-only Codex policy enforces Entire hooks.")
-    : checkCodexHooks(store, codexManagedEvents));
+    : checkCodexHooks(codexEffectiveHooks, codexManagedEvents));
   if (profile === "release") await record(checks, "clean-main", () => checkCleanMain(store, remoteRefReader));
 }
 
@@ -802,12 +651,11 @@ function privateControlResult(repository, control, selectedControl) {
   return passed(`origin and ${selectedControl} are distinct; control repository is private.`);
 }
 
-async function checkCodexHooks(store, managedEvents) {
-  const hooksPath = await realpath(resolve(store.repoPath, ".codex", "hooks.json"));
-  const hooks = JSON.parse(await readFile(hooksPath, "utf8"));
-  const declared = new Map(Object.entries(hooks.hooks || {}).map(([name, entries]) => [name.toLowerCase(), entries]));
+async function checkCodexHooks(effectiveHooks, managedEvents) {
   const required = REQUIRED_CODEX_HOOKS.filter((hook) => !managedEvents.includes(hook.configEvent));
-  const missing = required.filter((hook) => !hasEntireHook(declared.get(hook.configEvent.toLowerCase()), hook.command, hook.configEvent))
+  const sourcePaths = [...new Set(effectiveHooks.filter((hook) => hook.source === "project").map((hook) => hook.sourcePath))];
+  const configs = await Promise.all(sourcePaths.map(async (path) => JSON.parse(await readFile(path, "utf8"))));
+  const missing = required.filter((hook) => !configs.some((config) => hasEntireHook(config?.hooks?.[hook.configEvent], hook.command, hook.configEvent)))
     .map((hook) => hook.configEvent.toLowerCase());
   if (missing.length > 0) return blocked(`Codex Entire hooks missing: ${missing.join(", ")}.`, "Reinstall Entire Codex hooks for this repository.");
   return passed("Required project Entire hook commands declared; managed coverage is enforced by policy.");
