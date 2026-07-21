@@ -186,7 +186,7 @@ function managedHooksOnly(requirements) {
 
 function missingManagedEntireHooks(hooks) {
   return REQUIRED_CODEX_HOOKS.filter((required) => !(hooks?.[required.configEvent] ?? [])
-    .filter(unfilteredHookGroup)
+    .filter((group) => hookGroupAppliesToAll(group, required.configEvent))
     .flatMap(hookCommands)
     .some((handler) => matchesRequiredEntireHook(handler, required.command)))
     .map((required) => required.event);
@@ -659,7 +659,7 @@ async function checkCodexHooks(store) {
     ["stop", "stop"],
     ["posttooluse", "post-tool-use"],
   ]);
-  const missing = [...required].filter(([event, command]) => !hasEntireHook(declared.get(event), command)).map(([event]) => event);
+  const missing = [...required].filter(([event, command]) => !hasEntireHook(declared.get(event), command, event)).map(([event]) => event);
   if (missing.length > 0) return blocked(`Codex Entire hooks missing: ${missing.join(", ")}.`, "Reinstall Entire Codex hooks for this repository.");
   return passed("Four required Entire Codex hook commands declared.");
 }
@@ -689,14 +689,22 @@ async function readPlatformConfig(store) {
   return validatePlatformConfig(JSON.parse(source));
 }
 
-function hasEntireHook(entries, expectedCommand) {
+function hasEntireHook(entries, expectedCommand, event) {
   if (!Array.isArray(entries)) return false;
-  return entries.filter(unfilteredHookGroup)
+  return entries.filter((group) => hookGroupAppliesToAll(group, event))
     .some((entry) => hookCommands(entry).some((hook) => matchesRequiredEntireHook(hook, expectedCommand)));
 }
 
-function unfilteredHookGroup(group) {
-  return group?.matcher == null || group.matcher === "";
+function hookGroupAppliesToAll(group, event) {
+  return matcherIgnoredForEvent(event) || documentedAllMatcher(group?.matcher);
+}
+
+function matcherIgnoredForEvent(event) {
+  return ["userpromptsubmit", "stop"].includes(event.toLowerCase());
+}
+
+function documentedAllMatcher(matcher) {
+  return matcher == null || ["", "*"].includes(matcher);
 }
 
 function hookCommands(entry) {

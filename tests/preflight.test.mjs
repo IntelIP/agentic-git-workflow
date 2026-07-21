@@ -106,6 +106,11 @@ test("preflight requires active hooks and a trusted project layer", async (t) =>
   assert.match(managedWithoutLockdown.checks.find((check) => check.id === "codex-hook-trust").detail, /managed Codex policy/);
 
   fixture.codexRequirements.allowManagedHooksOnly = true;
+  fixture.codexRequirements.hooks.UserPromptSubmit[0].matcher = "ignored";
+  fixture.codexRequirements.hooks.Stop[0].matcher = "ignored";
+  const ignoredManagedMatchers = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.equal(ignoredManagedMatchers.checks.find((check) => check.id === "codex-config").status, "passed");
+
   fixture.codexRequirements.hooks.PostToolUse[0].matcher = "^NoSuchTool$";
   const filteredManaged = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(filteredManaged.checks.find((check) => check.id === "codex-config").detail, /post_tool_use/);
@@ -268,6 +273,13 @@ test("preflight requires executable Entire hook commands, not empty event keys",
   assert.match(commentedWindowsOverride.checks.find((check) => check.id === "codex-hooks").detail, /stop/);
 
   delete platformHooks.hooks.Stop[0].hooks[0].commandWindows;
+  platformHooks.hooks.UserPromptSubmit[0].matcher = "ignored";
+  platformHooks.hooks.Stop[0].matcher = "ignored";
+  platformHooks.hooks.PostToolUse[0].matcher = "*";
+  await writeFile(hooksPath, JSON.stringify(platformHooks));
+  const documentedAllMatchers = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.equal(documentedAllMatchers.checks.find((check) => check.id === "codex-hooks").status, "passed");
+
   platformHooks.hooks.PostToolUse[0].matcher = "^NoSuchTool$";
   await writeFile(hooksPath, JSON.stringify(platformHooks));
   const filtered = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
