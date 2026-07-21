@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import test from "node:test";
@@ -171,6 +172,20 @@ test("preflight follows Codex's canonical hook source in linked worktrees", asyn
   }
 });
 
+test("preflight accepts effective project hooks from TOML sources", async (t) => {
+  const fixture = await preparedFixture(t);
+  const hooks = (await effectiveProjectHooks(fixture)).map((hook) => ({
+    ...hook,
+    sourcePath: fixture.codexConfigPath,
+  }));
+  const result = await runPreparedPreflight(fixture, {
+    commandRunner: fakeCommands(),
+    codexStateReader: async () => ({ requirements: fixture.codexRequirements, hooks }),
+  });
+  assert.equal(result.checks.find((check) => check.id === "codex-hooks").status, "passed");
+  assert.equal(result.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
+});
+
 test("preflight accepts valid ULID checkpoint directory layouts", async (t) => {
   const fixture = await preparedFixture(t);
   const checkpointId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
@@ -193,6 +208,22 @@ test("preflight accepts valid ULID checkpoint directory layouts", async (t) => {
   }) + "\n");
   await runGit({ args: ["add", "-A"], cwd: fixture.seed });
   await runGit({ args: ["commit", "-m", "Use ULID checkpoint layout"], cwd: fixture.seed, env: identityEnv() });
+  await runGit({ args: ["update-ref", "refs/heads/entire/checkpoints/v1", "HEAD"], cwd: fixture.seed });
+  fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
+  const result = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.equal(result.checks.find((check) => check.id === "entire-metadata").status, "passed");
+});
+
+test("preflight streams checkpoint transcripts larger than the Git command buffer", async (t) => {
+  const fixture = await preparedFixture(t);
+  const transcriptPath = join(fixture.seed, "ab", "cdef123456", "0", "full.jsonl");
+  const contentHashPath = join(fixture.seed, "ab", "cdef123456", "0", "content_hash.txt");
+  const transcript = `${JSON.stringify({ payload: "x".repeat(2048) })}\n`.repeat(5200);
+  assert.ok(Buffer.byteLength(transcript) > 10 * 1024 * 1024);
+  await writeFile(transcriptPath, transcript);
+  await writeFile(contentHashPath, `sha256:${createHash("sha256").update(transcript).digest("hex")}\n`);
+  await runGit({ args: ["add", "--", "ab/cdef123456/0"], cwd: fixture.seed });
+  await runGit({ args: ["commit", "-m", "Add large valid transcript"], cwd: fixture.seed, env: identityEnv() });
   await runGit({ args: ["update-ref", "refs/heads/entire/checkpoints/v1", "HEAD"], cwd: fixture.seed });
   fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
   const result = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
@@ -379,22 +410,6 @@ test("preflight requires executable Entire hook commands, not empty event keys",
   await writeEntireHooks(fixture.seed, (command) => `entire hooks codex ${command}`);
   const hooksPath = join(fixture.seed, ".codex", "hooks.json");
   const platformHooks = JSON.parse(await readFile(hooksPath, "utf8"));
-  platformHooks.hooks.Stop[0].hooks[0].commandWindows = 'cmd.exe /d /s /c "where entire >nul 2>nul && entire hooks codex stop"';
-  await writeFile(hooksPath, JSON.stringify(platformHooks));
-  const windowsOverride = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.equal(windowsOverride.checks.find((check) => check.id === "codex-hooks").status, "passed");
-
-  platformHooks.hooks.Stop[0].hooks[0].commandWindows = "exit 0";
-  await writeFile(hooksPath, JSON.stringify(platformHooks));
-  const invalidWindowsOverride = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.match(invalidWindowsOverride.checks.find((check) => check.id === "codex-hooks").detail, /stop/);
-
-  platformHooks.hooks.Stop[0].hooks[0].commandWindows = 'cmd.exe /c "rem entire hooks codex stop"';
-  await writeFile(hooksPath, JSON.stringify(platformHooks));
-  const commentedWindowsOverride = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.match(commentedWindowsOverride.checks.find((check) => check.id === "codex-hooks").detail, /stop/);
-
-  delete platformHooks.hooks.Stop[0].hooks[0].commandWindows;
   platformHooks.hooks.UserPromptSubmit[0].matcher = "ignored";
   platformHooks.hooks.Stop[0].matcher = "ignored";
   platformHooks.hooks.SessionStart[0].matcher = "startup|resume|clear|compact";
@@ -654,6 +669,7 @@ async function effectiveProjectHooks(fixture) {
       eventName: event[0].toLowerCase() + event.slice(1),
       handlerType: handler.type,
       command: handler.command,
+      async: handler.async,
       matcher: group.matcher ?? null,
     }))
   )));

@@ -495,7 +495,7 @@ async function validCheckpointSessionFiles(store, localRef, metadata) {
   const results = await Promise.all(metadata.sessions.map(async (session) => {
     const [sessionMetadata, transcript, contentHash] = await Promise.all([
       gitFileText(store, localRef, session.metadata),
-      gitFileText(store, localRef, session.transcript),
+      gitTranscriptEvidence(store, localRef, session.transcript),
       gitFileText(store, localRef, session.content_hash),
     ]);
     return validSessionFiles({ sessionMetadata, transcript, contentHash }, metadata.checkpoint_id);
@@ -506,15 +506,39 @@ async function validCheckpointSessionFiles(store, localRef, metadata) {
 function validSessionFiles({ sessionMetadata, transcript, contentHash }, checkpointId) {
   return [
     validSessionMetadata(sessionMetadata, checkpointId),
-    validTranscript(transcript),
+    transcript?.valid === true,
     validContentHash(contentHash, transcript),
   ].every(Boolean);
 }
 
 function validContentHash(contentHash, transcript) {
-  if (typeof contentHash !== "string" || typeof transcript !== "string") return false;
-  const expected = `sha256:${createHash("sha256").update(transcript).digest("hex")}`;
-  return contentHash.trim() === expected;
+  return typeof contentHash === "string" && contentHash.trim() === transcript?.digest;
+}
+
+async function gitTranscriptEvidence(store, ref, path) {
+  const args = [...(store.gitDir ? [`--git-dir=${store.gitDir}`] : []), "show", `${ref}:${path.slice(1)}`];
+  return new Promise((resolveEvidence) => {
+    const child = spawn("git", args, {
+      cwd: store.repoPath,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" },
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const hash = createHash("sha256");
+    let lineCount = 0;
+    let linesValid = true;
+    child.stdout.on("data", (chunk) => hash.update(chunk));
+    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+    lines.on("line", (line) => {
+      if (line.trim() === "") return;
+      lineCount += 1;
+      try { JSON.parse(line); } catch { linesValid = false; }
+    });
+    child.once("error", () => resolveEvidence(null));
+    child.once("close", (exitCode) => resolveEvidence(exitCode === 0 ? {
+      valid: linesValid && lineCount > 0,
+      digest: `sha256:${hash.digest("hex")}`,
+    } : null));
+  });
 }
 
 async function gitFileText(store, ref, path) {
@@ -533,18 +557,6 @@ function validSessionMetadata(source, checkpointId) {
 
 function parseJson(source) {
   try { return JSON.parse(source); } catch { return null; }
-}
-
-function validTranscript(source) {
-  if (typeof source !== "string") return false;
-  const lines = source.split(/\r?\n/).filter((line) => line.trim() !== "");
-  if (lines.length === 0) return false;
-  try {
-    lines.forEach((line) => JSON.parse(line));
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function validCheckpointMetadata(metadata, path, files, explicitCheckpointId = null) {
@@ -646,11 +658,9 @@ function privateControlResult(repository, control, selectedControl) {
   return passed(`origin and ${selectedControl} are distinct; control repository is private.`);
 }
 
-async function checkCodexHooks(effectiveHooks, managedEvents) {
+function checkCodexHooks(effectiveHooks, managedEvents) {
   const required = REQUIRED_CODEX_HOOKS.filter((hook) => !managedEvents.includes(hook.configEvent));
-  const sourcePaths = [...new Set(effectiveHooks.filter((hook) => hook.source === "project").map((hook) => hook.sourcePath))];
-  const configs = await Promise.all(sourcePaths.map(async (path) => JSON.parse(await readFile(path, "utf8"))));
-  const missing = required.filter((hook) => !configs.some((config) => hasEntireHook(config?.hooks?.[hook.configEvent], hook.command, hook.configEvent)))
+  const missing = required.filter((hook) => !effectiveHooks.some((candidate) => projectHookInventoryMatches(candidate, hook, false)))
     .map((hook) => hook.configEvent.toLowerCase());
   if (missing.length > 0) return blocked(`Codex Entire hooks missing: ${missing.join(", ")}.`, "Reinstall Entire Codex hooks for this repository.");
   return passed("Required project Entire hook commands declared; managed coverage is enforced by policy.");
