@@ -104,6 +104,19 @@ test("preflight requires active hooks and a trusted project layer", async (t) =>
 test("preflight verifies Entire metadata ancestry without repairing it", async (t) => {
   const fixture = await preparedFixture(t);
   const localRef = "refs/heads/entire/checkpoints/v1";
+
+  const unpublishedAgent = await runPreparedPreflight(fixture, {
+    commandRunner: fakeCommands(),
+    remoteRefReader: async ({ allowMissing }) => allowMissing ? null : fixture.liveControlOid,
+  });
+  assert.match(unpublishedAgent.checks.find((check) => check.id === "entire-metadata").detail, /may be created by approved publication/);
+  const unpublishedRelease = await runPreparedPreflight(fixture, {
+    profile: "release",
+    commandRunner: fakeCommands(),
+    remoteRefReader: async ({ allowMissing }) => allowMissing ? null : fixture.liveControlOid,
+  });
+  assert.equal(unpublishedRelease.checks.find((check) => check.id === "entire-metadata").status, "passed");
+
   await runGit({ args: ["update-ref", "-d", localRef], cwd: fixture.seed });
   const missing = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(missing.checks.find((check) => check.id === "entire-metadata").detail, /missing/);

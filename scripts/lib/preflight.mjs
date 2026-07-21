@@ -250,7 +250,14 @@ async function checkEntireMetadataBranch(store, remoteRefReader, profile) {
     return checkMissingMetadataBranch(store, platform, localRef, remoteRefReader, profile);
   }
   const remote = platform.workflow.controlRemoteName;
-  const liveRemote = await remoteRefReader({ repoPath: store.repoPath, remote, ref: localRef });
+  const liveRemote = await remoteRefReader({ repoPath: store.repoPath, remote, ref: localRef, allowMissing: true });
+  if (liveRemote === null) {
+    return checkUnpublishedEntireMetadata(store, localRef, profile);
+  }
+  return checkPublishedEntireMetadata(store, localRef, liveRemote, profile);
+}
+
+async function checkPublishedEntireMetadata(store, localRef, liveRemote, profile) {
   const localObject = await store.resolveRef(liveRemote).catch(() => null);
   if (!localObject) {
     return blocked("The live remote Entire metadata commit is not available locally.", "Fetch the checkpoint metadata branch, then rerun preflight.");
@@ -259,6 +266,13 @@ async function checkEntireMetadataBranch(store, remoteRefReader, profile) {
     return blocked("The live remote Entire metadata branch is ahead, divergent, or disconnected from local metadata.", "Fetch and reconcile the checkpoint metadata branch explicitly, then rerun preflight.");
   }
   return checkEntireMetadataContents(store, localRef, { allowEmpty: profile === "agent" });
+}
+
+async function checkUnpublishedEntireMetadata(store, localRef, profile) {
+  const result = await checkEntireMetadataContents(store, localRef, { allowEmpty: profile === "agent" });
+  return result.status === "blocked"
+    ? result
+    : passed("Local Entire checkpoint metadata is valid; the control remote ref may be created by approved publication.");
 }
 
 async function checkMissingMetadataBranch(store, platform, localRef, remoteRefReader, profile) {
