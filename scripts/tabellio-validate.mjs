@@ -25,6 +25,8 @@ try {
       repositoryId: await repositoryIdentity(store, options.repoId),
       commit: options.commit ?? "HEAD",
       base: options.base ?? "main",
+      checkpointHead: options.checkpointHead ?? null,
+      checkpointBase: options.checkpointBase ?? null,
       manifestPath: options.manifest ?? "tabellio.validation.json",
       runnerId: options.runnerId ?? "local",
     });
@@ -42,8 +44,8 @@ try {
 
 function parseArgs(args) {
   return parseCommandOptions(args, {
-    run: ["repo", "repoId", "commit", "base", "manifest", "runnerId", "ledgerRef", "workspaceRoot"],
-    gate: ["repo", "repoId", "commit", "base", "manifest", "runnerId", "ledgerRef", "workspaceRoot"],
+    run: ["repo", "repoId", "commit", "base", "checkpointHead", "checkpointBase", "manifest", "runnerId", "ledgerRef", "workspaceRoot"],
+    gate: ["repo", "repoId", "commit", "base", "checkpointHead", "checkpointBase", "manifest", "runnerId", "ledgerRef", "workspaceRoot"],
     latest: ["repo", "commit", "ledgerRef"],
   });
 }
