@@ -158,8 +158,7 @@ test("preflight follows Codex's canonical hook source in linked worktrees", asyn
   await runGit({ args: ["worktree", "add", "--detach", linked, "HEAD"], cwd: fixture.seed });
   try {
     const result = await runPreparedPreflight(fixture, { repoPath: linked, commandRunner: fakeCommands() });
-    assert.equal(result.checks.find((check) => check.id === "codex-hooks").status, "passed");
-    assert.equal(result.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
+    assertHookChecksPassed(result);
 
     const linkedHooksPath = join(linked, ".codex", "hooks.json");
     const linkedHooks = JSON.parse(await readFile(linkedHooksPath, "utf8"));
@@ -182,8 +181,7 @@ test("preflight accepts effective project hooks from TOML sources", async (t) =>
     commandRunner: fakeCommands(),
     codexStateReader: async () => ({ requirements: fixture.codexRequirements, hooks }),
   });
-  assert.equal(result.checks.find((check) => check.id === "codex-hooks").status, "passed");
-  assert.equal(result.checks.find((check) => check.id === "codex-hook-trust").status, "passed");
+  assertHookChecksPassed(result);
 });
 
 test("preflight accepts valid ULID checkpoint directory layouts", async (t) => {
@@ -207,11 +205,7 @@ test("preflight accepts valid ULID checkpoint directory layouts", async (t) => {
     session_id: "session-fixture",
   }) + "\n");
   await runGit({ args: ["add", "-A"], cwd: fixture.seed });
-  await runGit({ args: ["commit", "-m", "Use ULID checkpoint layout"], cwd: fixture.seed, env: identityEnv() });
-  await runGit({ args: ["update-ref", "refs/heads/entire/checkpoints/v1", "HEAD"], cwd: fixture.seed });
-  fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
-  const result = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.equal(result.checks.find((check) => check.id === "entire-metadata").status, "passed");
+  await commitCheckpointAndAssertValid(fixture, "Use ULID checkpoint layout");
 });
 
 test("preflight streams checkpoint transcripts larger than the Git command buffer", async (t) => {
@@ -223,11 +217,7 @@ test("preflight streams checkpoint transcripts larger than the Git command buffe
   await writeFile(transcriptPath, transcript);
   await writeFile(contentHashPath, `sha256:${createHash("sha256").update(transcript).digest("hex")}\n`);
   await runGit({ args: ["add", "--", "ab/cdef123456/0"], cwd: fixture.seed });
-  await runGit({ args: ["commit", "-m", "Add large valid transcript"], cwd: fixture.seed, env: identityEnv() });
-  await runGit({ args: ["update-ref", "refs/heads/entire/checkpoints/v1", "HEAD"], cwd: fixture.seed });
-  fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
-  const result = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.equal(result.checks.find((check) => check.id === "entire-metadata").status, "passed");
+  await commitCheckpointAndAssertValid(fixture, "Add large valid transcript");
 });
 
 test("preflight verifies Entire metadata ancestry without repairing it", async (t) => {
@@ -599,6 +589,20 @@ async function writeEntireHooks(repoPath, commandFor) {
     [{ hooks: [{ type: "command", command: commandFor(command) }] }],
   ]));
   await writeFile(join(repoPath, ".codex", "hooks.json"), JSON.stringify({ hooks }));
+}
+
+function assertHookChecksPassed(result) {
+  for (const id of ["codex-hooks", "codex-hook-trust"]) {
+    assert.equal(result.checks.find((check) => check.id === id).status, "passed");
+  }
+}
+
+async function commitCheckpointAndAssertValid(fixture, message) {
+  await runGit({ args: ["commit", "-m", message], cwd: fixture.seed, env: identityEnv() });
+  await runGit({ args: ["update-ref", "refs/heads/entire/checkpoints/v1", "HEAD"], cwd: fixture.seed });
+  fixture.liveControlOid = (await runGit({ args: ["rev-parse", "HEAD"], cwd: fixture.seed })).stdout.trim();
+  const result = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.equal(result.checks.find((check) => check.id === "entire-metadata").status, "passed");
 }
 
 function fakeCommands({ privateControl = true, invalidCodexConfig = false, effectiveHooks = true } = {}) {
