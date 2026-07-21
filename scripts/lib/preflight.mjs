@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { readFile, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
+import { createInterface } from "node:readline";
 
 import { runExternalCommand } from "./external-command.mjs";
 import { runGit } from "./git-process.mjs";
@@ -37,7 +39,7 @@ export async function runPreflight({
   remoteRepositoryReader = effectiveGitHubRepository,
   nodeVersion = process.versions.node,
   codexConfigPath = defaultCodexConfigPath(),
-  codexRequirementsPath = defaultCodexRequirementsPath(),
+  codexRequirementsReader = readEffectiveCodexRequirements,
   entireCheckpointsPrimary = process.env.ENTIRE_CHECKPOINTS_PRIMARY ?? null,
   now = new Date(),
 } = {}) {
@@ -84,8 +86,13 @@ export async function runPreflight({
     ? checkEntireMetadata(store, { remoteRefReader, profile, entireCheckpointsPrimary })
     : blocked("Entire metadata storage could not be inspected.", "Open a Git repository, then rerun preflight."));
 
+  const codexCwd = store ? store.repoPath : resolvedRepo;
   await record(checks, "codex-config", async () => {
-    const hookPolicy = await codexHookPolicy(codexRequirementsPath);
+    const hookPolicy = await codexHookPolicy(await codexRequirementsReader({
+      binary: codexBinary,
+      cwd: codexCwd,
+      timeoutMs: 30_000,
+    }));
     codexHookMode = hookPolicy.mode;
     const result = await checkCodexConfig({
       commandRunner,
@@ -161,15 +168,11 @@ async function checkCodexConfig({ commandRunner, codexBinary, cwd, hookPolicy })
   return passed("Codex configuration is valid and hooks are effectively enabled.");
 }
 
-async function codexHookPolicy(requirementsPath) {
-  const source = await readFile(requirementsPath, "utf8").catch((error) => {
-    if (error?.code === "ENOENT") return null;
-    throw error;
-  });
-  if (source === null || tomlBooleanAssignment(source, "allow_managed_hooks_only") !== true) {
+async function codexHookPolicy(requirements) {
+  if (requirements?.allowManagedHooksOnly !== true) {
     return { mode: "project", blocker: null };
   }
-  const missing = missingManagedEntireHooks(source);
+  const missing = missingManagedEntireHooks(requirements.hooks);
   return missing.length === 0
     ? { mode: "managed", blocker: null }
     : {
@@ -178,20 +181,84 @@ async function codexHookPolicy(requirementsPath) {
     };
 }
 
-function missingManagedEntireHooks(source) {
-  return REQUIRED_CODEX_HOOKS.filter((required) => !tomlArrayTableBodies(source, `hooks.${required.configEvent}.hooks`)
-    .map(managedHookFromToml)
+function missingManagedEntireHooks(hooks) {
+  return REQUIRED_CODEX_HOOKS.filter((required) => !(hooks?.[required.configEvent] ?? [])
+    .flatMap((group) => group?.hooks ?? [])
     .some((handler) => matchesRequiredEntireHook(handler, required.command)))
     .map((required) => required.event);
 }
 
-function managedHookFromToml(body) {
-  return {
-    type: tomlStringAssignment(body, "type"),
-    command: tomlStringAssignment(body, "command"),
-    commandWindows: tomlStringAssignment(body, "commandWindows") ?? tomlStringAssignment(body, "command_windows"),
-    async: tomlBooleanAssignment(body, "async") === true,
-  };
+async function readEffectiveCodexRequirements({ binary, cwd, timeoutMs }) {
+  return new Promise((resolveRequirements, rejectRequirements) => {
+    const child = spawn(binary, ["app-server", "--stdio"], {
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, LC_ALL: "C", NO_COLOR: "1" },
+    });
+    let stderr = "";
+    let settled = false;
+    const timer = setTimeout(() => finish(new Error("Codex effective requirements query timed out.")), timeoutMs);
+
+    const finish = (error, requirements = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.kill();
+      if (error) rejectRequirements(error);
+      else resolveRequirements(requirements);
+    };
+    const send = (message) => child.stdin.write(`${JSON.stringify(message)}\n`);
+    const lines = createInterface({ input: child.stdout });
+    lines.on("line", (line) => handleCodexAppServerLine(line, { send, finish }));
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", finish);
+    child.on("exit", (code, signal) => {
+      if (!settled) finish(new Error(`Codex effective requirements query exited before response (${code ?? signal ?? "unknown"}): ${stderr.trim()}`));
+    });
+    send({ id: 1, method: "initialize", params: { clientInfo: { name: "tabellio-preflight", version: PREFLIGHT_VERSION } } });
+  });
+}
+
+function handleCodexAppServerLine(line, { send, finish }) {
+  const message = parseCodexAppServerLine(line, finish);
+  if (message === null) return;
+  if (message.id === 1) handleCodexInitializeResponse(message, { send, finish });
+  if (message.id === 2) handleCodexRequirementsResponse(message, finish);
+}
+
+function parseCodexAppServerLine(line, finish) {
+  try {
+    return JSON.parse(line);
+  } catch {
+    finish(new Error("Codex app-server returned invalid JSON."));
+    return null;
+  }
+}
+
+function handleCodexInitializeResponse(message, { send, finish }) {
+  if (message.error) {
+    finish(codexRequirementsError(message.error));
+    return;
+  }
+  if (message.result) {
+    send({ method: "initialized", params: {} });
+    send({ id: 2, method: "configRequirements/read", params: null });
+  }
+}
+
+function handleCodexRequirementsResponse(message, finish) {
+  if (message.error) {
+    finish(codexRequirementsError(message.error));
+    return;
+  }
+  if (message.result && Object.hasOwn(message.result, "requirements")) {
+    finish(null, message.result.requirements);
+  }
+}
+
+function codexRequirementsError(error) {
+  return new Error(`Codex effective requirements query failed: ${error.message ?? "unknown error"}`);
 }
 
 function codexHookConfigBlocker(config, canonicalRepo) {
@@ -202,6 +269,12 @@ function codexHookConfigBlocker(config, canonicalRepo) {
 
 async function checkEntireMetadata(store, options) {
   const backend = await configuredEntireBackend(store.repoPath, options.entireCheckpointsPrimary);
+  if (backend === null) {
+    return blocked(
+      "Entire checkpoint backend is not explicitly configured.",
+      "Set checkpoints.primary.type to git-branch or set ENTIRE_CHECKPOINTS_PRIMARY, then rerun preflight.",
+    );
+  }
   if (backend === "git-refs") {
     return blocked(
       "Tabellio release publication does not support the Entire git-refs checkpoint backend.",
@@ -226,7 +299,7 @@ function validBackendOverride(value) {
 }
 
 function firstCheckpointBackend(...settings) {
-  return settings.map(checkpointBackend).find(Boolean) ?? "git-branch";
+  return settings.map(checkpointBackend).find(Boolean) ?? null;
 }
 
 function checkpointBackend(settings) {
@@ -470,12 +543,6 @@ function tomlQuotedTableSections(config, prefix) {
   });
 }
 
-function tomlArrayTableBodies(config, path) {
-  const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`^\\[\\[${escaped}\\]\\]\\s*(?:#[^\\r\\n]*)?\\r?\\n((?:(?!^\\[)[\\s\\S])*)`, "gm");
-  return [...config.matchAll(pattern)].map((match) => match[1]);
-}
-
 function tomlBooleanAssignment(body, key) {
   const value = tomlAssignment(body, key);
   if (value === "true") return true;
@@ -509,13 +576,6 @@ function stripTomlComment(line) {
 
 function defaultCodexConfigPath() {
   return resolve(process.env.CODEX_HOME || resolve(homedir(), ".codex"), "config.toml");
-}
-
-function defaultCodexRequirementsPath() {
-  if (process.platform === "win32") {
-    return resolve(process.env.ProgramData || "C:\\ProgramData", "OpenAI", "Codex", "requirements.toml");
-  }
-  return "/etc/codex/requirements.toml";
 }
 
 export function validatePreflightResult(value) {

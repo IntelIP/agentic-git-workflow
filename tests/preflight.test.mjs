@@ -88,12 +88,12 @@ test("preflight requires active hooks and a trusted project layer", async (t) =>
   const malformedState = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(malformedState.checks.find((check) => check.id === "codex-hook-trust").detail, /stop/);
 
-  await writeFile(fixture.codexRequirementsPath, "allow_managed_hooks_only = true\n");
+  fixture.codexRequirements = { allowManagedHooksOnly: true, hooks: {} };
   const missingManaged = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.match(missingManaged.checks.find((check) => check.id === "codex-config").detail, /Managed Codex Entire hooks missing/);
   assert.match(missingManaged.checks.find((check) => check.id === "codex-hook-trust").detail, /unproven/);
 
-  await writeFile(fixture.codexRequirementsPath, managedEntireRequirements());
+  fixture.codexRequirements = managedEntireRequirements();
   await writeFile(join(fixture.seed, ".codex", "hooks.json"), JSON.stringify({ hooks: {} }));
   const managed = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
   assert.equal(managed.checks.find((check) => check.id === "codex-config").status, "passed");
@@ -192,6 +192,13 @@ test("preflight rejects the Entire git-refs backend before agent work", async (t
   assert.match(agent.checks.find((check) => check.id === "entire-metadata").detail, /does not support.*git-refs/);
   const release = await runPreparedPreflight(fixture, { profile: "release", commandRunner: fakeCommands() });
   assert.match(release.checks.find((check) => check.id === "entire-metadata").detail, /does not support.*git-refs/);
+});
+
+test("preflight requires an explicit Entire checkpoint backend", async (t) => {
+  const fixture = await preparedFixture(t);
+  await rm(join(fixture.seed, ".entire", "settings.json"));
+  const result = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(result.checks.find((check) => check.id === "entire-metadata").detail, /not explicitly configured/);
 });
 
 test("preflight uses the repository root and rejects invalid Codex configuration", async (t) => {
@@ -305,9 +312,13 @@ async function preparedFixture(t) {
   await runGit({ args: ["remote", "set-url", "origin", "https://github.com/example/repository.git"], cwd: fixture.seed });
   await runGit({ args: ["remote", "add", "control", "git@github.com:example/repository-control.git"], cwd: fixture.seed });
   await mkdir(join(fixture.seed, ".codex"), { recursive: true });
+  await mkdir(join(fixture.seed, ".entire"), { recursive: true });
+  await writeFile(join(fixture.seed, ".entire", "settings.json"), JSON.stringify({
+    checkpoints: { primary: { type: "git-branch" } },
+  }));
   await writeEntireHooks(fixture.seed, (command) => `entire hooks codex ${command}`);
   fixture.codexConfigPath = join(fixture.root, "codex-config.toml");
-  fixture.codexRequirementsPath = join(fixture.root, "requirements.toml");
+  fixture.codexRequirements = null;
   await writeCodexTrust(fixture, ["session_start", "user_prompt_submit", "stop", "post_tool_use"]);
   await writeFile(join(fixture.seed, "tabellio.platform.json"), JSON.stringify(platformFixture()));
   const checkpointDir = join(fixture.seed, "ab", "cdef123456");
@@ -323,7 +334,7 @@ async function preparedFixture(t) {
   await writeFile(join(checkpointDir, "0", "metadata.json"), "{}\n");
   await writeFile(join(checkpointDir, "0", "full.jsonl"), "{}\n");
   await writeFile(join(checkpointDir, "0", "content_hash.txt"), "fixture\n");
-  await runGit({ args: ["add", "--", "ab"], cwd: fixture.seed });
+  await runGit({ args: ["add", "--", "ab", ".entire/settings.json"], cwd: fixture.seed });
   await runGit({ args: ["commit", "-m", "Add checkpoint metadata fixture"], cwd: fixture.seed, env: identityEnv() });
   await runGit({ args: ["update-ref", "refs/heads/entire/checkpoints/v1", "HEAD"], cwd: fixture.seed });
   await runGit({ args: ["update-ref", "refs/remotes/control/entire/checkpoints/v1", "HEAD"], cwd: fixture.seed });
@@ -335,7 +346,7 @@ async function runPreparedPreflight(fixture, options = {}) {
   return runPreflight({
     repoPath: fixture.seed,
     codexConfigPath: fixture.codexConfigPath,
-    codexRequirementsPath: fixture.codexRequirementsPath,
+    codexRequirementsReader: async () => fixture.codexRequirements,
     remoteRefReader: async () => fixture.liveControlOid,
     remoteRefsReader: async () => fixture.liveCheckpointRefs ?? new Map(),
     ...options,
@@ -432,19 +443,11 @@ function managedEntireRequirements() {
     ["Stop", "stop"],
     ["PostToolUse", "post-tool-use"],
   ];
-  return [
-    "allow_managed_hooks_only = true",
-    "",
-    "[hooks]",
-    'managed_dir = "/enterprise/hooks"',
-    "",
-    ...events.flatMap(([event, command]) => [
-      `[[hooks.${event}]]`,
-      "",
-      `[[hooks.${event}.hooks]]`,
-      'type = "command"',
-      `command = "entire hooks codex ${command}"`,
-      "",
-    ]),
-  ].join("\n");
+  return {
+    allowManagedHooksOnly: true,
+    hooks: Object.fromEntries(events.map(([event, command]) => [
+      event,
+      [{ hooks: [{ type: "command", command: `entire hooks codex ${command}`, async: false }] }],
+    ])),
+  };
 }
