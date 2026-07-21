@@ -84,6 +84,16 @@ test("preflight requires active hooks and a trusted project layer", async (t) =>
   assert.match(missingManaged.checks.find((check) => check.id === "codex-config").detail, /Managed Codex Entire hooks missing/);
   assert.match(missingManaged.checks.find((check) => check.id === "codex-hook-trust").detail, /unproven/);
 
+  const managedInventory = effectiveManagedHooks(managedEntireRequirements());
+  fixture.codexRequirements = { allowManagedHooksOnly: true };
+  const inventoryOnlyManaged = await runPreparedPreflight(fixture, {
+    commandRunner: fakeCommands(),
+    codexStateReader: async () => ({ requirements: fixture.codexRequirements, hooks: managedInventory }),
+  });
+  assert.equal(inventoryOnlyManaged.checks.find((check) => check.id === "codex-config").status, "passed");
+  assert.equal(inventoryOnlyManaged.checks.find((check) => check.id === "codex-hooks").status, "passed");
+  assert.match(inventoryOnlyManaged.checks.find((check) => check.id === "codex-hook-trust").detail, /managed Codex policy/);
+
   fixture.codexRequirements = managedEntireRequirements();
   await writeFile(join(fixture.seed, ".codex", "hooks.json"), JSON.stringify({ hooks: {} }));
   const managed = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
@@ -623,6 +633,7 @@ function effectiveManagedHooks(requirements) {
       eventName: event[0].toLowerCase() + event.slice(1),
       handlerType: handler.type,
       command: handler.command,
+      async: handler.async,
       matcher: group.matcher ?? null,
     }))
   )));

@@ -169,7 +169,7 @@ async function checkCodexConfig({ commandRunner, codexBinary, cwd, hookPolicy })
 }
 
 async function codexHookPolicy(requirements, effectiveHooks) {
-  const managedEvents = managedEntireHookEvents(effectiveHooks, requirementsHooks(requirements));
+  const managedEvents = managedEntireHookEvents(effectiveHooks);
   const missing = REQUIRED_CODEX_HOOKS.filter((required) => !managedEvents.includes(required.configEvent)).map((required) => required.event);
   if (missing.length === 0) return { mode: "managed", blocker: null, managedEvents };
   if (managedHooksOnly(requirements)) {
@@ -190,14 +190,9 @@ function managedHooksOnly(requirements) {
   return requirements != null && requirements.allowManagedHooksOnly === true;
 }
 
-function requirementsHooks(requirements) {
-  return requirements == null ? null : requirements.hooks;
-}
-
-function managedEntireHookEvents(hooks, configuredHooks) {
+function managedEntireHookEvents(hooks) {
   const inventory = Array.isArray(hooks) ? hooks : [];
-  return REQUIRED_CODEX_HOOKS.filter((required) => inventory.some((hook) => managedHookMatches(hook, required))
-    && hasEntireHook(configuredHooks?.[required.configEvent], required.command, required.configEvent))
+  return REQUIRED_CODEX_HOOKS.filter((required) => inventory.some((hook) => managedHookMatches(hook, required)))
     .map((required) => required.configEvent);
 }
 
