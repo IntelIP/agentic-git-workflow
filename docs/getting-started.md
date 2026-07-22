@@ -18,7 +18,7 @@ Enable Entire for Codex before creating agent commits:
 entire enable --agent codex --project
 ```
 
-Tabellio's current release transport publishes `refs/heads/entire/checkpoints/v1`, so agent and release preflight require an explicit `git-branch` checkpoint backend in `.entire/settings.json` (or `ENTIRE_CHECKPOINTS_PRIMARY`). An unspecified backend fails closed. Do not select `git-refs` until Tabellio adds matching release-publication support. A new `git-branch` setup may run agent preflight before its first checkpoint creates the metadata branch; release preflight still requires checkpoint metadata.
+Entire stores checkpoints on `refs/heads/entire/checkpoints/v1`. Configure its supported `strategy_options.checkpoint_remote` in `.entire/settings.json` to target the private repository named by Tabellio's control remote, and keep `strategy_options.push_sessions` false so checkpoint publication remains approval-gated. Preflight fails closed when project or local settings redirect checkpoints elsewhere, when automatic checkpoint pushing is enabled, or when release checkpoint metadata is missing.
 
 Every agent change range must contain at least one `Entire-Checkpoint` commit trailer. Context capture fails closed when no checkpoint exists. Use `--ledger git-note` only while migrating an older repository.
 

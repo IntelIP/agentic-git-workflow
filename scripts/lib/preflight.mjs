@@ -9,6 +9,7 @@ import { runGit } from "./git-process.mjs";
 import { contract } from "./contract-checks.mjs";
 import {
   effectiveGitHubRepository,
+  parseGitHubRepositoryRemote,
   readRemoteRefOid,
   sameGitHubRepository,
 } from "./github-repository.mjs";
@@ -38,7 +39,6 @@ export async function runPreflight({
   remoteRepositoryReader = effectiveGitHubRepository,
   nodeVersion = process.versions.node,
   codexStateReader = readEffectiveCodexState,
-  entireCheckpointsPrimary = process.env.ENTIRE_CHECKPOINTS_PRIMARY ?? null,
   now = new Date(),
 } = {}) {
   if (!PROFILES.has(profile)) throw new Error("profile must be agent or release.");
@@ -75,7 +75,7 @@ export async function runPreflight({
   await record(checks, "entire-enabled", async () => {
     const result = await commandRunner({ binary: entireBinary, args: ["status", "--json"], cwd: resolvedRepo, timeoutMs: 30_000 });
     const status = JSON.parse(result.stdout);
-    if (status.enabled !== true) return blocked("Entire is disabled.", "Run entire enable --agent codex --strategy manual-commit.");
+    if (status.enabled !== true) return blocked("Entire is disabled.", "Run entire enable --agent codex --skip-push-sessions with the configured checkpoint remote.");
     if (!Array.isArray(status.agents) || !status.agents.includes("Codex")) {
       return blocked("Entire is enabled without Codex integration.", "Run entire agent add codex.");
     }
@@ -83,7 +83,7 @@ export async function runPreflight({
   });
 
   await record(checks, "entire-metadata", () => store
-    ? checkEntireMetadata(store, { remoteRefReader, profile, entireCheckpointsPrimary })
+    ? checkEntireMetadata(store, { remoteRefReader, remoteRepositoryReader, profile })
     : blocked("Entire metadata storage could not be inspected.", "Open a Git repository, then rerun preflight."));
 
   const codexCwd = store ? store.repoPath : resolvedRepo;
@@ -362,44 +362,111 @@ function codexRequirementsError(error) {
 }
 
 async function checkEntireMetadata(store, options) {
-  const backend = await configuredEntireBackend(store.repoPath, options.entireCheckpointsPrimary);
-  if (backend === null) {
-    return blocked(
-      "Entire checkpoint backend is not explicitly configured.",
-      "Set checkpoints.primary.type to git-branch or set ENTIRE_CHECKPOINTS_PRIMARY, then rerun preflight.",
-    );
-  }
-  if (backend === "git-refs") {
-    return blocked(
-      "Tabellio release publication does not support the Entire git-refs checkpoint backend.",
-      "Configure Entire to use git-branch before agent work, then rerun preflight.",
-    );
-  }
-  if (backend !== "git-branch") throw new Error(`Unsupported Entire checkpoint backend: ${backend}.`);
+  const transport = await checkEntireCheckpointTransport(store, options.remoteRepositoryReader);
+  if (transport) return transport;
   return checkEntireMetadataBranch(store, options.remoteRefReader, options.profile);
 }
 
-async function configuredEntireBackend(repoPath, override) {
-  if (validBackendOverride(override)) return override.trim();
-  const [local, project] = await Promise.all([
-    readJsonIfExists(resolve(repoPath, ".entire", "settings.local.json")),
-    readJsonIfExists(resolve(repoPath, ".entire", "settings.json")),
+async function checkEntireCheckpointTransport(store, remoteRepositoryReader) {
+  const settings = await readEntireTransportSettings(store);
+  const remotes = configuredCheckpointRemotes(settings.local, settings.project);
+  if (remotes.blocker) return remotes.blocker;
+  const control = await remoteRepositoryReader(store, settings.platform.workflow.controlRemoteName);
+  return checkpointTransportPolicyBlockers(remotes, control, settings).find(Boolean) ?? null;
+}
+
+async function readEntireTransportSettings(store) {
+  const [local, project, platform] = await Promise.all([
+    readJsonIfExists(resolve(store.repoPath, ".entire", "settings.local.json")),
+    readJsonIfExists(resolve(store.repoPath, ".entire", "settings.json")),
+    readPlatformConfig(store),
   ]);
-  return firstCheckpointBackend(local, project);
+  return { local, project, platform };
 }
 
-function validBackendOverride(value) {
-  return typeof value === "string" && value.trim() !== "";
+function configuredCheckpointRemotes(local, project) {
+  const projectRemote = checkpointRemote(project);
+  const projectBlocker = requiredCheckpointRemoteBlocker(projectRemote);
+  if (projectBlocker) return { blocker: projectBlocker };
+  const localRemote = checkpointRemote(local);
+  const localBlocker = optionalCheckpointRemoteBlocker(localRemote);
+  if (localBlocker) return { blocker: localBlocker };
+  return {
+    blocker: null,
+    project: projectRemote.repository,
+    effective: localRemote.repository ?? projectRemote.repository,
+  };
 }
 
-function firstCheckpointBackend(...settings) {
-  return settings.map(checkpointBackend).find(Boolean) ?? null;
+function requiredCheckpointRemoteBlocker(remote) {
+  if (remote.error) return checkpointRemoteBlocker(remote.error);
+  if (remote.repository === null) return checkpointRemoteBlocker("Project Entire checkpoint remote is not configured.");
+  return null;
 }
 
-function checkpointBackend(settings) {
-  const checkpoints = settings == null ? null : settings.checkpoints;
-  const primary = checkpoints == null ? null : checkpoints.primary;
-  return primary == null ? null : primary.type;
+function optionalCheckpointRemoteBlocker(remote) {
+  return remote.error ? checkpointRemoteBlocker(remote.error) : null;
+}
+
+function checkpointTransportPolicyBlockers(remotes, control, settings) {
+  return [
+    repositoryMatchBlocker(remotes.project, control, "Project"),
+    repositoryMatchBlocker(remotes.effective, control, "Effective"),
+    automaticCheckpointPushBlocker(settings.local, settings.project),
+  ];
+}
+
+function repositoryMatchBlocker(remote, control, scope) {
+  return sameGitHubRepository(remote, control)
+    ? null
+    : checkpointRemoteBlocker(`${scope} Entire checkpoint remote does not match Tabellio's control repository.`);
+}
+
+function automaticCheckpointPushBlocker(local, project) {
+  return project?.strategy_options?.push_sessions === false && effectivePushSessions(local, project) === false
+    ? null
+    : blocked(
+        "Entire automatic checkpoint pushing is not disabled.",
+        "Run entire configure --project --skip-push-sessions, then rerun preflight.",
+      );
+}
+
+function checkpointRemote(settings) {
+  const remote = settings?.strategy_options?.checkpoint_remote;
+  return remote === undefined ? { repository: null, error: null } : parseCheckpointRemote(remote);
+}
+
+function parseCheckpointRemote(remote) {
+  const shapeError = checkpointRemoteShapeError(remote);
+  if (shapeError) return { repository: null, error: shapeError };
+  return parseCheckpointRepository(remote);
+}
+
+function checkpointRemoteShapeError(remote) {
+  if (remote === null) return "Entire checkpoint remote must be an object.";
+  if (typeof remote !== "object") return "Entire checkpoint remote must be an object.";
+  if (Array.isArray(remote)) return "Entire checkpoint remote must be an object.";
+  return null;
+}
+
+function parseCheckpointRepository(remote) {
+  if (remote.provider !== "github") return { repository: null, error: "Entire checkpoint remote must name a GitHub repository." };
+  if (typeof remote.repo !== "string") return { repository: null, error: "Entire checkpoint remote must name a GitHub repository." };
+  const repository = parseGitHubRepositoryRemote(`https://github.com/${remote.repo}`);
+  return repository === null
+    ? { repository: null, error: "Entire checkpoint remote has an invalid GitHub repository." }
+    : { repository, error: null };
+}
+
+function effectivePushSessions(local, project) {
+  return local?.strategy_options?.push_sessions ?? project?.strategy_options?.push_sessions;
+}
+
+function checkpointRemoteBlocker(detail) {
+  return blocked(
+    detail,
+    "Run entire configure --project --checkpoint-remote github:OWNER/CONTROL_REPO --skip-push-sessions, then rerun preflight.",
+  );
 }
 
 async function readJsonIfExists(path) {

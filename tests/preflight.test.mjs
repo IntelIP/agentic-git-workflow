@@ -333,23 +333,54 @@ test("preflight verifies Entire metadata ancestry without repairing it", async (
   assert.match(emptyRelease.checks.find((check) => check.id === "entire-metadata").detail, /no checkpoint metadata/);
 });
 
-test("preflight rejects the Entire git-refs backend before agent work", async (t) => {
+test("preflight rejects a checkpoint remote outside Tabellio control storage", async (t) => {
   const fixture = await preparedFixture(t);
-  await mkdir(join(fixture.seed, ".entire"), { recursive: true });
   await writeFile(join(fixture.seed, ".entire", "settings.json"), JSON.stringify({
-    checkpoints: { primary: { type: "git-refs" } },
+    enabled: true,
+    strategy_options: {
+      checkpoint_remote: { provider: "github", repo: "example/wrong-control" },
+      push_sessions: false,
+    },
   }));
   const agent = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.match(agent.checks.find((check) => check.id === "entire-metadata").detail, /does not support.*git-refs/);
+  assert.match(agent.checks.find((check) => check.id === "entire-metadata").detail, /does not match.*control repository/);
   const release = await runPreparedPreflight(fixture, { profile: "release", commandRunner: fakeCommands() });
-  assert.match(release.checks.find((check) => check.id === "entire-metadata").detail, /does not support.*git-refs/);
+  assert.match(release.checks.find((check) => check.id === "entire-metadata").detail, /does not match.*control repository/);
 });
 
-test("preflight requires an explicit Entire checkpoint backend", async (t) => {
+test("preflight requires an approval-gated Entire checkpoint remote", async (t) => {
   const fixture = await preparedFixture(t);
   await rm(join(fixture.seed, ".entire", "settings.json"));
-  const result = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
-  assert.match(result.checks.find((check) => check.id === "entire-metadata").detail, /not explicitly configured/);
+  const missing = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(missing.checks.find((check) => check.id === "entire-metadata").detail, /checkpoint remote is not configured/);
+
+  await writeFile(join(fixture.seed, ".entire", "settings.json"), JSON.stringify({
+    enabled: true,
+    strategy_options: {
+      checkpoint_remote: { provider: "github", repo: "example/repository-control" },
+      push_sessions: true,
+    },
+  }));
+  const automatic = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assertEntireMetadataBlocked(automatic, /automatic checkpoint pushing is not disabled/);
+
+  await writeFile(join(fixture.seed, ".entire", "settings.local.json"), JSON.stringify({
+    strategy_options: {
+      checkpoint_remote: { provider: "github", repo: "example/repository-control" },
+      push_sessions: false,
+    },
+  }));
+  const locallyMaskedAutomatic = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assertEntireMetadataBlocked(locallyMaskedAutomatic, /automatic checkpoint pushing is not disabled/);
+
+  await writeFile(join(fixture.seed, ".entire", "settings.local.json"), JSON.stringify({
+    strategy_options: {
+      checkpoint_remote: { provider: "github", repo: "example/local-override" },
+      push_sessions: false,
+    },
+  }));
+  const overridden = await runPreparedPreflight(fixture, { commandRunner: fakeCommands() });
+  assert.match(overridden.checks.find((check) => check.id === "entire-metadata").detail, /Effective Entire checkpoint remote does not match/);
 });
 
 test("preflight uses the repository root and rejects invalid Codex configuration", async (t) => {
@@ -475,7 +506,11 @@ async function preparedFixture(t) {
   await mkdir(join(fixture.seed, ".codex"), { recursive: true });
   await mkdir(join(fixture.seed, ".entire"), { recursive: true });
   await writeFile(join(fixture.seed, ".entire", "settings.json"), JSON.stringify({
-    checkpoints: { primary: { type: "git-branch" } },
+    enabled: true,
+    strategy_options: {
+      checkpoint_remote: { provider: "github", repo: "example/repository-control" },
+      push_sessions: false,
+    },
   }));
   await writeEntireHooks(fixture.seed, (command) => `entire hooks codex ${command}`);
   fixture.codexConfigPath = join(fixture.root, "codex-config.toml");
@@ -595,6 +630,10 @@ function assertHookChecksPassed(result) {
   for (const id of ["codex-hooks", "codex-hook-trust"]) {
     assert.equal(result.checks.find((check) => check.id === id).status, "passed");
   }
+}
+
+function assertEntireMetadataBlocked(result, pattern) {
+  assert.match(result.checks.find((check) => check.id === "entire-metadata").detail, pattern);
 }
 
 async function commitCheckpointAndAssertValid(fixture, message) {

@@ -103,7 +103,7 @@ npm run tabellio:platform:check
 node scripts/tabellio-validate.mjs run --repo . --commit HEAD --manifest tabellio.validation.json
 ```
 
-Declare Entire's `git-branch` checkpoint backend explicitly in `.entire/settings.json` (or `ENTIRE_CHECKPOINTS_PRIMARY`). Tabellio release publication currently transports `refs/heads/entire/checkpoints/v1`; preflight fails closed when the backend is unspecified and blocks `git-refs` before agent work.
+Configure Entire's supported `strategy_options.checkpoint_remote` in `.entire/settings.json` to target the private GitHub control repository, and keep `strategy_options.push_sessions` false. Tabellio preflight fails closed when the effective checkpoint remote differs from the platform control remote or automatic checkpoint pushing could bypass release approval.
 
 Use `gate` in CI. It persists the same exact-head result but exits non-zero unless the final decision is `passed`:
 
