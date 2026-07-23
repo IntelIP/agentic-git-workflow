@@ -13,3 +13,4 @@ tabellio-ledger.json
 !.env.example
 coverage/
 dist/
+.artifacts/

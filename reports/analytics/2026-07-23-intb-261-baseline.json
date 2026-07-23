@@ -1,0 +1,1250 @@
+{
+  "schemaVersion": "tabellio-analytics-dataset/v0.1",
+  "id": "INTB-261-cross-repository-baseline",
+  "observedAt": "2026-07-23T22:44:48.000Z",
+  "window": {
+    "since": "2026-07-01T00:00:00.000Z",
+    "until": "2026-07-23T22:44:47.000Z"
+  },
+  "metricDefinitions": [
+    {
+      "id": "commitCount",
+      "unit": "count",
+      "definition": "Commits reachable from HEAD whose commit time falls inside the observation window.",
+      "sourceSystems": [
+        "git"
+      ],
+      "missingSemantics": "Unavailable when local Git cannot be read."
+    },
+    {
+      "id": "validationAttemptCount",
+      "unit": "count",
+      "definition": "Tabellio validation results completed inside the observation window.",
+      "sourceSystems": [
+        "tabellio-validation"
+      ],
+      "missingSemantics": "Unavailable when the validation ref is absent or unreadable."
+    },
+    {
+      "id": "validationPassRate",
+      "unit": "ratio",
+      "definition": "Passed validation attempts divided by all terminal validation attempts in the window.",
+      "sourceSystems": [
+        "tabellio-validation"
+      ],
+      "missingSemantics": "Unavailable when there are no terminal attempts; never reported as zero."
+    },
+    {
+      "id": "costTelemetryCoverage",
+      "unit": "ratio",
+      "definition": "Validation attempts with complete required cost telemetry divided by validation attempts.",
+      "sourceSystems": [
+        "tabellio-validation"
+      ],
+      "missingSemantics": "Unavailable when there are no validation attempts."
+    },
+    {
+      "id": "entireCheckpointCount",
+      "unit": "count",
+      "definition": "Distinct metadata-only Entire checkpoint sessions visible in the checkpoint ref.",
+      "sourceSystems": [
+        "entire"
+      ],
+      "missingSemantics": "Unavailable when the metadata ref is absent; transcript bodies are never read."
+    },
+    {
+      "id": "reviewFindingCount",
+      "unit": "count",
+      "definition": "Review feedback records stored in Tabellio review cycles.",
+      "sourceSystems": [
+        "tabellio-review"
+      ],
+      "missingSemantics": "Unavailable when the review ref is absent."
+    },
+    {
+      "id": "repairCount",
+      "unit": "count",
+      "definition": "Review fix records stored in Tabellio review cycles.",
+      "sourceSystems": [
+        "tabellio-review"
+      ],
+      "missingSemantics": "Unavailable when the review ref is absent."
+    },
+    {
+      "id": "worktreeDirty",
+      "unit": "boolean",
+      "definition": "Whether Git reports tracked or untracked worktree changes at observation time.",
+      "sourceSystems": [
+        "git"
+      ],
+      "missingSemantics": "Unavailable when local Git cannot be read."
+    },
+    {
+      "id": "evidenceCompleteness",
+      "unit": "ratio",
+      "definition": "Available evidence sources divided by the seven declared source systems.",
+      "sourceSystems": [
+        "git",
+        "tabellio-validation",
+        "tabellio-review",
+        "entire",
+        "plane",
+        "github",
+        "github-actions"
+      ],
+      "missingSemantics": "A missing source reduces completeness; it is not converted to zero-valued evidence."
+    },
+    {
+      "id": "deliveryChangeCount",
+      "unit": "count",
+      "definition": "Delivery changes explicitly included in the sanitized provider snapshot.",
+      "sourceSystems": [
+        "plane",
+        "github"
+      ],
+      "missingSemantics": "Unavailable when no provider snapshot is supplied."
+    },
+    {
+      "id": "taskToPrTraceability",
+      "unit": "ratio",
+      "definition": "Delivery changes linked to both a Plane story and GitHub pull request divided by eligible delivery changes.",
+      "sourceSystems": [
+        "plane",
+        "github"
+      ],
+      "missingSemantics": "Unavailable until compatible Plane and GitHub snapshots are supplied."
+    },
+    {
+      "id": "leadTimeHours",
+      "unit": "hours",
+      "definition": "Elapsed time from work-item creation to merge for linked delivery changes.",
+      "sourceSystems": [
+        "plane",
+        "github"
+      ],
+      "missingSemantics": "Unavailable until linked timestamps are supplied."
+    },
+    {
+      "id": "cycleTimeHours",
+      "unit": "hours",
+      "definition": "Elapsed time from first implementation activity to merge for linked delivery changes.",
+      "sourceSystems": [
+        "git",
+        "plane",
+        "github"
+      ],
+      "missingSemantics": "Unavailable until linked timestamps are supplied."
+    },
+    {
+      "id": "ciDisagreementRate",
+      "unit": "ratio",
+      "definition": "Candidates where hosted CI and exact-candidate validation disagree divided by compared candidates.",
+      "sourceSystems": [
+        "github-actions",
+        "tabellio-validation"
+      ],
+      "missingSemantics": "Unavailable until hosted-check evidence is supplied."
+    },
+    {
+      "id": "releaseLagHours",
+      "unit": "hours",
+      "definition": "Elapsed time from merge to first containing release.",
+      "sourceSystems": [
+        "github"
+      ],
+      "missingSemantics": "Unavailable until merge and release evidence is supplied."
+    },
+    {
+      "id": "repositoryAdoption",
+      "unit": "ratio",
+      "definition": "Available Tabellio-native evidence sources divided by validation, review, and Entire sources.",
+      "sourceSystems": [
+        "tabellio-validation",
+        "tabellio-review",
+        "entire"
+      ],
+      "missingSemantics": "Measured from source availability, not commit volume or developer ranking."
+    }
+  ],
+  "repositories": [
+    {
+      "id": "condere",
+      "canonicalRepositoryId": "IntelIP/Condere",
+      "headCommit": "4ec36ff4ba24cfd4a92c525b77a0027a001033e9",
+      "headCommittedAt": "2026-07-21T10:35:01-07:00",
+      "branch": "main",
+      "sources": [
+        {
+          "id": "condere:git",
+          "system": "git",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "4ec36ff4ba24cfd4a92c525b77a0027a001033e9",
+          "contentDigest": "83cbe98b25d5dc15ae801bbd3c0ecd1430d709d17f28e7ce55762ba96db36d5a",
+          "reason": null
+        },
+        {
+          "id": "condere:tabellio-validation",
+          "system": "tabellio-validation",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "658453d2eec9971f2c14284548f5f278c69432d6",
+          "contentDigest": "3876ee7b79c55db3698f09bfa9dc8fcd28d92d0185d3219ddcd06397fda04cb9",
+          "reason": null
+        },
+        {
+          "id": "condere:tabellio-review",
+          "system": "tabellio-review",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "refs/tabellio/reviews is absent."
+        },
+        {
+          "id": "condere:entire",
+          "system": "entire",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "9c380bcf43daf42442078dadfec1f1f1a124962e",
+          "contentDigest": "6ea9aa02fe49e49696461f7dd17c6acd308fde5a324ecfb0f6e1153b9c50e481",
+          "reason": null
+        },
+        {
+          "id": "condere:plane",
+          "system": "plane",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "No sanitized provider snapshot supplied to the read-only collector."
+        },
+        {
+          "id": "condere:github",
+          "system": "github",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "No sanitized provider snapshot supplied to the read-only collector."
+        },
+        {
+          "id": "condere:github-actions",
+          "system": "github-actions",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "No sanitized provider snapshot supplied to the read-only collector."
+        }
+      ],
+      "metrics": {
+        "commitCount": {
+          "status": "measured",
+          "value": 121,
+          "unit": "count",
+          "sourceIds": [
+            "condere:git"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "validationAttemptCount": {
+          "status": "measured",
+          "value": 75,
+          "unit": "count",
+          "sourceIds": [
+            "condere:tabellio-validation"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "validationPassRate": {
+          "status": "measured",
+          "value": 0.9333333333333333,
+          "unit": "ratio",
+          "sourceIds": [
+            "condere:tabellio-validation"
+          ],
+          "reason": null,
+          "numerator": 70,
+          "denominator": 75
+        },
+        "costTelemetryCoverage": {
+          "status": "measured",
+          "value": 0.9733333333333334,
+          "unit": "ratio",
+          "sourceIds": [
+            "condere:tabellio-validation"
+          ],
+          "reason": null,
+          "numerator": 73,
+          "denominator": 75
+        },
+        "entireCheckpointCount": {
+          "status": "measured",
+          "value": 2,
+          "unit": "count",
+          "sourceIds": [
+            "condere:entire"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "reviewFindingCount": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "count",
+          "sourceIds": [
+            "condere:tabellio-review"
+          ],
+          "reason": "refs/tabellio/reviews is absent.",
+          "numerator": null,
+          "denominator": null
+        },
+        "repairCount": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "count",
+          "sourceIds": [
+            "condere:tabellio-review"
+          ],
+          "reason": "refs/tabellio/reviews is absent.",
+          "numerator": null,
+          "denominator": null
+        },
+        "worktreeDirty": {
+          "status": "measured",
+          "value": true,
+          "unit": "boolean",
+          "sourceIds": [
+            "condere:git"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "evidenceCompleteness": {
+          "status": "measured",
+          "value": 0.42857142857142855,
+          "unit": "ratio",
+          "sourceIds": [
+            "condere:git",
+            "condere:tabellio-validation",
+            "condere:tabellio-review",
+            "condere:entire",
+            "condere:plane",
+            "condere:github",
+            "condere:github-actions"
+          ],
+          "reason": null,
+          "numerator": 3,
+          "denominator": 7
+        },
+        "deliveryChangeCount": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "count",
+          "sourceIds": [
+            "condere:plane",
+            "condere:github"
+          ],
+          "reason": "No sanitized provider snapshot supplied to the read-only collector.",
+          "numerator": null,
+          "denominator": null
+        },
+        "taskToPrTraceability": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "ratio",
+          "sourceIds": [
+            "condere:plane",
+            "condere:github"
+          ],
+          "reason": "No sanitized provider snapshot supplied to the read-only collector.",
+          "numerator": null,
+          "denominator": null
+        },
+        "leadTimeHours": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "hours",
+          "sourceIds": [
+            "condere:plane",
+            "condere:github"
+          ],
+          "reason": "No linked story creation and merge timestamps.",
+          "numerator": null,
+          "denominator": null
+        },
+        "cycleTimeHours": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "hours",
+          "sourceIds": [
+            "condere:git",
+            "condere:plane",
+            "condere:github"
+          ],
+          "reason": "No linked first-activity and merge timestamps.",
+          "numerator": null,
+          "denominator": null
+        },
+        "ciDisagreementRate": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "ratio",
+          "sourceIds": [
+            "condere:tabellio-validation",
+            "condere:github-actions"
+          ],
+          "reason": "No candidates have both hosted and exact validation outcomes.",
+          "numerator": null,
+          "denominator": null
+        },
+        "releaseLagHours": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "hours",
+          "sourceIds": [
+            "condere:github"
+          ],
+          "reason": "No linked merge and release timestamps.",
+          "numerator": null,
+          "denominator": null
+        },
+        "repositoryAdoption": {
+          "status": "measured",
+          "value": 0.6666666666666666,
+          "unit": "ratio",
+          "sourceIds": [
+            "condere:tabellio-validation",
+            "condere:tabellio-review",
+            "condere:entire"
+          ],
+          "reason": null,
+          "numerator": 2,
+          "denominator": 3
+        }
+      },
+      "deliveryChanges": []
+    },
+    {
+      "id": "probanda",
+      "canonicalRepositoryId": "IntelIP/Probanda",
+      "headCommit": "e354f0647f879637dd1ccf9d63d38b735177fbdd",
+      "headCommittedAt": "2026-07-23T11:04:11-07:00",
+      "branch": "main",
+      "sources": [
+        {
+          "id": "probanda:git",
+          "system": "git",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "e354f0647f879637dd1ccf9d63d38b735177fbdd",
+          "contentDigest": "9b8fff7904f4e265befec14907299d14f8047f114cb083bb44f0fa6a61f969ac",
+          "reason": null
+        },
+        {
+          "id": "probanda:tabellio-validation",
+          "system": "tabellio-validation",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "970412e7d10ff0a233ed32d42104616de3df1ac0",
+          "contentDigest": "f5ec26e3b758b5686d3c1c243f20c7c34b927ca5270e8714b8e7f47de0db0c46",
+          "reason": null
+        },
+        {
+          "id": "probanda:tabellio-review",
+          "system": "tabellio-review",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "refs/tabellio/reviews is absent."
+        },
+        {
+          "id": "probanda:entire",
+          "system": "entire",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "Entire metadata checkpoint ref is absent."
+        },
+        {
+          "id": "probanda:plane",
+          "system": "plane",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "No sanitized provider snapshot supplied to the read-only collector."
+        },
+        {
+          "id": "probanda:github",
+          "system": "github",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "No sanitized provider snapshot supplied to the read-only collector."
+        },
+        {
+          "id": "probanda:github-actions",
+          "system": "github-actions",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "No sanitized provider snapshot supplied to the read-only collector."
+        }
+      ],
+      "metrics": {
+        "commitCount": {
+          "status": "measured",
+          "value": 42,
+          "unit": "count",
+          "sourceIds": [
+            "probanda:git"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "validationAttemptCount": {
+          "status": "measured",
+          "value": 103,
+          "unit": "count",
+          "sourceIds": [
+            "probanda:tabellio-validation"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "validationPassRate": {
+          "status": "measured",
+          "value": 0.6504854368932039,
+          "unit": "ratio",
+          "sourceIds": [
+            "probanda:tabellio-validation"
+          ],
+          "reason": null,
+          "numerator": 67,
+          "denominator": 103
+        },
+        "costTelemetryCoverage": {
+          "status": "measured",
+          "value": 0.8058252427184466,
+          "unit": "ratio",
+          "sourceIds": [
+            "probanda:tabellio-validation"
+          ],
+          "reason": null,
+          "numerator": 83,
+          "denominator": 103
+        },
+        "entireCheckpointCount": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "count",
+          "sourceIds": [
+            "probanda:entire"
+          ],
+          "reason": "Entire metadata checkpoint ref is absent.",
+          "numerator": null,
+          "denominator": null
+        },
+        "reviewFindingCount": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "count",
+          "sourceIds": [
+            "probanda:tabellio-review"
+          ],
+          "reason": "refs/tabellio/reviews is absent.",
+          "numerator": null,
+          "denominator": null
+        },
+        "repairCount": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "count",
+          "sourceIds": [
+            "probanda:tabellio-review"
+          ],
+          "reason": "refs/tabellio/reviews is absent.",
+          "numerator": null,
+          "denominator": null
+        },
+        "worktreeDirty": {
+          "status": "measured",
+          "value": false,
+          "unit": "boolean",
+          "sourceIds": [
+            "probanda:git"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "evidenceCompleteness": {
+          "status": "measured",
+          "value": 0.2857142857142857,
+          "unit": "ratio",
+          "sourceIds": [
+            "probanda:git",
+            "probanda:tabellio-validation",
+            "probanda:tabellio-review",
+            "probanda:entire",
+            "probanda:plane",
+            "probanda:github",
+            "probanda:github-actions"
+          ],
+          "reason": null,
+          "numerator": 2,
+          "denominator": 7
+        },
+        "deliveryChangeCount": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "count",
+          "sourceIds": [
+            "probanda:plane",
+            "probanda:github"
+          ],
+          "reason": "No sanitized provider snapshot supplied to the read-only collector.",
+          "numerator": null,
+          "denominator": null
+        },
+        "taskToPrTraceability": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "ratio",
+          "sourceIds": [
+            "probanda:plane",
+            "probanda:github"
+          ],
+          "reason": "No sanitized provider snapshot supplied to the read-only collector.",
+          "numerator": null,
+          "denominator": null
+        },
+        "leadTimeHours": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "hours",
+          "sourceIds": [
+            "probanda:plane",
+            "probanda:github"
+          ],
+          "reason": "No linked story creation and merge timestamps.",
+          "numerator": null,
+          "denominator": null
+        },
+        "cycleTimeHours": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "hours",
+          "sourceIds": [
+            "probanda:git",
+            "probanda:plane",
+            "probanda:github"
+          ],
+          "reason": "No linked first-activity and merge timestamps.",
+          "numerator": null,
+          "denominator": null
+        },
+        "ciDisagreementRate": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "ratio",
+          "sourceIds": [
+            "probanda:tabellio-validation",
+            "probanda:github-actions"
+          ],
+          "reason": "No candidates have both hosted and exact validation outcomes.",
+          "numerator": null,
+          "denominator": null
+        },
+        "releaseLagHours": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "hours",
+          "sourceIds": [
+            "probanda:github"
+          ],
+          "reason": "No linked merge and release timestamps.",
+          "numerator": null,
+          "denominator": null
+        },
+        "repositoryAdoption": {
+          "status": "measured",
+          "value": 0.3333333333333333,
+          "unit": "ratio",
+          "sourceIds": [
+            "probanda:tabellio-validation",
+            "probanda:tabellio-review",
+            "probanda:entire"
+          ],
+          "reason": null,
+          "numerator": 1,
+          "denominator": 3
+        }
+      },
+      "deliveryChanges": []
+    },
+    {
+      "id": "tabellio",
+      "canonicalRepositoryId": "IntelIP/Tabellio",
+      "headCommit": "c9759d7c0e4d15aba8545e73d49b182ed64fc6bc",
+      "headCommittedAt": "2026-07-23T10:56:23-07:00",
+      "branch": "codex/intb-261-analytics",
+      "sources": [
+        {
+          "id": "tabellio:git",
+          "system": "git",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "c9759d7c0e4d15aba8545e73d49b182ed64fc6bc",
+          "contentDigest": "bd517c288f1064112afde9e905ca0dcbfcba6bbfb2e71b66a6158c299d6a724b",
+          "reason": null
+        },
+        {
+          "id": "tabellio:tabellio-validation",
+          "system": "tabellio-validation",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "8eeca837596310bfb54fc92cb53d18409e2e43ac",
+          "contentDigest": "1971ff1fe32f537b7687ca08da92752c4e6a3f04e38f90c8a232b5ec1d26175d",
+          "reason": null
+        },
+        {
+          "id": "tabellio:tabellio-review",
+          "system": "tabellio-review",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "7ed540ff39639ed4290c617cc2c933405651adbf",
+          "contentDigest": "1f4b64fe85b53a9181ddd7496608c19dba0a1da5a74990d820580b5c2e3bacb2",
+          "reason": null
+        },
+        {
+          "id": "tabellio:entire",
+          "system": "entire",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "984fc31d3fec43eab3e699a4d13622174eeed1b2",
+          "contentDigest": "9051af958506f8fc12f935bd6b64738a6a7d1fb02a3ea7630a9bb845fdb35309",
+          "reason": null
+        },
+        {
+          "id": "tabellio:plane",
+          "system": "plane",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "2026-07-21T17:35:56.770229Z",
+          "contentDigest": "b706bd8b6e4bc6857435789aa5d377b36f515282e31d3a0e77cacd58cdf3dd36",
+          "reason": null
+        },
+        {
+          "id": "tabellio:github",
+          "system": "github",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "2026-07-23T18:15:21Z",
+          "contentDigest": "e117b6bb87717d56aaa376684da231e621b7ee1aac2621fe617897408f4a8a84",
+          "reason": null
+        },
+        {
+          "id": "tabellio:github-actions",
+          "system": "github-actions",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "2026-07-23T17:16:42Z",
+          "contentDigest": "3304f3ccb10050d343760b5a90641aab6394536f83631e03d729bbcefe6f3448",
+          "reason": null
+        }
+      ],
+      "metrics": {
+        "commitCount": {
+          "status": "measured",
+          "value": 31,
+          "unit": "count",
+          "sourceIds": [
+            "tabellio:git"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "validationAttemptCount": {
+          "status": "measured",
+          "value": 71,
+          "unit": "count",
+          "sourceIds": [
+            "tabellio:tabellio-validation"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "validationPassRate": {
+          "status": "measured",
+          "value": 0.9014084507042254,
+          "unit": "ratio",
+          "sourceIds": [
+            "tabellio:tabellio-validation"
+          ],
+          "reason": null,
+          "numerator": 64,
+          "denominator": 71
+        },
+        "costTelemetryCoverage": {
+          "status": "measured",
+          "value": 0.8028169014084507,
+          "unit": "ratio",
+          "sourceIds": [
+            "tabellio:tabellio-validation"
+          ],
+          "reason": null,
+          "numerator": 57,
+          "denominator": 71
+        },
+        "entireCheckpointCount": {
+          "status": "measured",
+          "value": 10,
+          "unit": "count",
+          "sourceIds": [
+            "tabellio:entire"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "reviewFindingCount": {
+          "status": "measured",
+          "value": 51,
+          "unit": "count",
+          "sourceIds": [
+            "tabellio:tabellio-review"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "repairCount": {
+          "status": "measured",
+          "value": 8,
+          "unit": "count",
+          "sourceIds": [
+            "tabellio:tabellio-review"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "worktreeDirty": {
+          "status": "measured",
+          "value": true,
+          "unit": "boolean",
+          "sourceIds": [
+            "tabellio:git"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "evidenceCompleteness": {
+          "status": "measured",
+          "value": 1,
+          "unit": "ratio",
+          "sourceIds": [
+            "tabellio:git",
+            "tabellio:tabellio-validation",
+            "tabellio:tabellio-review",
+            "tabellio:entire",
+            "tabellio:plane",
+            "tabellio:github",
+            "tabellio:github-actions"
+          ],
+          "reason": null,
+          "numerator": 7,
+          "denominator": 7
+        },
+        "deliveryChangeCount": {
+          "status": "measured",
+          "value": 1,
+          "unit": "count",
+          "sourceIds": [
+            "tabellio:plane",
+            "tabellio:github"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "taskToPrTraceability": {
+          "status": "measured",
+          "value": 1,
+          "unit": "ratio",
+          "sourceIds": [
+            "tabellio:plane",
+            "tabellio:github"
+          ],
+          "reason": null,
+          "numerator": 1,
+          "denominator": 1
+        },
+        "leadTimeHours": {
+          "status": "measured",
+          "value": 71.71463722222222,
+          "unit": "hours",
+          "sourceIds": [
+            "tabellio:plane",
+            "tabellio:github"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": 1
+        },
+        "cycleTimeHours": {
+          "status": "measured",
+          "value": 21.05,
+          "unit": "hours",
+          "sourceIds": [
+            "tabellio:git",
+            "tabellio:plane",
+            "tabellio:github"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": 1
+        },
+        "ciDisagreementRate": {
+          "status": "measured",
+          "value": 0,
+          "unit": "ratio",
+          "sourceIds": [
+            "tabellio:tabellio-validation",
+            "tabellio:github-actions"
+          ],
+          "reason": null,
+          "numerator": 0,
+          "denominator": 1
+        },
+        "releaseLagHours": {
+          "status": "measured",
+          "value": 0.31583333333333335,
+          "unit": "hours",
+          "sourceIds": [
+            "tabellio:github"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": 1
+        },
+        "repositoryAdoption": {
+          "status": "measured",
+          "value": 1,
+          "unit": "ratio",
+          "sourceIds": [
+            "tabellio:tabellio-validation",
+            "tabellio:tabellio-review",
+            "tabellio:entire"
+          ],
+          "reason": null,
+          "numerator": 3,
+          "denominator": 3
+        }
+      },
+      "deliveryChanges": [
+        {
+          "id": "tabellio-pr-27",
+          "linkBasis": "manual-reconciliation",
+          "linkEvidence": "INTB-260 owned Tabellio release qualification; PR #27 completed its durable review-readiness requirement before v0.5.0 publication.",
+          "planeStoryId": "INTB-260",
+          "pullRequestNumber": 27,
+          "storyCreatedAt": "2026-07-20T18:13:31.306465Z",
+          "firstActivityAt": "2026-07-22T20:53:24.000Z",
+          "mergedAt": "2026-07-23T17:56:24.000Z",
+          "releasedAt": "2026-07-23T18:15:21.000Z",
+          "headCommit": "99cee522758b481d47bad4026e524be4a8278e9e",
+          "validationStatus": "passed",
+          "hostedStatus": "passed"
+        }
+      ]
+    },
+    {
+      "id": "vaticor",
+      "canonicalRepositoryId": "IntelIP/vaticor",
+      "headCommit": "bdb25c6232e383325f59938896d319fef74fa4d0",
+      "headCommittedAt": "2026-07-23T10:38:31-07:00",
+      "branch": "codex/neural-vaticor-launch-blueprint",
+      "sources": [
+        {
+          "id": "vaticor:git",
+          "system": "git",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "bdb25c6232e383325f59938896d319fef74fa4d0",
+          "contentDigest": "8c72996cf87d8181482114fe0f0dcd40fb14d629c2b7b606137d198985225856",
+          "reason": null
+        },
+        {
+          "id": "vaticor:tabellio-validation",
+          "system": "tabellio-validation",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "5bf60611ac2a87f856cea0c5a04261d2fbb7789d",
+          "contentDigest": "3dccf1b059d95ea073b65f2f89162d3e272661f9045a88c72cd28f919c08608d",
+          "reason": null
+        },
+        {
+          "id": "vaticor:tabellio-review",
+          "system": "tabellio-review",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "refs/tabellio/reviews is absent."
+        },
+        {
+          "id": "vaticor:entire",
+          "system": "entire",
+          "status": "available",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": "4aae87d98727857ae69208db234c6fbf4c71adf1",
+          "contentDigest": "88c2465c35957ec8c74d6301c3500f6662cb2dacc028be2f0f87aaab78459f5d",
+          "reason": null
+        },
+        {
+          "id": "vaticor:plane",
+          "system": "plane",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "No sanitized provider snapshot supplied to the read-only collector."
+        },
+        {
+          "id": "vaticor:github",
+          "system": "github",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "No sanitized provider snapshot supplied to the read-only collector."
+        },
+        {
+          "id": "vaticor:github-actions",
+          "system": "github-actions",
+          "status": "unavailable",
+          "observedAt": "2026-07-23T22:44:48.000Z",
+          "sourceVersion": null,
+          "contentDigest": null,
+          "reason": "No sanitized provider snapshot supplied to the read-only collector."
+        }
+      ],
+      "metrics": {
+        "commitCount": {
+          "status": "measured",
+          "value": 68,
+          "unit": "count",
+          "sourceIds": [
+            "vaticor:git"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "validationAttemptCount": {
+          "status": "measured",
+          "value": 6,
+          "unit": "count",
+          "sourceIds": [
+            "vaticor:tabellio-validation"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "validationPassRate": {
+          "status": "measured",
+          "value": 0.6666666666666666,
+          "unit": "ratio",
+          "sourceIds": [
+            "vaticor:tabellio-validation"
+          ],
+          "reason": null,
+          "numerator": 4,
+          "denominator": 6
+        },
+        "costTelemetryCoverage": {
+          "status": "measured",
+          "value": 0,
+          "unit": "ratio",
+          "sourceIds": [
+            "vaticor:tabellio-validation"
+          ],
+          "reason": null,
+          "numerator": 0,
+          "denominator": 6
+        },
+        "entireCheckpointCount": {
+          "status": "measured",
+          "value": 55,
+          "unit": "count",
+          "sourceIds": [
+            "vaticor:entire"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "reviewFindingCount": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "count",
+          "sourceIds": [
+            "vaticor:tabellio-review"
+          ],
+          "reason": "refs/tabellio/reviews is absent.",
+          "numerator": null,
+          "denominator": null
+        },
+        "repairCount": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "count",
+          "sourceIds": [
+            "vaticor:tabellio-review"
+          ],
+          "reason": "refs/tabellio/reviews is absent.",
+          "numerator": null,
+          "denominator": null
+        },
+        "worktreeDirty": {
+          "status": "measured",
+          "value": true,
+          "unit": "boolean",
+          "sourceIds": [
+            "vaticor:git"
+          ],
+          "reason": null,
+          "numerator": null,
+          "denominator": null
+        },
+        "evidenceCompleteness": {
+          "status": "measured",
+          "value": 0.42857142857142855,
+          "unit": "ratio",
+          "sourceIds": [
+            "vaticor:git",
+            "vaticor:tabellio-validation",
+            "vaticor:tabellio-review",
+            "vaticor:entire",
+            "vaticor:plane",
+            "vaticor:github",
+            "vaticor:github-actions"
+          ],
+          "reason": null,
+          "numerator": 3,
+          "denominator": 7
+        },
+        "deliveryChangeCount": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "count",
+          "sourceIds": [
+            "vaticor:plane",
+            "vaticor:github"
+          ],
+          "reason": "No sanitized provider snapshot supplied to the read-only collector.",
+          "numerator": null,
+          "denominator": null
+        },
+        "taskToPrTraceability": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "ratio",
+          "sourceIds": [
+            "vaticor:plane",
+            "vaticor:github"
+          ],
+          "reason": "No sanitized provider snapshot supplied to the read-only collector.",
+          "numerator": null,
+          "denominator": null
+        },
+        "leadTimeHours": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "hours",
+          "sourceIds": [
+            "vaticor:plane",
+            "vaticor:github"
+          ],
+          "reason": "No linked story creation and merge timestamps.",
+          "numerator": null,
+          "denominator": null
+        },
+        "cycleTimeHours": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "hours",
+          "sourceIds": [
+            "vaticor:git",
+            "vaticor:plane",
+            "vaticor:github"
+          ],
+          "reason": "No linked first-activity and merge timestamps.",
+          "numerator": null,
+          "denominator": null
+        },
+        "ciDisagreementRate": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "ratio",
+          "sourceIds": [
+            "vaticor:tabellio-validation",
+            "vaticor:github-actions"
+          ],
+          "reason": "No candidates have both hosted and exact validation outcomes.",
+          "numerator": null,
+          "denominator": null
+        },
+        "releaseLagHours": {
+          "status": "unavailable",
+          "value": null,
+          "unit": "hours",
+          "sourceIds": [
+            "vaticor:github"
+          ],
+          "reason": "No linked merge and release timestamps.",
+          "numerator": null,
+          "denominator": null
+        },
+        "repositoryAdoption": {
+          "status": "measured",
+          "value": 0.6666666666666666,
+          "unit": "ratio",
+          "sourceIds": [
+            "vaticor:tabellio-validation",
+            "vaticor:tabellio-review",
+            "vaticor:entire"
+          ],
+          "reason": null,
+          "numerator": 2,
+          "denominator": 3
+        }
+      },
+      "deliveryChanges": []
+    }
+  ],
+  "integrity": {
+    "algorithm": "sha256",
+    "digest": "f3498c212abffbb79bbdc64deab430bdde3fdefffcf5b35a15196652ba1da937"
+  }
+}
