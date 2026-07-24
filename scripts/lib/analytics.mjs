@@ -258,9 +258,15 @@ function validateSourceProvenance(repositoryId, source, observedAt) {
 function validateAvailableSource(prefix, source) {
   return compactErrors([
     errorUnless(isNonEmptyString(source.sourceVersion), `${prefix}: available source requires a version.`),
+    errorUnless(providerSourceVersionSafe(source), `${prefix}: provider version contains unsafe detail.`),
     errorUnless(isSha256(source.contentDigest), `${prefix}: available source requires a content digest.`),
     errorUnless(source.reason === null, `${prefix}: available source cannot have a reason.`),
   ]);
+}
+
+function providerSourceVersionSafe(source) {
+  if (!["plane", "github", "github-actions"].includes(source.system)) return true;
+  return isSafeProviderText(source.sourceVersion);
 }
 
 function validateUnavailableSource(prefix, source) {
@@ -644,7 +650,9 @@ function isTerminalValidationInWindow(value, since, until) {
 }
 
 function hasTaskAndPullRequest(change) {
-  return Boolean(change.planeStoryId) && Boolean(change.pullRequestNumber);
+  return change.linkBasis !== "unlinked"
+    && Boolean(change.planeStoryId)
+    && Boolean(change.pullRequestNumber);
 }
 
 function exactCiComparison(change, validations) {
@@ -695,7 +703,7 @@ function collectLoadedProviderSnapshot({ id, canonicalRepositoryId, observedAt, 
       observedAt,
       status: "blocked",
       sourceVersion: fallback(snapshot?.capturedAt, null),
-      reason: `Provider snapshot is invalid: ${errors.join(" ")}`,
+      reason: `Provider snapshot is invalid (${errors.length} validation errors).`,
     });
   }
   return buildProviderResult({ id, snapshot });
@@ -849,6 +857,7 @@ function validateDeliveryChange(change, capturedAt) {
     errorUnless(isLinkBasis(change.linkBasis), `${changeId}: linkBasis is invalid.`),
     errorUnless(isNullableString(change.linkEvidence), `${changeId}: linkEvidence is invalid.`),
     errorUnless(isLinkEvidence(change), `${changeId}: linkEvidence is required for reconciled links.`),
+    errorUnless(isSafeLinkEvidence(change), `${changeId}: linkEvidence contains unsafe detail.`),
     errorUnless(isNullableString(change.planeStoryId), `${changeId}: planeStoryId is invalid.`),
     errorUnless(isNullablePositiveInteger(change.pullRequestNumber), `${changeId}: pullRequestNumber is invalid.`),
     ...dateErrors,
@@ -902,8 +911,16 @@ function providerSourceHasReason(source) {
 }
 
 function isSafeProviderReason(reason) {
-  if (!isNonEmptyString(reason) || reason.length > 300) return false;
-  return !/[\\/]|(?:bearer\s|github_pat_|ghp_|(?:password|token|secret)\s*[=:])/i.test(reason);
+  return isSafeProviderText(reason);
+}
+
+function isSafeLinkEvidence(change) {
+  return change.linkEvidence === null || isSafeProviderText(change.linkEvidence);
+}
+
+function isSafeProviderText(value) {
+  if (!isNonEmptyString(value) || value.length > 300) return false;
+  return !/[\\/]|(?:bearer\s|github_pat_|ghp_|(?:password|token|secret)\s*[=:])/i.test(value);
 }
 
 function isNullableDateTime(value) {
@@ -969,12 +986,12 @@ async function collectJsonRef(repositoryPath, { id, system, ref, observedAt, inc
     return { source: unavailableSource({ id, system, observedAt, reason: `${ref} is absent.` }), values: [] };
   }
   const version = await git(repositoryPath, ["rev-parse", ref]);
-  const names = (await git(repositoryPath, ["ls-tree", "-r", "--name-only", ref]))
+  const names = (await git(repositoryPath, ["ls-tree", "-r", "--name-only", version]))
     .split("\n").filter((name) => name && include(name)).sort();
   const values = [];
   const canonical = [];
   for (const name of names) {
-    const raw = await git(repositoryPath, ["show", `${ref}:${name}`]);
+    const raw = await git(repositoryPath, ["show", `${version}:${name}`]);
     const record = parseControlRecord(raw, validate);
     if (record.error) {
       return {

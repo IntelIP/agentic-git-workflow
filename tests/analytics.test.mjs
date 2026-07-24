@@ -467,7 +467,7 @@ test("unexpected provider fields are rejected before portable export", async (t)
   const serialized = JSON.stringify(dataset);
 
   assert(!serialized.includes("do-not-export"));
-  assert.match(serialized, /unexpected field privatePayload/);
+  assert.match(serialized, /Provider snapshot is invalid/);
   assert.equal(dataset.repositories[0].deliveryChanges.length, 0);
 });
 
@@ -484,7 +484,7 @@ test("provider source metadata is typed, privacy-safe, and case-normalized", asy
   assert.equal(malformedRepository.metrics.deliveryChangeCount.status, "unavailable");
   assert.match(
     malformedRepository.sources.find((source) => source.system === "plane").reason,
-    /source version is required/,
+    /Provider snapshot is invalid/,
   );
 
   const sensitive = providerSnapshotDocument(fixture.head, {
@@ -499,6 +499,21 @@ test("provider source metadata is typed, privacy-safe, and case-normalized", asy
 
   assert.equal(sensitiveRepository.metrics.deliveryChangeCount.status, "unavailable");
   assert(!JSON.stringify(sensitiveRepository).includes("/home/alice"));
+
+  const sensitiveFields = providerSnapshotDocument(fixture.head);
+  sensitiveFields.sources.plane.version = "/Users/alice/private-version";
+  sensitiveFields.deliveryChanges[0].linkBasis = "manual-reconciliation";
+  sensitiveFields.deliveryChanges[0].linkEvidence = "Bearer private-token";
+  await writeFile(providerSnapshot, JSON.stringify(sensitiveFields));
+  const sensitiveFieldsRepository = await collectProviderRepository(
+    fixture,
+    providerSnapshot,
+    "provider-field-private",
+  );
+
+  assert.equal(sensitiveFieldsRepository.metrics.deliveryChangeCount.status, "unavailable");
+  assert(!JSON.stringify(sensitiveFieldsRepository).includes("/Users/alice"));
+  assert(!JSON.stringify(sensitiveFieldsRepository).includes("private-token"));
 
   const normalized = providerSnapshotDocument(fixture.head);
   normalized.repository = "EXAMPLE/ANALYTICS";
@@ -533,9 +548,16 @@ test("malformed provider changes block provider metrics without aborting collect
 
   assert.equal(repository.deliveryChanges.length, 0);
   assert.equal(repository.metrics.taskToPrTraceability.status, "unavailable");
-  assert.match(repository.sources.find((source) => source.system === "plane").reason, /must be an object/);
-  assert.match(repository.sources.find((source) => source.system === "plane").reason, /planeStoryId is invalid/);
-  assert.match(repository.sources.find((source) => source.system === "plane").reason, /pullRequestNumber is invalid/);
+  assert.match(repository.sources.find((source) => source.system === "plane").reason, /Provider snapshot is invalid/);
+
+  const manyInvalid = providerSnapshotDocument(fixture.head, {
+    deliveryChanges: Array.from({ length: 20 }, () => null),
+  });
+  await writeFile(providerSnapshot, JSON.stringify(manyInvalid));
+  const bounded = await collectProviderRepository(fixture, providerSnapshot, "provider-invalid-many");
+  const boundedReason = bounded.sources.find((source) => source.system === "plane").reason;
+
+  assert(boundedReason.length <= 300);
 });
 
 test("duplicate provider delivery identifiers block provider metrics", async (t) => {
@@ -552,7 +574,7 @@ test("duplicate provider delivery identifiers block provider metrics", async (t)
   assert.equal(repository.metrics.deliveryChangeCount.status, "unavailable");
   assert.match(
     repository.sources.find((source) => source.system === "plane").reason,
-    /Duplicate delivery change id/,
+    /Provider snapshot is invalid/,
   );
 });
 
@@ -569,7 +591,7 @@ test("provider evidence cannot postdate observation or violate lifecycle orderin
   assert.equal(futureRepository.metrics.deliveryChangeCount.status, "unavailable");
   assert.match(
     futureRepository.sources.find((source) => source.system === "plane").reason,
-    /newer than observedAt/,
+    /Provider snapshot is invalid/,
   );
 
   const reversed = providerSnapshotDocument(fixture.head);
@@ -580,8 +602,23 @@ test("provider evidence cannot postdate observation or violate lifecycle orderin
   assert.equal(reversedRepository.metrics.releaseLagHours.status, "unavailable");
   assert.match(
     reversedRepository.sources.find((source) => source.system === "github").reason,
-    /delivery lifecycle ordering is invalid/,
+    /Provider snapshot is invalid/,
   );
+});
+
+test("explicitly unlinked changes do not inflate task-to-PR traceability", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-unlinked.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const document = providerSnapshotDocument(fixture.head);
+  document.deliveryChanges[0].linkBasis = "unlinked";
+  await writeFile(providerSnapshot, JSON.stringify(document));
+
+  const repository = await collectProviderRepository(fixture, providerSnapshot, "provider-unlinked");
+
+  assert.equal(repository.metrics.taskToPrTraceability.status, "measured");
+  assert.equal(repository.metrics.taskToPrTraceability.value, 0);
+  assert.equal(repository.metrics.taskToPrTraceability.numerator, 0);
 });
 
 test("CI disagreement uses unique exact-head validation evidence", async (t) => {
