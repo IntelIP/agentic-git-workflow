@@ -174,6 +174,10 @@ test("GitHub status publisher permits GitHub Cloud and loopback test transports 
     () => new GitHubStatusPublisher({ ...options, baseUrl: "https://api.github.com.example.test" }),
     /must target GitHub Cloud or loopback/,
   );
+  assert.throws(
+    () => new GitHubStatusPublisher({ ...options, baseUrl: "https://api.github.com:8443" }),
+    /must target GitHub Cloud or loopback/,
+  );
 });
 
 test("GitHub status publisher rejects unsafe endpoints and redacts token failures", async () => {
