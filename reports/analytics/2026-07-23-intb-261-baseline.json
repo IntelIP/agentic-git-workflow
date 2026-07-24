@@ -199,7 +199,7 @@
           "observedAt": "2026-07-24T05:15:00.000Z",
           "sourceVersion": null,
           "contentDigest": null,
-          "reason": "refs/tabellio/reviews is absent."
+          "reason": "Review evidence ref is absent."
         },
         {
           "id": "condere:entire",
@@ -301,7 +301,7 @@
           "sourceIds": [
             "condere:tabellio-review"
           ],
-          "reason": "refs/tabellio/reviews is absent.",
+          "reason": "Review evidence ref is absent.",
           "numerator": null,
           "denominator": null
         },
@@ -312,7 +312,7 @@
           "sourceIds": [
             "condere:tabellio-review"
           ],
-          "reason": "refs/tabellio/reviews is absent.",
+          "reason": "Review evidence ref is absent.",
           "numerator": null,
           "denominator": null
         },
@@ -464,7 +464,7 @@
           "observedAt": "2026-07-24T05:15:00.000Z",
           "sourceVersion": null,
           "contentDigest": null,
-          "reason": "refs/tabellio/reviews is absent."
+          "reason": "Review evidence ref is absent."
         },
         {
           "id": "probanda:entire",
@@ -566,7 +566,7 @@
           "sourceIds": [
             "probanda:tabellio-review"
           ],
-          "reason": "refs/tabellio/reviews is absent.",
+          "reason": "Review evidence ref is absent.",
           "numerator": null,
           "denominator": null
         },
@@ -577,7 +577,7 @@
           "sourceIds": [
             "probanda:tabellio-review"
           ],
-          "reason": "refs/tabellio/reviews is absent.",
+          "reason": "Review evidence ref is absent.",
           "numerator": null,
           "denominator": null
         },
@@ -1009,7 +1009,7 @@
           "observedAt": "2026-07-24T05:15:00.000Z",
           "sourceVersion": null,
           "contentDigest": null,
-          "reason": "refs/tabellio/reviews is absent."
+          "reason": "Review evidence ref is absent."
         },
         {
           "id": "vaticor:entire",
@@ -1111,7 +1111,7 @@
           "sourceIds": [
             "vaticor:tabellio-review"
           ],
-          "reason": "refs/tabellio/reviews is absent.",
+          "reason": "Review evidence ref is absent.",
           "numerator": null,
           "denominator": null
         },
@@ -1122,7 +1122,7 @@
           "sourceIds": [
             "vaticor:tabellio-review"
           ],
-          "reason": "refs/tabellio/reviews is absent.",
+          "reason": "Review evidence ref is absent.",
           "numerator": null,
           "denominator": null
         },
@@ -1245,6 +1245,6 @@
   ],
   "integrity": {
     "algorithm": "sha256",
-    "digest": "3119bc87abe7d21750cfdbb4c772538f42b27d853576db4a30b7debb4692e49b"
+    "digest": "ebfad995403d4cbd7af750f254dda6c73f9ad3da4ab1cb5d33d3d1866b40b103"
   }
 }

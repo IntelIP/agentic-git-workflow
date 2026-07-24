@@ -275,6 +275,61 @@ test("dataset validation binds Git provenance and revalidates delivery rows", as
   );
 });
 
+test("dataset validation constrains Git-backed versions and portable source reasons", async () => {
+  const baseline = JSON.parse(await readFile(
+    new URL("../reports/analytics/2026-07-23-intb-261-baseline.json", import.meta.url),
+    "utf8",
+  ));
+
+  const invalidControlOid = structuredClone(baseline);
+  invalidControlOid.repositories[0].sources
+    .find((source) => source.system === "tabellio-validation").sourceVersion = "not-a-git-oid";
+  resignDataset(invalidControlOid);
+  assert.throws(
+    () => validateAnalyticsDataset(invalidControlOid),
+    /Git-backed source version must be a commit OID/,
+  );
+
+  const invalidHeadLength = structuredClone(baseline);
+  const invalidHead = "a".repeat(41);
+  invalidHeadLength.repositories[0].headCommit = invalidHead;
+  invalidHeadLength.repositories[0].sources
+    .find((source) => source.system === "git").sourceVersion = invalidHead;
+  resignDataset(invalidHeadLength);
+  assert.throws(
+    () => validateAnalyticsDataset(invalidHeadLength),
+    /must match pattern|oneOf contract|revision state/,
+  );
+
+  const futureProviderVersion = structuredClone(baseline);
+  const planeSource = futureProviderVersion.repositories
+    .find((repository) => repository.id === "tabellio").sources
+    .find((source) => source.system === "plane");
+  planeSource.sourceVersion = new Date(Date.parse(planeSource.observedAt) + 1_000).toISOString();
+  resignDataset(futureProviderVersion);
+  assert.throws(
+    () => validateAnalyticsDataset(futureProviderVersion),
+    /provider version is newer than its observation/,
+  );
+
+  const futureUnavailableProviderVersion = structuredClone(baseline);
+  const unavailablePlane = futureUnavailableProviderVersion.repositories[0].sources
+    .find((source) => source.system === "plane");
+  unavailablePlane.sourceVersion = "2099-01-01T00:00:00.000Z";
+  resignDataset(futureUnavailableProviderVersion);
+  assert.throws(
+    () => validateAnalyticsDataset(futureUnavailableProviderVersion),
+    /provider version is newer than its observation/,
+  );
+
+  const unsafeReason = structuredClone(baseline);
+  const reviewSource = unsafeReason.repositories[0].sources
+    .find((source) => source.status === "unavailable");
+  reviewSource.reason = "forged |\nmissing evidence";
+  resignDataset(unsafeReason);
+  assert.throws(() => validateAnalyticsDataset(unsafeReason), /source reason contains unsafe detail/);
+});
+
 test("dataset validation rejects not-applicable repository metrics", async (t) => {
   const fixture = await createAnalyticsFixture();
   t.after(() => rm(fixture.root, { recursive: true, force: true }));
@@ -1186,7 +1241,7 @@ test("analytics validator separates direct failure exits from runner evidence ev
 
   await writeFile(malformedDatasetPath, JSON.stringify({
     schemaVersion: "tabellio-analytics-dataset/v0.1",
-    repositories: [{ deliveryChanges: [null], metrics: {}, sources: {} }],
+    repositories: [null],
   }));
   const malformedResult = await execFileAsync(process.execPath, [
     fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
@@ -1407,6 +1462,182 @@ test("analytics validator separates direct failure exits from runner evidence ev
     pathEvidence.metrics.find((metric) => metric.name === "analytics_privacy_pass").value,
     0,
   );
+});
+
+test("analytics semantic and security profiles bind delivery meaning and decoded sources", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-review-findings-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const baseline = JSON.parse(await readFile(
+    new URL("../reports/analytics/2026-07-23-intb-261-baseline.json", import.meta.url),
+    "utf8",
+  ));
+  const reportPath = fileURLToPath(
+    new URL("../reports/analytics/2026-07-23-intb-261-baseline.md", import.meta.url),
+  );
+  const validatorPath = fileURLToPath(
+    new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url),
+  );
+  const sourcePath = fileURLToPath(
+    new URL("../reports/analytics/sources/2026-07-23-tabellio-provider-snapshot.json", import.meta.url),
+  );
+
+  async function runProfile(candidate, name, profile = "semantic", extraArgs = []) {
+    const datasetPath = join(root, `${name}.json`);
+    const evidencePath = join(root, `${name}-evidence.json`);
+    await writeFile(datasetPath, JSON.stringify(candidate));
+    await execFileAsync(process.execPath, [
+      validatorPath,
+      "--profile", profile,
+      "--validator-id", `analytics-${profile}-${name}`,
+      "--dataset", datasetPath,
+      "--report", reportPath,
+      ...(profile === "semantic" ? ["--source", sourcePath] : []),
+      ...extraArgs,
+      "--out", evidencePath,
+      "--exit-mode", "evidence",
+    ], { encoding: "utf8" });
+    return JSON.parse(await readFile(evidencePath, "utf8"));
+  }
+
+  const wrongRepositorySet = structuredClone(baseline);
+  wrongRepositorySet.repositories[0].canonicalRepositoryId = "Substitute/Repository";
+  resignDataset(wrongRepositorySet);
+  assert.match(
+    (await runProfile(wrongRepositorySet, "repository-set")).summary,
+    /Canonical baseline repository set does not match/,
+  );
+
+  const unlinked = structuredClone(baseline);
+  const trace = unlinked.repositories.find((repository) => repository.id === "tabellio")
+    .deliveryChanges[0];
+  trace.linkBasis = "unlinked";
+  trace.linkEvidence = null;
+  trace.planeStoryId = null;
+  trace.pullRequestNumber = null;
+  resignDataset(unlinked);
+  assert.match(
+    (await runProfile(unlinked, "unlinked-trace")).summary,
+    /No linked Plane-to-pull-request delivery trace/,
+  );
+
+  const contradictory = structuredClone(baseline);
+  contradictory.repositories.find((repository) => repository.id === "tabellio")
+    .metrics.deliveryChangeCount.value = 7;
+  resignDataset(contradictory);
+  assert.match(
+    (await runProfile(contradictory, "contradictory-metric")).summary,
+    /metric contradicts delivery trace rows/,
+  );
+
+  const fabricatedTrace = structuredClone(baseline);
+  fabricatedTrace.repositories.find((repository) => repository.id === "tabellio")
+    .deliveryChanges[0].planeStoryId = "INTB-999";
+  resignDataset(fabricatedTrace);
+  assert.match(
+    (await runProfile(fabricatedTrace, "fabricated-trace")).summary,
+    /Delivery traces do not match the committed provider snapshot/,
+  );
+
+  const fabricatedValidationStatus = structuredClone(baseline);
+  fabricatedValidationStatus.repositories.find((repository) => repository.id === "tabellio")
+    .deliveryChanges[0].validationStatus = "failed";
+  resignDataset(fabricatedValidationStatus);
+  assert.match(
+    (await runProfile(fabricatedValidationStatus, "fabricated-validation-status")).summary,
+    /Delivery traces do not match the committed provider snapshot/,
+  );
+
+  const contradictoryCi = structuredClone(baseline);
+  const tabellio = contradictoryCi.repositories.find(
+    (repository) => repository.id === "tabellio",
+  );
+  const validationSource = tabellio.sources.find(
+    (source) => source.system === "tabellio-validation",
+  );
+  Object.assign(validationSource, {
+    status: "available",
+    sourceVersion: "a".repeat(40),
+    contentDigest: "b".repeat(64),
+    reason: null,
+  });
+  Object.assign(tabellio.metrics.validationAttemptCount, {
+    status: "measured",
+    value: 1,
+    reason: null,
+  });
+  Object.assign(tabellio.metrics.validationPassRate, {
+    status: "measured",
+    value: 1,
+    numerator: 1,
+    denominator: 1,
+    reason: null,
+  });
+  Object.assign(tabellio.metrics.costTelemetryCoverage, {
+    status: "measured",
+    value: 1,
+    numerator: 1,
+    denominator: 1,
+    reason: null,
+  });
+  tabellio.metrics.evidenceCompleteness.value = 1;
+  tabellio.metrics.evidenceCompleteness.numerator = 7;
+  tabellio.metrics.repositoryAdoption.value = 1;
+  tabellio.metrics.repositoryAdoption.numerator = 3;
+  Object.assign(tabellio.metrics.ciDisagreementRate, {
+    status: "measured",
+    value: 1,
+    numerator: 1,
+    denominator: 1,
+    reason: null,
+  });
+  resignDataset(contradictoryCi);
+  assert.match(
+    (await runProfile(contradictoryCi, "contradictory-ci")).summary,
+    /ciDisagreementRate: metric contradicts delivery trace rows/,
+  );
+
+  const decodedPath = structuredClone(baseline);
+  decodedPath.repositories[0].metrics.validationPassRate.reason = "/Users/alice/private/repo";
+  resignDataset(decodedPath);
+  const decodedPathRaw = JSON.stringify(decodedPath)
+    .replace("/Users/alice/private/repo", "\\u002fUsers\\u002falice\\u002fprivate\\u002frepo");
+  const decodedPathFile = join(root, "decoded-path.json");
+  await writeFile(decodedPathFile, decodedPathRaw);
+  const decodedPathEvidence = join(root, "decoded-path-evidence.json");
+  await execFileAsync(process.execPath, [
+    validatorPath,
+    "--profile", "security",
+    "--validator-id", "analytics-security-decoded-path",
+    "--dataset", decodedPathFile,
+    "--report", reportPath,
+    "--out", decodedPathEvidence,
+    "--exit-mode", "evidence",
+  ], { encoding: "utf8" });
+  assert.equal(JSON.parse(await readFile(decodedPathEvidence, "utf8")).status, "failed");
+
+  const sensitiveSourcePath = join(root, "provider-sensitive-source.json");
+  await writeFile(sensitiveSourcePath, JSON.stringify({ reason: "token=private-value" }));
+  const sourceEvidence = await runProfile(
+    baseline,
+    "sensitive-source",
+    "security",
+    ["--source", sensitiveSourcePath],
+  );
+  assert.equal(sourceEvidence.status, "failed");
+  assert.equal(sourceEvidence.artifacts.length, 3);
+
+  const urlCredentialSourcePath = join(root, "provider-url-credential.json");
+  await writeFile(
+    urlCredentialSourcePath,
+    JSON.stringify({ callback: "https://alice:hunter2@example.com/private" }),
+  );
+  const urlCredentialEvidence = await runProfile(
+    baseline,
+    "url-credential-source",
+    "security",
+    ["--source", urlCredentialSourcePath],
+  );
+  assert.equal(urlCredentialEvidence.status, "failed");
 });
 
 async function createAnalyticsFixture() {

@@ -2,7 +2,7 @@
 
 Observed: 2026-07-24T05:15:00.000Z
 Window: 2026-07-01T00:00:00.000Z to 2026-07-24T05:14:59.000Z
-Dataset digest: `3119bc87abe7d21750cfdbb4c772538f42b27d853576db4a30b7debb4692e49b`
+Dataset digest: `ebfad995403d4cbd7af750f254dda6c73f9ad3da4ab1cb5d33d3d1866b40b103`
 
 ## Interpretation Boundary
 
@@ -27,7 +27,7 @@ Repository rows describe evidence coverage and delivery-system behavior. They do
 
 ### IntelIP/Condere
 
-- tabellio-review: unavailable — refs/tabellio/reviews is absent.
+- tabellio-review: unavailable — Review evidence ref is absent.
 - plane: unavailable — No sanitized provider snapshot supplied to the read-only collector.
 - github: unavailable — No sanitized provider snapshot supplied to the read-only collector.
 - github-actions: unavailable — No sanitized provider snapshot supplied to the read-only collector.
@@ -35,7 +35,7 @@ Repository rows describe evidence coverage and delivery-system behavior. They do
 ### IntelIP/Probanda
 
 - tabellio-validation: blocked — Schema-invalid JSON in control record.
-- tabellio-review: unavailable — refs/tabellio/reviews is absent.
+- tabellio-review: unavailable — Review evidence ref is absent.
 - entire: unavailable — Entire metadata checkpoint ref is absent.
 - plane: unavailable — No sanitized provider snapshot supplied to the read-only collector.
 - github: unavailable — No sanitized provider snapshot supplied to the read-only collector.
@@ -48,7 +48,7 @@ Repository rows describe evidence coverage and delivery-system behavior. They do
 ### IntelIP/vaticor
 
 - tabellio-validation: blocked — Schema-invalid JSON in control record.
-- tabellio-review: unavailable — refs/tabellio/reviews is absent.
+- tabellio-review: unavailable — Review evidence ref is absent.
 - plane: unavailable — No sanitized provider snapshot supplied to the read-only collector.
 - github: unavailable — No sanitized provider snapshot supplied to the read-only collector.
 - github-actions: unavailable — No sanitized provider snapshot supplied to the read-only collector.

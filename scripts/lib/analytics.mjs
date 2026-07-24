@@ -291,10 +291,19 @@ function validateSourceProvenance(repositoryId, source, observedAt) {
 function validateAvailableSource(prefix, source) {
   return compactErrors([
     errorUnless(isNonEmptyString(source.sourceVersion), `${prefix}: available source requires a version.`),
+    errorUnless(gitBackedSourceVersionSafe(source), `${prefix}: Git-backed source version must be a commit OID.`),
     errorUnless(providerSourceVersionSafe(source), `${prefix}: provider version contains unsafe detail.`),
+    errorUnless(providerSourceVersionNotAfterObservation(source), `${prefix}: provider version is newer than its observation.`),
     errorUnless(isSha256(source.contentDigest), `${prefix}: available source requires a content digest.`),
     errorUnless(source.reason === null, `${prefix}: available source cannot have a reason.`),
   ]);
+}
+
+function gitBackedSourceVersionSafe(source) {
+  if (!["git", "tabellio-validation", "tabellio-review", "entire"].includes(source.system)) {
+    return true;
+  }
+  return isCommitOid(source.sourceVersion);
 }
 
 function providerSourceVersionSafe(source) {
@@ -302,17 +311,29 @@ function providerSourceVersionSafe(source) {
   return isSafeProviderVersion(source.sourceVersion);
 }
 
+function providerSourceVersionNotAfterObservation(source) {
+  if (!["plane", "github", "github-actions"].includes(source.system)) return true;
+  return versionNotAfter(source.sourceVersion, source.observedAt);
+}
+
 function validateUnavailableSource(prefix, source) {
   return compactErrors([
     errorUnless(source.contentDigest === null, `${prefix}: unavailable source cannot have a content digest.`),
+    errorUnless(
+      source.sourceVersion === null || gitBackedSourceVersionSafe(source),
+      `${prefix}: Git-backed source version must be a commit OID.`,
+    ),
+    errorUnless(
+      source.sourceVersion === null || providerSourceVersionSafe(source),
+      `${prefix}: provider version contains unsafe detail.`,
+    ),
+    errorUnless(
+      source.sourceVersion === null || providerSourceVersionNotAfterObservation(source),
+      `${prefix}: provider version is newer than its observation.`,
+    ),
     errorUnless(isNonEmptyString(source.reason), `${prefix}: unavailable source requires a reason.`),
-    errorUnless(providerSourceReasonSafe(source), `${prefix}: provider reason contains unsafe detail.`),
+    errorUnless(isSafeProviderReason(source.reason), `${prefix}: source reason contains unsafe detail.`),
   ]);
-}
-
-function providerSourceReasonSafe(source) {
-  if (!["plane", "github", "github-actions"].includes(source.system)) return true;
-  return isSafeProviderReason(source.reason);
 }
 
 function isMetricStatus(status) {
@@ -1124,7 +1145,15 @@ async function collectJsonRef(repositoryPath, { id, system, ref, observedAt, inc
     acceptableExitCodes: [0, 1],
   });
   if (exists.exitCode !== 0) {
-    return { source: unavailableSource({ id, system, observedAt, reason: `${ref} is absent.` }), values: [] };
+    return {
+      source: unavailableSource({
+        id,
+        system,
+        observedAt,
+        reason: `${controlSourceLabel(system)} evidence ref is absent.`,
+      }),
+      values: [],
+    };
   }
   const version = await git(repositoryPath, ["rev-parse", ref]);
   const names = (await git(repositoryPath, ["ls-tree", "-r", "--name-only", version]))
@@ -1153,6 +1182,12 @@ async function collectJsonRef(repositoryPath, { id, system, ref, observedAt, inc
     source: availableSource({ id, system, observedAt, sourceVersion: version, content: JSON.stringify(canonical) }),
     values,
   };
+}
+
+function controlSourceLabel(system) {
+  if (system === "tabellio-validation") return "Validation";
+  if (system === "tabellio-review") return "Review";
+  return "Control";
 }
 
 async function collectEntireMetadata(repositoryPath, { id, observedAt }) {
@@ -1333,7 +1368,7 @@ function fallback(value, replacement) {
 }
 
 function isCommitOid(value) {
-  return /^[0-9a-f]{40,64}$/.test(value ?? "");
+  return /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value ?? "");
 }
 
 function isSha256(value) {
