@@ -18,12 +18,12 @@ const allowed = {
 try {
   const options = parseCommandOptions(process.argv.slice(2), allowed);
   if (options.command === "collect") {
-    requireOptions(options, ["config", "id", "observedAt", "since", "until", "out", "report"], "collect");
+    requireOptions(options, ["config", "id", "since", "until", "out", "report"], "collect");
     const config = JSON.parse(await readFile(resolve(options.config), "utf8"));
     const dataset = await collectAnalyticsDataset({
       id: options.id,
       repositories: config.repositories,
-      observedAt: options.observedAt,
+      observedAt: options.observedAt ?? new Date().toISOString(),
       since: options.since,
       until: options.until,
     });

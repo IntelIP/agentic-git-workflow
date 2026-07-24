@@ -84,6 +84,7 @@ export async function collectAnalyticsDataset({ id, repositories, observedAt, si
   const collected = await Promise.all(repositories.map((repository) =>
     collectRepositorySafely({ ...repository, observedAt, since, until })
   ));
+  assertRequiredRepositories(repositories, collected);
   collected.sort((left, right) => left.id.localeCompare(right.id));
   const dataset = {
     schemaVersion: ANALYTICS_SCHEMA_VERSION,
@@ -106,6 +107,13 @@ function assertRepositoryInputs(id, repositories) {
 
 function hasIncompleteRepositoryInput(repository) {
   return !repository?.id || !repository?.path;
+}
+
+function assertRequiredRepositories(inputs, collected) {
+  const failed = inputs.find((input, index) =>
+    input.required === true && collected[index]?.headCommit === null
+  );
+  if (failed) throw new Error(`Required repository ${failed.id} could not be collected.`);
 }
 
 export function validateAnalyticsDataset(dataset) {
@@ -266,7 +274,7 @@ function validateAvailableSource(prefix, source) {
 
 function providerSourceVersionSafe(source) {
   if (!["plane", "github", "github-actions"].includes(source.system)) return true;
-  return isSafeProviderText(source.sourceVersion);
+  return isSafeProviderVersion(source.sourceVersion);
 }
 
 function validateUnavailableSource(prefix, source) {
@@ -899,12 +907,12 @@ function validateDeliveryChange(change, capturedAt) {
     .map((field) => errorUnless(isNullableDateTime(change[field]), `${changeId}: ${field} is invalid.`));
   return compactErrors([
     ...unexpectedFieldErrors(change, DELIVERY_CHANGE_FIELDS, changeId),
-    errorUnless(isNonEmptyString(change.id) && isCommitOid(change.headCommit), "Delivery change identity is invalid."),
+    errorUnless(isSafeProviderText(change.id) && isCommitOid(change.headCommit), "Delivery change identity is invalid."),
     errorUnless(isLinkBasis(change.linkBasis), `${changeId}: linkBasis is invalid.`),
     errorUnless(isNullableString(change.linkEvidence), `${changeId}: linkEvidence is invalid.`),
     errorUnless(isLinkEvidence(change), `${changeId}: linkEvidence is required for reconciled links.`),
     errorUnless(isSafeLinkEvidence(change), `${changeId}: linkEvidence contains unsafe detail.`),
-    errorUnless(isNullableString(change.planeStoryId), `${changeId}: planeStoryId is invalid.`),
+    errorUnless(isNullableSafeProviderText(change.planeStoryId), `${changeId}: planeStoryId is invalid.`),
     errorUnless(isNullablePositiveInteger(change.pullRequestNumber), `${changeId}: pullRequestNumber is invalid.`),
     ...dateErrors,
     errorUnless(hasCoherentDeliveryLifecycle(change), `${changeId}: delivery lifecycle ordering is invalid.`),
@@ -966,7 +974,28 @@ function isSafeLinkEvidence(change) {
 
 function isSafeProviderText(value) {
   if (!isNonEmptyString(value) || value.length > 300) return false;
-  return !/[\\/]|(?:bearer\s|github_pat_|ghp_|(?:password|token|secret)\s*[=:])/i.test(value);
+  return !/[\\/]/.test(value) && !hasCredentialShape(value);
+}
+
+function isSafeProviderVersion(value) {
+  return [
+    isNonEmptyString(value),
+    value?.length <= 300,
+    !hasCredentialShape(value),
+    providerVersionShapeSafe(value),
+  ].every(Boolean);
+}
+
+function providerVersionShapeSafe(value) {
+  return isHttpEntityTag(value) || !/[\\/]/.test(value);
+}
+
+function isHttpEntityTag(value) {
+  return /^(?:W\/)?"[^"\\\r\n]*"$/.test(value);
+}
+
+function hasCredentialShape(value) {
+  return /(?:bearer\s|github_pat_|ghp_|(?:password|token|secret)\s*[=:])/i.test(value);
 }
 
 function isNullableDateTime(value) {
@@ -975,6 +1004,10 @@ function isNullableDateTime(value) {
 
 function isNullableString(value) {
   return value === null || isNonEmptyString(value);
+}
+
+function isNullableSafeProviderText(value) {
+  return value === null || isSafeProviderText(value);
 }
 
 function isNullablePositiveInteger(value) {

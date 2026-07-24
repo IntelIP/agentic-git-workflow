@@ -2,7 +2,8 @@
   "repositories": [
     {
       "id": "example",
-      "path": "."
+      "path": ".",
+      "required": true
     }
   ]
 }

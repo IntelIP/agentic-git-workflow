@@ -155,6 +155,19 @@ test("one unreadable repository does not discard healthy repository evidence", a
   assert.match(renderAnalyticsReport(dataset), /HEAD: unavailable/);
 });
 
+test("required repository failures abort collection", async () => {
+  await assert.rejects(
+    collectAnalyticsDataset({
+      id: "required-repository-baseline",
+      repositories: [{ id: "required", path: "/definitely/missing/tabellio", required: true }],
+      observedAt: OBSERVED_AT,
+      since: SINCE,
+      until: UNTIL,
+    }),
+    /Required repository required could not be collected/,
+  );
+});
+
 test("absent evidence sources remain unavailable instead of becoming zero", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-missing-"));
   const repo = join(root, "repo");
@@ -532,6 +545,8 @@ test("provider source metadata is typed, privacy-safe, and case-normalized", asy
   sensitiveFields.sources.plane.version = "/Users/alice/private-version";
   sensitiveFields.deliveryChanges[0].linkBasis = "manual-reconciliation";
   sensitiveFields.deliveryChanges[0].linkEvidence = "Bearer private-token";
+  sensitiveFields.deliveryChanges[0].id = "/Users/alice/private-change";
+  sensitiveFields.deliveryChanges[0].planeStoryId = "token=private-story";
   await writeFile(providerSnapshot, JSON.stringify(sensitiveFields));
   const sensitiveFieldsRepository = await collectProviderRepository(
     fixture,
@@ -542,6 +557,7 @@ test("provider source metadata is typed, privacy-safe, and case-normalized", asy
   assert.equal(sensitiveFieldsRepository.metrics.deliveryChangeCount.status, "unavailable");
   assert(!JSON.stringify(sensitiveFieldsRepository).includes("/Users/alice"));
   assert(!JSON.stringify(sensitiveFieldsRepository).includes("private-token"));
+  assert(!JSON.stringify(sensitiveFieldsRepository).includes("private-story"));
 
   const normalized = providerSnapshotDocument(fixture.head);
   normalized.repository = "EXAMPLE/ANALYTICS";
@@ -549,6 +565,13 @@ test("provider source metadata is typed, privacy-safe, and case-normalized", asy
   const normalizedRepository = await collectProviderRepository(fixture, providerSnapshot, "provider-source-case");
 
   assert.equal(normalizedRepository.metrics.deliveryChangeCount.status, "measured");
+
+  const weakEtag = providerSnapshotDocument(fixture.head);
+  weakEtag.sources.github.version = 'W/"github-snapshot-123"';
+  await writeFile(providerSnapshot, JSON.stringify(weakEtag));
+  const weakEtagRepository = await collectProviderRepository(fixture, providerSnapshot, "provider-source-etag");
+
+  assert.equal(weakEtagRepository.metrics.deliveryChangeCount.status, "measured");
 });
 
 test("malformed provider changes block provider metrics without aborting collection", async (t) => {
