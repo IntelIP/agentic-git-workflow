@@ -308,6 +308,14 @@ test("dataset validation binds Git provenance and revalidates delivery rows", as
   assert.throws(() => validateAnalyticsDataset(dataset), /Delivery change identity is invalid/);
 
   repository.deliveryChanges.pop();
+  repository.metrics.deliveryChangeCount.value = 2;
+  resignDataset(dataset);
+  assert.throws(
+    () => validateAnalyticsDataset(dataset),
+    /delivery\/deliveryChangeCount: metric contradicts delivery trace rows/,
+  );
+
+  repository.metrics.deliveryChangeCount.value = 1;
   repository.deliveryChanges[0].releasedAt = "2026-07-23T19:30:00.000Z";
   resignDataset(dataset);
 
@@ -819,6 +827,31 @@ test("analytics collector rejects colliding dataset and report paths", async (t)
   await assertConfigAliasRejected(configPath, configHardLink, reportPath);
   assert.match(await readFile(configPath, "utf8"), /repositories/);
 
+  const providerSnapshotPath = join(root, "provider-snapshot.json");
+  const providerConfigPath = join(root, "provider-config.json");
+  await writeFile(providerSnapshotPath, JSON.stringify(providerSnapshotDocument("a".repeat(40))));
+  await writeFile(providerConfigPath, JSON.stringify({
+    repositories: [{
+      id: "example",
+      path: fileURLToPath(new URL("..", import.meta.url)),
+      providerSnapshot: providerSnapshotPath,
+    }],
+  }));
+  await assertProviderSnapshotAliasRejected(
+    providerConfigPath,
+    providerSnapshotPath,
+    reportPath,
+  );
+
+  const providerHardLink = join(root, "provider-hard-link.json");
+  await link(providerSnapshotPath, providerHardLink);
+  await assertProviderSnapshotAliasRejected(
+    providerConfigPath,
+    providerHardLink,
+    reportPath,
+  );
+  assert.match(await readFile(providerSnapshotPath, "utf8"), /deliveryChanges/);
+
   await assert.rejects(
     assertOutputBoundary({
       outputs: [configPath],
@@ -847,6 +880,22 @@ async function assertConfigAliasRejected(configPath, datasetPath, reportPath) {
     (error) => error.code === 1 && /must not alias --config/.test(error.stderr),
   );
   assert.match(await readFile(configPath, "utf8"), /repositories/);
+}
+
+async function assertProviderSnapshotAliasRejected(configPath, datasetPath, reportPath) {
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      fileURLToPath(new URL("../scripts/tabellio-analytics.mjs", import.meta.url)),
+      "collect",
+      "--config", configPath,
+      "--id", "provider-alias",
+      "--since", SINCE,
+      "--until", UNTIL,
+      "--out", datasetPath,
+      "--report", reportPath,
+    ], { encoding: "utf8" }),
+    (error) => error.code === 1 && /must not alias --config or provider snapshots/.test(error.stderr),
+  );
 }
 
 async function assertAnalyticsOutputCollision(datasetPath, reportPath, message) {
@@ -1669,6 +1718,24 @@ test("control refs newer than the observation are blocked", async (t) => {
   assert.equal(source.status, "blocked");
   assert.match(source.reason, /newer than the requested observation/);
   assert.equal(repository.metrics.validationAttemptCount.status, "unavailable");
+});
+
+test("control refs that do not resolve to commits are blocked", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-tree-control-");
+  const tree = (await runGit({ cwd: repo, args: ["rev-parse", "HEAD^{tree}"] })).stdout.trim();
+  await runGit({ cwd: repo, args: ["update-ref", "refs/tabellio/validations", tree] });
+  const entireRef = join(repo, ".git", "refs", "heads", "entire", "checkpoints", "v1");
+  await mkdir(join(entireRef, ".."), { recursive: true });
+  await writeFile(entireRef, `${tree}\n`);
+
+  const repository = await collectSingleRepository(repo, "tree-control");
+  for (const system of ["tabellio-validation", "entire"]) {
+    const source = repository.sources.find((entry) => entry.system === system);
+    assert.equal(source.status, "blocked");
+    assert.match(source.reason, /does not resolve to a commit/);
+  }
+  assert.equal(repository.metrics.validationAttemptCount.status, "unavailable");
+  assert.equal(repository.metrics.entireCheckpointCount.status, "unavailable");
 });
 
 test("Entire metadata is collected from the configured control remote", async (t) => {

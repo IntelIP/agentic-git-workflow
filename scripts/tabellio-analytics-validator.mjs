@@ -9,6 +9,7 @@ import { assertAllowedOptions, parseOptionPairs, reportCliError, requireOptions 
 import {
   renderAnalyticsReport,
   validateAnalyticsDataset,
+  validateDeliveryMetricConsistency,
   validateProviderSnapshot,
 } from "./lib/analytics.mjs";
 import { assertOutputBoundary } from "./lib/output-boundary.mjs";
@@ -185,7 +186,7 @@ function validateSemanticProfile({ dataset, reportRaw, source }) {
     .map((repository) => repository.canonicalRepositoryId.toLowerCase())
     .sort();
   const linkedTraces = traces.filter(hasLinkedTrace);
-  const deliveryMetricErrors = repositories.flatMap(validateDeliveryMetrics);
+  const deliveryMetricErrors = repositories.flatMap(validateDeliveryMetricConsistency);
   const providerEvidenceErrors = validateProviderEvidence(dataset, source);
   const errors = compact([
     ...datasetErrors,
@@ -295,22 +296,6 @@ function hasLinkedTrace(change) {
     && change.linkBasis !== "unlinked"
     && typeof change.planeStoryId === "string"
     && Number.isInteger(change.pullRequestNumber);
-}
-
-function validateDeliveryMetrics(repository) {
-  const changes = deliveryChanges(repository);
-  const linked = changes.filter(hasLinkedTrace);
-  const expected = {
-    deliveryChangeCount: deliveryCountProjection(repository, changes),
-    taskToPrTraceability: traceabilityProjection(repository, changes, linked),
-    leadTimeHours: leadTimeProjection(repository, linked),
-    cycleTimeHours: cycleTimeProjection(repository, linked),
-    ciDisagreementRate: ciDisagreementProjection(repository, changes),
-    releaseLagHours: releaseLagProjection(repository, changes),
-  };
-  return Object.entries(expected).flatMap(([metricId, projection]) =>
-    validateDeliveryMetric(repository, metricId, projection)
-  );
 }
 
 function validateProviderEvidence(dataset, snapshot) {
@@ -494,133 +479,6 @@ function providerProjection(change, system) {
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
-}
-
-function deliveryChanges(repository) {
-  const changes = Array.isArray(repository?.deliveryChanges) ? repository.deliveryChanges : [];
-  return changes.filter(isObject);
-}
-
-function isObject(value) {
-  return Boolean(value) && typeof value === "object";
-}
-
-function deliveryCountProjection(repository, changes) {
-  return hasAvailableSources(repository, ["plane", "github"])
-    ? measuredCount(changes.length)
-    : null;
-}
-
-function traceabilityProjection(repository, changes, linked) {
-  if (!hasAvailableSources(repository, ["plane", "github"]) || changes.length === 0) return null;
-  return measuredRatio(linked.length, changes.length);
-}
-
-function leadTimeProjection(repository, linked) {
-  if (!hasAvailableSources(repository, ["plane", "github"])) return null;
-  return measuredAverage(linked.flatMap((change) =>
-    durationHours(change.storyCreatedAt, change.mergedAt)
-  ));
-}
-
-function cycleTimeProjection(repository, linked) {
-  if (!hasAvailableSources(repository, ["git", "plane", "github"])) return null;
-  return measuredAverage(linked.flatMap((change) =>
-    durationHours(change.firstActivityAt, change.mergedAt)
-  ));
-}
-
-function releaseLagProjection(repository, changes) {
-  if (!hasAvailableSources(repository, ["github"])) return null;
-  return measuredAverage(changes.flatMap((change) =>
-    durationHours(change.mergedAt, change.releasedAt)
-  ));
-}
-
-function ciDisagreementProjection(repository, changes) {
-  if (!hasAvailableSources(repository, ["tabellio-validation", "github-actions"])) return null;
-  const comparable = changes.filter(hasComparableCiStatuses);
-  if (comparable.length === 0) return null;
-  const disagreements = comparable.filter((change) =>
-    change.validationStatus !== change.hostedStatus
-  ).length;
-  return measuredRatio(disagreements, comparable.length);
-}
-
-function hasComparableCiStatuses(change) {
-  return isComparableStatus(change.validationStatus)
-    && isComparableStatus(change.hostedStatus);
-}
-
-function isComparableStatus(status) {
-  return ["passed", "failed", "blocked"].includes(status);
-}
-
-function validateDeliveryMetric(repository, metricId, projection) {
-  const actual = repository?.metrics?.[metricId];
-  const validator = projection === null
-    ? unavailableProjectionMatches
-    : measuredProjectionMatches;
-  const valid = validator(actual, projection);
-  return valid ? [] : [`delivery/${metricId}: metric contradicts delivery trace rows.`];
-}
-
-function unavailableProjectionMatches(actual) {
-  return Boolean(actual) && actual.status === "unavailable";
-}
-
-function measuredProjectionMatches(actual, projection) {
-  if (!actual) return false;
-  if (actual.status !== "measured") return false;
-  return metricProjectionMatches(actual, projection);
-}
-
-function hasAvailableSources(repository, systems) {
-  const sources = Array.isArray(repository?.sources) ? repository.sources : [];
-  return systems.every((system) =>
-    sources.some((source) =>
-      source?.system === system && source.status === "available"
-    )
-  );
-}
-
-function measuredCount(value) {
-  return { value, numerator: null, denominator: null };
-}
-
-function measuredRatio(numerator, denominator) {
-  return { value: numerator / denominator, numerator, denominator };
-}
-
-function measuredAverage(values) {
-  if (values.length === 0) return null;
-  return {
-    value: values.reduce((sum, value) => sum + value, 0) / values.length,
-    numerator: null,
-    denominator: values.length,
-  };
-}
-
-function durationHours(start, end) {
-  const duration = Date.parse(end) - Date.parse(start);
-  return isNonNegativeFinite(duration) ? [duration / 3_600_000] : [];
-}
-
-function isNonNegativeFinite(value) {
-  return Number.isFinite(value) && value >= 0;
-}
-
-function metricProjectionMatches(actual, expected) {
-  if (expected === null) return false;
-  return nearlyEqual(actual.value, expected.value)
-    && actual.numerator === expected.numerator
-    && actual.denominator === expected.denominator;
-}
-
-function nearlyEqual(left, right) {
-  return Number.isFinite(left)
-    && Number.isFinite(right)
-    && Math.abs(left - right) <= 1e-12;
 }
 
 function hasCollectedGitEvidence(repository) {

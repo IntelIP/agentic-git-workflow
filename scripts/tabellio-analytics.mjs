@@ -20,8 +20,12 @@ try {
   const options = parseCommandOptions(process.argv.slice(2), allowed);
   if (options.command === "collect") {
     requireOptions(options, ["config", "id", "since", "until", "out", "report"], "collect");
-    await assertDistinctOutputs(options.out, options.report, options.config);
     const config = JSON.parse(await readFile(resolve(options.config), "utf8"));
+    await assertDistinctOutputs(
+      options.out,
+      options.report,
+      [options.config, ...providerSnapshotPaths(config.repositories)],
+    );
     const dataset = await collectAnalyticsDataset({
       id: options.id,
       repositories: config.repositories,
@@ -62,13 +66,20 @@ async function writeOutput(path, content) {
   await writeFile(target, content);
 }
 
-async function assertDistinctOutputs(datasetPath, reportPath, configPath) {
+function providerSnapshotPaths(repositories) {
+  if (!Array.isArray(repositories)) return [];
+  return repositories
+    .map((repository) => repository?.providerSnapshot)
+    .filter((path) => typeof path === "string");
+}
+
+async function assertDistinctOutputs(datasetPath, reportPath, protectedInputs) {
   await assertOutputBoundary({
     outputs: [datasetPath, reportPath],
-    protectedInputs: [configPath],
+    protectedInputs,
     duplicatePathMessage: "--out and --report must resolve to distinct paths.",
     symbolicLinkMessage: "--out and --report must not be symbolic links.",
     outputAliasMessage: "--out and --report must resolve to distinct files.",
-    inputAliasMessage: "--out and --report must not alias --config.",
+    inputAliasMessage: "--out and --report must not alias --config or provider snapshots.",
   });
 }

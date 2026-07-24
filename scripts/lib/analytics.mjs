@@ -217,6 +217,7 @@ function validateRepositoryMetrics(repository, definitionIds, observedAt) {
   );
   const duplicateDeliveryErrors = duplicateDeliveryChangeErrors(repository.deliveryChanges);
   const deliverySourceErrors = validateDeliverySourceConsistency(repository);
+  const deliveryMetricErrors = validateDeliveryMetricConsistency(repository);
   return [
     ...errors,
     ...sourceErrors,
@@ -225,7 +226,107 @@ function validateRepositoryMetrics(repository, definitionIds, observedAt) {
     ...deliveryErrors,
     ...duplicateDeliveryErrors,
     ...deliverySourceErrors,
+    ...deliveryMetricErrors,
   ];
+}
+
+export function validateDeliveryMetricConsistency(repository) {
+  const changes = Array.isArray(repository?.deliveryChanges)
+    ? repository.deliveryChanges.filter(isPlainObject)
+    : [];
+  const linked = changes.filter(hasTaskAndPullRequest);
+  const expected = {
+    deliveryChangeCount: deliveryCountProjection(repository, changes),
+    taskToPrTraceability: traceabilityProjection(repository, changes, linked),
+    leadTimeHours: averageDeliveryProjection(repository, ["plane", "github"], linked, "storyCreatedAt", "mergedAt"),
+    cycleTimeHours: averageDeliveryProjection(repository, ["git", "plane", "github"], linked, "firstActivityAt", "mergedAt"),
+    ciDisagreementRate: ciDisagreementProjection(repository, changes),
+    releaseLagHours: averageDeliveryProjection(repository, ["github"], changes, "mergedAt", "releasedAt"),
+  };
+  return Object.entries(expected).flatMap(([metricId, projection]) =>
+    deliveryMetricProjectionErrors(repository, metricId, projection)
+  );
+}
+
+function deliveryCountProjection(repository, changes) {
+  return hasAvailableSourceSystems(repository, ["plane", "github"])
+    ? countProjection(changes.length)
+    : null;
+}
+
+function traceabilityProjection(repository, changes, linked) {
+  if (!hasAvailableSourceSystems(repository, ["plane", "github"]) || changes.length === 0) return null;
+  return ratioProjection(linked.length, changes.length);
+}
+
+function averageDeliveryProjection(repository, systems, changes, startField, endField) {
+  if (!hasAvailableSourceSystems(repository, systems)) return null;
+  const values = changes.flatMap((change) => durationHours(change[startField], change[endField]));
+  if (values.length === 0) return null;
+  return {
+    value: values.reduce((sum, value) => sum + value, 0) / values.length,
+    numerator: null,
+    denominator: values.length,
+  };
+}
+
+function ciDisagreementProjection(repository, changes) {
+  if (!hasAvailableSourceSystems(repository, ["tabellio-validation", "github-actions"])) return null;
+  const comparable = changes.filter((change) =>
+    isComparableStatus(change.validationStatus) && isComparableStatus(change.hostedStatus)
+  );
+  if (comparable.length === 0) return null;
+  const disagreements = comparable.filter((change) =>
+    change.validationStatus !== change.hostedStatus
+  ).length;
+  return ratioProjection(disagreements, comparable.length);
+}
+
+function countProjection(value) {
+  return { value, numerator: null, denominator: null };
+}
+
+function ratioProjection(numerator, denominator) {
+  return { value: numerator / denominator, numerator, denominator };
+}
+
+function hasAvailableSourceSystems(repository, systems) {
+  const sources = Array.isArray(repository?.sources) ? repository.sources : [];
+  return systems.every((system) =>
+    sources.some((source) => source?.system === system && source.status === "available")
+  );
+}
+
+function deliveryMetricProjectionErrors(repository, metricId, projection) {
+  const actual = repository?.metrics?.[metricId];
+  return projection === null
+    ? unavailableDeliveryMetricErrors(actual, metricId)
+    : measuredDeliveryMetricErrors(actual, metricId, projection);
+}
+
+function unavailableDeliveryMetricErrors(actual, metricId) {
+  return actual?.status === "unavailable" ? [] : deliveryMetricError(metricId);
+}
+
+function measuredDeliveryMetricErrors(actual, metricId, projection) {
+  if (actual?.status !== "measured") return deliveryMetricError(metricId);
+  return projectionMatches(actual, projection) ? [] : deliveryMetricError(metricId);
+}
+
+function deliveryMetricError(metricId) {
+  return [`delivery/${metricId}: metric contradicts delivery trace rows.`];
+}
+
+function projectionMatches(actual, expected) {
+  return nearlyEqual(actual.value, expected.value)
+    && actual.numerator === expected.numerator
+    && actual.denominator === expected.denominator;
+}
+
+function nearlyEqual(left, right) {
+  return Number.isFinite(left)
+    && Number.isFinite(right)
+    && Math.abs(left - right) <= 1e-12;
 }
 
 function validateDeliverySourceConsistency(repository) {
@@ -1353,6 +1454,18 @@ async function resolveControlRef(repositoryPath, { id, system, ref, observedAt }
     };
   }
   const resolved = await resolveObservedRefVersion(repositoryPath, ref, observedAt);
+  if (resolved.invalid) {
+    return {
+      source: blockedSource({
+        id,
+        system,
+        observedAt,
+        sourceVersion: resolved.version,
+        reason: `${controlSourceLabel(system)} evidence ref does not resolve to a commit.`,
+      }),
+      version: resolved.version,
+    };
+  }
   if (!resolved.observed) {
     return {
       source: blockedSource({
@@ -1369,9 +1482,18 @@ async function resolveControlRef(repositoryPath, { id, system, ref, observedAt }
 }
 
 async function resolveObservedRefVersion(repositoryPath, ref, observedAt) {
-  const version = await git(repositoryPath, ["rev-parse", ref]);
+  const resolved = await runGit({
+    cwd: repositoryPath,
+    args: ["rev-parse", "--verify", `${ref}^{commit}`],
+    acceptableExitCodes: [0, 1, 128],
+  });
+  if (resolved.exitCode !== 0) {
+    const version = await git(repositoryPath, ["rev-parse", ref]);
+    return { version, observed: false, invalid: true };
+  }
+  const version = resolved.stdout.trim();
   const committedAt = await git(repositoryPath, ["show", "-s", "--format=%cI", version]);
-  return { version, observed: dateNotAfter(committedAt, observedAt) };
+  return { version, observed: dateNotAfter(committedAt, observedAt), invalid: false };
 }
 
 function controlSourceLabel(system) {
@@ -1404,6 +1526,18 @@ async function collectEntireRef(repositoryPath, { id, observedAt, ref }) {
   });
   if (exists.exitCode !== 0) return null;
   const resolved = await resolveObservedRefVersion(repositoryPath, ref, observedAt);
+  if (resolved.invalid) {
+    return {
+      source: blockedSource({
+        id,
+        system: "entire",
+        observedAt,
+        sourceVersion: resolved.version,
+        reason: "Entire metadata checkpoint ref does not resolve to a commit.",
+      }),
+      count: 0,
+    };
+  }
   if (!resolved.observed) {
     return {
       source: blockedSource({
