@@ -122,10 +122,14 @@ function validateRepositoryMetrics(repository, definitionIds) {
     errorUnless(isCommitOid(repository.headCommit), `${repository.id}: invalid head commit.`),
   ]);
   const sourceIds = new Set((repository.sources ?? []).map((source) => source.id));
-  const metricErrors = Object.entries(repository.metrics ?? {}).flatMap(([metricId, metric]) =>
+  const metrics = repository.metrics ?? {};
+  const missingMetricErrors = [...definitionIds]
+    .filter((metricId) => !Object.hasOwn(metrics, metricId))
+    .map((metricId) => `${repository.id}: required metric ${metricId} is missing.`);
+  const metricErrors = Object.entries(metrics).flatMap(([metricId, metric]) =>
     validateMetric(repository.id, metricId, metric, definitionIds, sourceIds)
   );
-  return [...errors, ...metricErrors];
+  return [...errors, ...missingMetricErrors, ...metricErrors];
 }
 
 function validateMetric(repositoryId, metricId, metric, definitionIds, sourceIds) {
@@ -152,7 +156,7 @@ function validWindow(window) {
 }
 
 function hasCompleteDefinitions(definitions) {
-  return Array.isArray(definitions) && definitions.length === METRIC_DEFINITIONS.length;
+  return Array.isArray(definitions) && stableStringify(definitions) === stableStringify(METRIC_DEFINITIONS);
 }
 
 function hasRepositoryIdentity(repository) {
@@ -351,16 +355,23 @@ function buildRepositoryMetrics({ commits, status, since, until, gitSource, vali
     evidenceCompleteness: measured(availableCount / DECLARED_SOURCE_SYSTEMS.length, "ratio", sources.map((source) => source.id), availableCount, DECLARED_SOURCE_SYSTEMS.length),
     deliveryChangeCount: providerMetric(provider, measured(changes.length, "count", providerSourceIds), "count", providerSourceIds),
     taskToPrTraceability: providerMetric(provider, ratioOrMissing(traced.length, changes.length, "ratio", providerSourceIds, "No eligible delivery changes in the provider snapshot."), "ratio", providerSourceIds),
-    leadTimeHours: averageOrMissing(leadTimes, "hours", providerSourceIds, "No linked story creation and merge timestamps."),
-    cycleTimeHours: averageOrMissing(cycleTimes, "hours", [gitSource.id, ...providerSourceIds], "No linked first-activity and merge timestamps."),
-    ciDisagreementRate: ratioOrMissing(ciDisagreements.length, ciComparisons.length, "ratio", [validation.source.id, provider.sources[2].id], "No candidates have both hosted and exact validation outcomes."),
-    releaseLagHours: averageOrMissing(releaseLags, "hours", [provider.sources[1].id], "No linked merge and release timestamps."),
+    leadTimeHours: providerMetric(provider, averageOrMissing(leadTimes, "hours", providerSourceIds, "No linked story creation and merge timestamps."), "hours", providerSourceIds),
+    cycleTimeHours: providerMetric(provider, averageOrMissing(cycleTimes, "hours", [gitSource.id, ...providerSourceIds], "No linked first-activity and merge timestamps."), "hours", [gitSource.id, ...providerSourceIds]),
+    ciDisagreementRate: sourceMetric([validation.source, provider.sources[2]], ratioOrMissing(ciDisagreements.length, ciComparisons.length, "ratio", [validation.source.id, provider.sources[2].id], "No candidates have both hosted and exact validation outcomes."), "ratio"),
+    releaseLagHours: sourceMetric([provider.sources[1]], averageOrMissing(releaseLags, "hours", [provider.sources[1].id], "No linked merge and release timestamps."), "hours"),
     repositoryAdoption: measured(nativeAvailable / nativeSources.length, "ratio", nativeSources.map((source) => source.id), nativeAvailable, nativeSources.length),
   };
 }
 
 function providerMetric(provider, availableMetric, unit, sourceIds) {
   return provider.available ? availableMetric : missing(unit, sourceIds, provider.reason);
+}
+
+function sourceMetric(sources, availableMetric, unit) {
+  const unavailable = sources.find((source) => source.status !== "available");
+  return unavailable
+    ? missing(unit, sources.map((source) => source.id), unavailable.reason)
+    : availableMetric;
 }
 
 function isTerminalValidationInWindow(value, since, until) {
@@ -390,7 +401,7 @@ async function collectProviderSnapshot({ id, canonicalRepositoryId, providerSnap
       id,
       observedAt,
       status: "blocked",
-      reason: `Provider snapshot is unreadable: ${loaded.error}`,
+      reason: "Provider snapshot is missing, unreadable, or malformed.",
     });
   }
   const snapshot = loaded.value;
@@ -431,8 +442,8 @@ function providerMissingReason(sources) {
 async function readProviderSnapshot(path) {
   try {
     return { value: JSON.parse(await readFile(await realpath(path), "utf8")), error: null };
-  } catch (error) {
-    return { value: null, error: error instanceof Error ? error.message : String(error) };
+  } catch {
+    return { value: null, error: true };
   }
 }
 
@@ -495,15 +506,20 @@ function validateProviderSource(system, source) {
 }
 
 function validateDeliveryChange(change) {
+  if (!isPlainObject(change)) return ["Delivery change must be an object."];
+  const changeId = isNonEmptyString(change.id) ? change.id : "delivery change";
   const dateErrors = ["storyCreatedAt", "firstActivityAt", "mergedAt", "releasedAt"]
-    .map((field) => errorUnless(isNullableDateTime(change[field]), `${change.id}: ${field} is invalid.`));
+    .map((field) => errorUnless(isNullableDateTime(change[field]), `${changeId}: ${field} is invalid.`));
   return compactErrors([
-    errorUnless(Boolean(change.id) && isCommitOid(change.headCommit), "Delivery change identity is invalid."),
-    errorUnless(isLinkBasis(change.linkBasis), `${change.id}: linkBasis is invalid.`),
-    errorUnless(isLinkEvidence(change), `${change.id}: linkEvidence is required for reconciled links.`),
+    errorUnless(isNonEmptyString(change.id) && isCommitOid(change.headCommit), "Delivery change identity is invalid."),
+    errorUnless(isLinkBasis(change.linkBasis), `${changeId}: linkBasis is invalid.`),
+    errorUnless(isNullableString(change.linkEvidence), `${changeId}: linkEvidence is invalid.`),
+    errorUnless(isLinkEvidence(change), `${changeId}: linkEvidence is required for reconciled links.`),
+    errorUnless(isNullableString(change.planeStoryId), `${changeId}: planeStoryId is invalid.`),
+    errorUnless(isNullablePositiveInteger(change.pullRequestNumber), `${changeId}: pullRequestNumber is invalid.`),
     ...dateErrors,
-    errorUnless(isOutcomeStatus(change.validationStatus), `${change.id}: validationStatus is invalid.`),
-    errorUnless(isOutcomeStatus(change.hostedStatus), `${change.id}: hostedStatus is invalid.`),
+    errorUnless(isOutcomeStatus(change.validationStatus), `${changeId}: validationStatus is invalid.`),
+    errorUnless(isOutcomeStatus(change.hostedStatus), `${changeId}: hostedStatus is invalid.`),
   ]);
 }
 
@@ -525,6 +541,22 @@ function providerSourceHasReason(source) {
 
 function isNullableDateTime(value) {
   return value === null || isDateTime(value);
+}
+
+function isNullableString(value) {
+  return value === null || isNonEmptyString(value);
+}
+
+function isNullablePositiveInteger(value) {
+  return value === null || (Number.isInteger(value) && value > 0);
+}
+
+function isNonEmptyString(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function isOutcomeStatus(value) {

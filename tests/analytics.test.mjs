@@ -118,6 +118,116 @@ test("dataset validation rejects tampering and zero denominators", async (t) => 
   assert.throws(() => validateAnalyticsDataset(dataset), /zero denominator|Integrity digest/);
 });
 
+test("dataset validation requires the canonical metric set and definitions", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const dataset = await collectAnalyticsDataset({
+    id: "contract-baseline",
+    repositories: [{ id: "fixture", path: fixture.repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+
+  delete dataset.repositories[0].metrics.commitCount;
+  assert.throws(() => validateAnalyticsDataset(dataset), /required metric commitCount is missing/);
+
+  const second = structuredClone(await collectAnalyticsDataset({
+    id: "definition-baseline",
+    repositories: [{ id: "fixture", path: fixture.repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  }));
+  second.metricDefinitions[0] = { ...second.metricDefinitions[0], unit: "score" };
+  assert.throws(() => validateAnalyticsDataset(second), /Metric definitions are incomplete/);
+});
+
+test("provider read failures are blocked without leaking local paths", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-provider-read-"));
+  const repo = join(root, "repo");
+  const missingSnapshot = join(root, "private-secret-provider.json");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await initializeRepository(repo);
+
+  const dataset = await collectAnalyticsDataset({
+    id: "provider-read-baseline",
+    repositories: [{ id: "fixture", path: repo, providerSnapshot: missingSnapshot }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  const serialized = JSON.stringify(dataset);
+
+  assert(!serialized.includes(root));
+  assert(!serialized.includes("private-secret-provider.json"));
+  assert.match(serialized, /Provider snapshot is missing, unreadable, or malformed/);
+});
+
+test("malformed provider changes block provider metrics without aborting collection", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-invalid.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  await writeFile(providerSnapshot, JSON.stringify(providerSnapshotDocument(fixture.head, {
+    deliveryChanges: [null, {
+      id: "bad-link",
+      linkBasis: "explicit",
+      linkEvidence: null,
+      planeStoryId: { invalid: true },
+      pullRequestNumber: "not-a-number",
+      storyCreatedAt: null,
+      firstActivityAt: null,
+      mergedAt: null,
+      releasedAt: null,
+      headCommit: fixture.head,
+      validationStatus: "passed",
+      hostedStatus: "passed",
+    }],
+  })));
+
+  const dataset = await collectAnalyticsDataset({
+    id: "provider-invalid-baseline",
+    repositories: [{ id: "fixture", path: fixture.repo, providerSnapshot }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  const repository = dataset.repositories[0];
+
+  assert.equal(repository.deliveryChanges.length, 0);
+  assert.equal(repository.metrics.taskToPrTraceability.status, "unavailable");
+  assert.match(repository.sources.find((source) => source.system === "plane").reason, /must be an object/);
+  assert.match(repository.sources.find((source) => source.system === "plane").reason, /planeStoryId is invalid/);
+  assert.match(repository.sources.find((source) => source.system === "plane").reason, /pullRequestNumber is invalid/);
+});
+
+test("provider-derived metrics require their declared evidence sources", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-partial.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  await writeFile(providerSnapshot, JSON.stringify(providerSnapshotDocument(fixture.head, {
+    sources: {
+      plane: { status: "unavailable", reason: "Plane snapshot unavailable." },
+      github: { status: "available", version: "github-2026-07-23" },
+      "github-actions": { status: "unavailable", reason: "Actions snapshot unavailable." },
+    },
+  })));
+
+  const dataset = await collectAnalyticsDataset({
+    id: "provider-partial-baseline",
+    repositories: [{ id: "fixture", path: fixture.repo, providerSnapshot }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  const metrics = dataset.repositories[0].metrics;
+
+  assert.deepEqual([metrics.leadTimeHours.status, metrics.leadTimeHours.value], ["unavailable", null]);
+  assert.deepEqual([metrics.cycleTimeHours.status, metrics.cycleTimeHours.value], ["unavailable", null]);
+  assert.deepEqual([metrics.ciDisagreementRate.status, metrics.ciDisagreementRate.value], ["unavailable", null]);
+  assert.equal(metrics.releaseLagHours.status, "measured");
+});
+
 test("malformed validation evidence blocks its metrics without blocking local Git", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-malformed-"));
   const repo = join(root, "repo");
@@ -193,6 +303,33 @@ async function createAnalyticsFixture() {
   });
   const head = (await runGit({ cwd: repo, args: ["rev-parse", "HEAD"] })).stdout.trim();
   return { root, repo, head };
+}
+
+function providerSnapshotDocument(headCommit, overrides = {}) {
+  return {
+    schemaVersion: "tabellio-analytics-provider-snapshot/v0.1",
+    repository: "example/analytics",
+    capturedAt: OBSERVED_AT,
+    sources: overrides.sources ?? {
+      plane: { status: "available", version: "plane-2026-07-23" },
+      github: { status: "available", version: "github-2026-07-23" },
+      "github-actions": { status: "available", version: "actions-2026-07-23" },
+    },
+    deliveryChanges: overrides.deliveryChanges ?? [{
+      id: "change-1",
+      linkBasis: "explicit",
+      linkEvidence: "Fixture contract",
+      planeStoryId: "INTB-1",
+      pullRequestNumber: 1,
+      storyCreatedAt: "2026-07-10T10:00:00.000Z",
+      firstActivityAt: "2026-07-10T12:00:00.000Z",
+      mergedAt: "2026-07-11T12:00:00.000Z",
+      releasedAt: "2026-07-12T12:00:00.000Z",
+      headCommit,
+      validationStatus: "passed",
+      hostedStatus: "passed",
+    }],
+  };
 }
 
 async function initializeRepository(repo) {
