@@ -116,9 +116,24 @@
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "canonicalRepositoryId": { "type": "string", "minLength": 1 },
-        "headCommit": { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
-        "headCommittedAt": { "type": "string", "format": "date-time" },
-        "branch": { "type": "string", "minLength": 1 },
+        "headCommit": {
+          "oneOf": [
+            { "type": "string", "pattern": "^[0-9a-f]{40,64}$" },
+            { "type": "null" }
+          ]
+        },
+        "headCommittedAt": {
+          "oneOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        },
+        "branch": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
         "sources": {
           "type": "array",
           "minItems": 1,

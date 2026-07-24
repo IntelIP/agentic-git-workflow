@@ -114,6 +114,31 @@ test("commit count traverses non-monotonic commit dates", async (t) => {
   assert.equal(repository.metrics.commitCount.value, 2);
 });
 
+test("one unreadable repository does not discard healthy repository evidence", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+
+  const dataset = await collectAnalyticsDataset({
+    id: "partial-repository-baseline",
+    repositories: [
+      { id: "healthy", path: fixture.repo },
+      { id: "missing", path: join(fixture.root, "missing-repository") },
+    ],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  const healthy = dataset.repositories.find((repository) => repository.id === "healthy");
+  const missing = dataset.repositories.find((repository) => repository.id === "missing");
+
+  assert.equal(healthy.metrics.commitCount.status, "measured");
+  assert.equal(missing.headCommit, null);
+  assert.equal(missing.sources.find((source) => source.system === "git").status, "blocked");
+  assert.equal(missing.metrics.commitCount.status, "unavailable");
+  assert.equal(validateAnalyticsDataset(dataset), dataset);
+  assert.match(renderAnalyticsReport(dataset), /HEAD: unavailable/);
+});
+
 test("absent evidence sources remain unavailable instead of becoming zero", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-missing-"));
   const repo = join(root, "repo");
@@ -248,6 +273,34 @@ test("dataset validation enforces window ordering and metric semantics", async (
     () => validateAnalyticsDataset(invalidDate),
     /\$\.observedAt must be an ISO date-time/,
   );
+
+  const unsupportedMetric = await collectAnalyticsDataset({
+    id: "unsupported-source-baseline",
+    repositories: [{ id: "fixture", path: fixture.repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  const validationSource = unsupportedMetric.repositories[0].sources
+    .find((source) => source.system === "tabellio-validation");
+  validationSource.status = "unavailable";
+  validationSource.sourceVersion = null;
+  validationSource.contentDigest = null;
+  validationSource.reason = "Evidence unavailable.";
+  unsupportedMetric.repositories[0].metrics.validationAttemptCount = {
+    status: "measured",
+    value: 1,
+    unit: "count",
+    sourceIds: [validationSource.id],
+    reason: null,
+    numerator: null,
+    denominator: null,
+  };
+  resignDataset(unsupportedMetric);
+  assert.throws(
+    () => validateAnalyticsDataset(unsupportedMetric),
+    /sources do not support the metric state or definition/,
+  );
 });
 
 test("repository identity excludes local paths and URL credentials", async (t) => {
@@ -368,20 +421,31 @@ test("malformed provider changes block provider metrics without aborting collect
     }],
   })));
 
-  const dataset = await collectAnalyticsDataset({
-    id: "provider-invalid-baseline",
-    repositories: [{ id: "fixture", path: fixture.repo, providerSnapshot }],
-    observedAt: OBSERVED_AT,
-    since: SINCE,
-    until: UNTIL,
-  });
-  const repository = dataset.repositories[0];
+  const repository = await collectProviderRepository(fixture, providerSnapshot, "provider-invalid");
 
   assert.equal(repository.deliveryChanges.length, 0);
   assert.equal(repository.metrics.taskToPrTraceability.status, "unavailable");
   assert.match(repository.sources.find((source) => source.system === "plane").reason, /must be an object/);
   assert.match(repository.sources.find((source) => source.system === "plane").reason, /planeStoryId is invalid/);
   assert.match(repository.sources.find((source) => source.system === "plane").reason, /pullRequestNumber is invalid/);
+});
+
+test("duplicate provider delivery identifiers block provider metrics", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-duplicate.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const document = providerSnapshotDocument(fixture.head);
+  document.deliveryChanges.push(structuredClone(document.deliveryChanges[0]));
+  await writeFile(providerSnapshot, JSON.stringify(document));
+
+  const repository = await collectProviderRepository(fixture, providerSnapshot, "provider-duplicate");
+
+  assert.equal(repository.deliveryChanges.length, 0);
+  assert.equal(repository.metrics.deliveryChangeCount.status, "unavailable");
+  assert.match(
+    repository.sources.find((source) => source.system === "plane").reason,
+    /Duplicate delivery change id/,
+  );
 });
 
 test("provider-derived metrics require their declared evidence sources", async (t) => {
@@ -527,6 +591,17 @@ async function collectSingleRepository(repo, id) {
   const dataset = await collectAnalyticsDataset({
     id: `${id}-baseline`,
     repositories: [{ id, path: repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  return dataset.repositories[0];
+}
+
+async function collectProviderRepository(fixture, providerSnapshot, id) {
+  const dataset = await collectAnalyticsDataset({
+    id: `${id}-baseline`,
+    repositories: [{ id: "fixture", path: fixture.repo, providerSnapshot }],
     observedAt: OBSERVED_AT,
     since: SINCE,
     until: UNTIL,

@@ -45,6 +45,8 @@ const DECLARED_SOURCE_SYSTEMS = Object.freeze([
   "github-actions",
 ]);
 
+const AVAILABILITY_METRICS = new Set(["evidenceCompleteness", "repositoryAdoption"]);
+
 const PROVIDER_SNAPSHOT_FIELDS = Object.freeze([
   "schemaVersion",
   "repository",
@@ -80,7 +82,7 @@ export async function collectAnalyticsDataset({ id, repositories, observedAt, si
   }
 
   const collected = await Promise.all(repositories.map((repository) =>
-    collectRepository({ ...repository, observedAt, since, until })
+    collectRepositorySafely({ ...repository, observedAt, since, until })
   ));
   collected.sort((left, right) => left.id.localeCompare(right.id));
   const dataset = {
@@ -162,22 +164,23 @@ function hasMetricDefinitions(dataset) {
 }
 
 function validateRepositoryMetrics(repository, definitionIds) {
+  const sources = repository.sources ?? [];
+  const sourceMap = new Map(sources.map((source) => [source.id, source]));
   const errors = compactErrors([
     errorUnless(hasRepositoryIdentity(repository), "Repository identity is incomplete."),
-    errorUnless(isCommitOid(repository.headCommit), `${repository.id}: invalid head commit.`),
+    errorUnless(hasValidRepositoryRevision(repository, sourceMap), `${repository.id}: invalid repository revision state.`),
   ]);
-  const sourceIds = new Set((repository.sources ?? []).map((source) => source.id));
   const metrics = repository.metrics ?? {};
   const missingMetricErrors = [...definitionIds]
     .filter((metricId) => !Object.hasOwn(metrics, metricId))
     .map((metricId) => `${repository.id}: required metric ${metricId} is missing.`);
   const metricErrors = Object.entries(metrics).flatMap(([metricId, metric]) =>
-    validateMetric(repository.id, metricId, metric, definitionIds, sourceIds)
+    validateMetric(repository.id, metricId, metric, definitionIds, sourceMap)
   );
   return [...errors, ...missingMetricErrors, ...metricErrors];
 }
 
-function validateMetric(repositoryId, metricId, metric, definitionIds, sourceIds) {
+function validateMetric(repositoryId, metricId, metric, definitionIds, sourceMap) {
   const prefix = `${repositoryId}/${metricId}`;
   const definition = METRIC_DEFINITIONS.find((entry) => entry.id === metricId);
   return compactErrors([
@@ -185,7 +188,7 @@ function validateMetric(repositoryId, metricId, metric, definitionIds, sourceIds
     errorUnless(isMetricStatus(metric.status), `${prefix}: invalid status.`),
     errorUnless(hasValidMetricValue(metric), `${prefix}: metric value does not match status.`),
     errorUnless(metricMatchesDefinition(metric, definition), `${prefix}: metric value, unit, or ratio fields violate its definition.`),
-    errorUnless(metricSourcesExist(metric, sourceIds), `${prefix}: unknown source id.`),
+    errorUnless(metricSourcesSupportDefinition(metricId, metric, definition, sourceMap), `${prefix}: sources do not support the metric state or definition.`),
     errorUnless(metric.denominator !== 0, `${prefix}: zero denominator is forbidden.`),
   ]);
 }
@@ -208,6 +211,22 @@ function hasCompleteDefinitions(definitions) {
 
 function hasRepositoryIdentity(repository) {
   return Boolean(repository?.id) && Boolean(repository?.canonicalRepositoryId);
+}
+
+function hasValidRepositoryRevision(repository, sourceMap) {
+  const gitSource = [...sourceMap.values()].find((source) => source.system === "git");
+  if (gitSource?.status === "available") {
+    return [
+      isCommitOid(repository.headCommit),
+      isDateTime(repository.headCommittedAt),
+      isNonEmptyString(repository.branch),
+    ].every(Boolean);
+  }
+  return [
+    repository.headCommit === null,
+    repository.headCommittedAt === null,
+    repository.branch === null,
+  ].every(Boolean);
 }
 
 function isMetricStatus(status) {
@@ -256,8 +275,19 @@ function isBoundedRatio(value) {
   return isNonNegativeFinite(value) && value <= 1;
 }
 
-function metricSourcesExist(metric, sourceIds) {
-  return asArray(metric.sourceIds).every((sourceId) => sourceIds.has(sourceId));
+function metricSourcesSupportDefinition(metricId, metric, definition, sourceMap) {
+  if (!definition) return false;
+  const sources = asArray(metric.sourceIds).map((sourceId) => sourceMap.get(sourceId));
+  return [
+    sources.every(Boolean),
+    sources.every((source) => definition.sourceSystems.includes(source?.system)),
+    metricSourceAvailabilityMatches(metricId, metric, sources),
+  ].every(Boolean);
+}
+
+function metricSourceAvailabilityMatches(metricId, metric, sources) {
+  const requiresAvailableSources = metric.status === "measured" && !AVAILABILITY_METRICS.has(metricId);
+  return !requiresAvailableSources || sources.every((source) => source?.status === "available");
 }
 
 export function renderAnalyticsReport(dataset) {
@@ -300,7 +330,7 @@ export function renderAnalyticsReport(dataset) {
 function renderRepositoryRow(repository) {
   return [
     `| ${repository.canonicalRepositoryId}`,
-    `\`${repository.headCommit.slice(0, 12)}\``,
+    repository.headCommit ? `\`${repository.headCommit.slice(0, 12)}\`` : "unknown",
     display(repository.metrics.commitCount),
     display(repository.metrics.validationAttemptCount),
     display(repository.metrics.validationPassRate),
@@ -342,12 +372,55 @@ function renderRepositoryProvenance(repository) {
   return [
     `### ${repository.canonicalRepositoryId}`,
     "",
-    `- HEAD: \`${repository.headCommit}\` at ${repository.headCommittedAt}`,
+    repository.headCommit
+      ? `- HEAD: \`${repository.headCommit}\` at ${repository.headCommittedAt}`
+      : "- HEAD: unavailable",
     ...repository.sources.map((source) =>
       `- ${source.system}: ${source.status}; version ${source.sourceVersion ?? "unknown"}; digest ${source.contentDigest ?? "unavailable"}`
     ),
     "",
   ];
+}
+
+async function collectRepositorySafely(input) {
+  try {
+    return await collectRepository(input);
+  } catch {
+    return failedRepository(input.id, input.observedAt);
+  }
+}
+
+function failedRepository(id, observedAt) {
+  const reason = "Local Git repository is missing, unreadable, or invalid.";
+  const sources = DECLARED_SOURCE_SYSTEMS.map((system) => blockedSource({
+    id: `${id}:${system}`,
+    system,
+    observedAt,
+    sourceVersion: null,
+    reason,
+  }));
+  return {
+    id,
+    canonicalRepositoryId: `unavailable/${id}`,
+    headCommit: null,
+    headCommittedAt: null,
+    branch: null,
+    sources,
+    metrics: unavailableRepositoryMetrics(sources, reason),
+    deliveryChanges: [],
+  };
+}
+
+function unavailableRepositoryMetrics(sources, reason) {
+  const bySystem = new Map(sources.map((source) => [source.system, source]));
+  const metrics = Object.fromEntries(METRIC_DEFINITIONS.map((definition) => [
+    definition.id,
+    missing(definition.unit, definition.sourceSystems.map((system) => bySystem.get(system).id), reason),
+  ]));
+  metrics.evidenceCompleteness = measured(0, "ratio", sources.map((source) => source.id), 0, sources.length);
+  const nativeSources = ["tabellio-validation", "tabellio-review", "entire"].map((system) => bySystem.get(system));
+  metrics.repositoryAdoption = measured(0, "ratio", nativeSources.map((source) => source.id), 0, nativeSources.length);
+  return metrics;
 }
 
 async function collectRepository({ id, path, providerSnapshot, observedAt, since, until }) {
@@ -589,7 +662,29 @@ function validateProviderSnapshot(snapshot, canonicalRepositoryId) {
     validateProviderSource(system, snapshot?.sources?.[system])
   );
   const changeErrors = asArray(snapshot?.deliveryChanges).flatMap(validateDeliveryChange);
-  return [...validateProviderHeader(snapshot, canonicalRepositoryId), ...sourceErrors, ...changeErrors];
+  return [
+    ...validateProviderHeader(snapshot, canonicalRepositoryId),
+    ...sourceErrors,
+    ...changeErrors,
+    ...duplicateDeliveryChangeErrors(snapshot?.deliveryChanges),
+  ];
+}
+
+function duplicateDeliveryChangeErrors(changes) {
+  const ids = asArray(changes)
+    .map((change) => change?.id)
+    .filter(isNonEmptyString);
+  return duplicateValues(ids).map((id) => `Duplicate delivery change id: ${id}.`);
+}
+
+function duplicateValues(values) {
+  const seen = new Set();
+  const duplicates = new Set();
+  for (const value of values) {
+    if (seen.has(value)) duplicates.add(value);
+    seen.add(value);
+  }
+  return [...duplicates];
 }
 
 function validateProviderHeader(snapshot, canonicalRepositoryId) {
