@@ -166,6 +166,40 @@ test("dataset validation executes the published schema contract", async (t) => {
   );
 });
 
+test("dataset validation enforces window ordering and metric semantics", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const dataset = await collectAnalyticsDataset({
+    id: "semantic-baseline",
+    repositories: [{ id: "fixture", path: fixture.repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+
+  dataset.window.since = "2026-07-24T00:00:00.000Z";
+  resignDataset(dataset);
+  assert.throws(() => validateAnalyticsDataset(dataset), /window ordering is invalid/);
+
+  const invalidMetric = await collectAnalyticsDataset({
+    id: "metric-baseline",
+    repositories: [{ id: "fixture", path: fixture.repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  invalidMetric.repositories[0].metrics.commitCount = {
+    ...invalidMetric.repositories[0].metrics.commitCount,
+    value: true,
+    unit: "ratio",
+  };
+  resignDataset(invalidMetric);
+  assert.throws(
+    () => validateAnalyticsDataset(invalidMetric),
+    /metric value, unit, or ratio fields violate its definition/,
+  );
+});
+
 test("repository identity excludes local paths and URL credentials", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-private-remote-"));
   const repo = join(root, "repo");
@@ -217,6 +251,50 @@ test("provider read failures are blocked without leaking local paths", async (t)
   assert(!serialized.includes(root));
   assert(!serialized.includes("private-secret-provider.json"));
   assert.match(serialized, /Provider snapshot is missing, unreadable, or malformed/);
+});
+
+test("null provider snapshots remain blocked without aborting collection", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-null.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  await writeFile(providerSnapshot, "null");
+
+  const dataset = await collectAnalyticsDataset({
+    id: "provider-null-baseline",
+    repositories: [{ id: "fixture", path: fixture.repo, providerSnapshot }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+
+  assert.equal(dataset.repositories[0].deliveryChanges.length, 0);
+  assert.equal(dataset.repositories[0].metrics.taskToPrTraceability.status, "unavailable");
+  assert.match(
+    dataset.repositories[0].sources.find((source) => source.system === "plane").reason,
+    /Provider snapshot is invalid/,
+  );
+});
+
+test("unexpected provider fields are rejected before portable export", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-private-field.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const document = providerSnapshotDocument(fixture.head);
+  document.deliveryChanges[0].privatePayload = "do-not-export";
+  await writeFile(providerSnapshot, JSON.stringify(document));
+
+  const dataset = await collectAnalyticsDataset({
+    id: "provider-private-field-baseline",
+    repositories: [{ id: "fixture", path: fixture.repo, providerSnapshot }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  const serialized = JSON.stringify(dataset);
+
+  assert(!serialized.includes("do-not-export"));
+  assert.match(serialized, /unexpected field privatePayload/);
+  assert.equal(dataset.repositories[0].deliveryChanges.length, 0);
 });
 
 test("malformed provider changes block provider metrics without aborting collection", async (t) => {

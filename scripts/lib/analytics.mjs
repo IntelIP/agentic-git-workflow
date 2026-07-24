@@ -45,6 +45,31 @@ const DECLARED_SOURCE_SYSTEMS = Object.freeze([
   "github-actions",
 ]);
 
+const PROVIDER_SNAPSHOT_FIELDS = Object.freeze([
+  "schemaVersion",
+  "repository",
+  "capturedAt",
+  "sources",
+  "deliveryChanges",
+]);
+
+const PROVIDER_SOURCE_FIELDS = Object.freeze(["status", "version", "reason"]);
+
+const DELIVERY_CHANGE_FIELDS = Object.freeze([
+  "id",
+  "linkBasis",
+  "linkEvidence",
+  "planeStoryId",
+  "pullRequestNumber",
+  "storyCreatedAt",
+  "firstActivityAt",
+  "mergedAt",
+  "releasedAt",
+  "headCommit",
+  "validationStatus",
+  "hostedStatus",
+]);
+
 export async function collectAnalyticsDataset({ id, repositories, observedAt, since, until }) {
   assertDateRange({ observedAt, since, until });
   assertRepositoryInputs(id, repositories);
@@ -100,6 +125,7 @@ function validateDatasetHeader(dataset) {
     errorUnless(hasDatasetId(dataset), "Dataset id is required."),
     errorUnless(hasObservedAt(dataset), "observedAt must be an ISO date-time."),
     errorUnless(hasValidWindow(dataset), "Window requires ISO since and until."),
+    errorUnless(hasCoherentWindow(dataset), "Analytics window ordering is invalid."),
     errorUnless(hasRepositories(dataset), "At least one repository is required."),
     errorUnless(hasMetricDefinitions(dataset), "Metric definitions are incomplete."),
   ]);
@@ -119,6 +145,12 @@ function hasObservedAt(dataset) {
 
 function hasValidWindow(dataset) {
   return validWindow(dataset?.window);
+}
+
+function hasCoherentWindow(dataset) {
+  if (!hasObservedAt(dataset) || !hasValidWindow(dataset)) return false;
+  return Date.parse(dataset.window.since) < Date.parse(dataset.window.until)
+    && Date.parse(dataset.observedAt) >= Date.parse(dataset.window.until);
 }
 
 function hasRepositories(dataset) {
@@ -147,10 +179,12 @@ function validateRepositoryMetrics(repository, definitionIds) {
 
 function validateMetric(repositoryId, metricId, metric, definitionIds, sourceIds) {
   const prefix = `${repositoryId}/${metricId}`;
+  const definition = METRIC_DEFINITIONS.find((entry) => entry.id === metricId);
   return compactErrors([
     errorUnless(definitionIds.has(metricId), `${repositoryId}: unknown metric ${metricId}.`),
     errorUnless(isMetricStatus(metric.status), `${prefix}: invalid status.`),
     errorUnless(hasValidMetricValue(metric), `${prefix}: metric value does not match status.`),
+    errorUnless(metricMatchesDefinition(metric, definition), `${prefix}: metric value, unit, or ratio fields violate its definition.`),
     errorUnless(metricSourcesExist(metric, sourceIds), `${prefix}: unknown source id.`),
     errorUnless(metric.denominator !== 0, `${prefix}: zero denominator is forbidden.`),
   ]);
@@ -182,6 +216,44 @@ function isMetricStatus(status) {
 
 function hasValidMetricValue(metric) {
   return metric.status === "measured" ? metric.value !== null : metric.value === null;
+}
+
+function metricMatchesDefinition(metric, definition) {
+  if (!definition) return false;
+  if (metric.unit !== definition.unit) return false;
+  if (metric.status !== "measured") return isEmptyMetricValue(metric);
+  return MEASURED_METRIC_VALIDATORS[definition.unit](metric);
+}
+
+const MEASURED_METRIC_VALIDATORS = Object.freeze({
+  boolean: (metric) =>
+    typeof metric.value === "boolean" && hasNoRatioFields(metric),
+  count: (metric) =>
+    Number.isInteger(metric.value) && metric.value >= 0 && hasNoRatioFields(metric),
+  ratio: (metric) => [
+    isBoundedRatio(metric.value),
+    isNonNegativeFinite(metric.numerator),
+    Number.isInteger(metric.denominator),
+    metric.denominator > 0,
+    metric.numerator <= metric.denominator,
+  ].every(Boolean),
+  hours: (metric) =>
+    isNonNegativeFinite(metric.value)
+      && metric.numerator === null
+      && Number.isInteger(metric.denominator)
+      && metric.denominator > 0,
+});
+
+function isEmptyMetricValue(metric) {
+  return metric.value === null && hasNoRatioFields(metric);
+}
+
+function hasNoRatioFields(metric) {
+  return metric.numerator === null && metric.denominator === null;
+}
+
+function isBoundedRatio(value) {
+  return isNonNegativeFinite(value) && value <= 1;
 }
 
 function metricSourcesExist(metric, sourceIds) {
@@ -409,26 +481,35 @@ function isComparableStatus(value) {
 
 async function collectProviderSnapshot({ id, canonicalRepositoryId, providerSnapshot, observedAt }) {
   if (!providerSnapshot) {
-    const reason = "No sanitized provider snapshot supplied to the read-only collector.";
-    return providerFailure({ id, observedAt, reason, status: "unavailable" });
-  }
-  const loaded = await readProviderSnapshot(providerSnapshot);
-  if (loaded.error) {
     return providerFailure({
       id,
       observedAt,
-      status: "blocked",
-      reason: "Provider snapshot is missing, unreadable, or malformed.",
+      reason: "No sanitized provider snapshot supplied to the read-only collector.",
+      status: "unavailable",
     });
   }
-  const snapshot = loaded.value;
+  const loaded = await readProviderSnapshot(providerSnapshot);
+  if (loaded.error) return unreadableProviderFailure({ id, observedAt });
+  return collectLoadedProviderSnapshot({ id, canonicalRepositoryId, observedAt, snapshot: loaded.value });
+}
+
+function unreadableProviderFailure({ id, observedAt }) {
+  return providerFailure({
+    id,
+    observedAt,
+    status: "blocked",
+    reason: "Provider snapshot is missing, unreadable, or malformed.",
+  });
+}
+
+function collectLoadedProviderSnapshot({ id, canonicalRepositoryId, observedAt, snapshot }) {
   const errors = validateProviderSnapshot(snapshot, canonicalRepositoryId);
   if (errors.length > 0) {
     return providerFailure({
       id,
       observedAt,
       status: "blocked",
-      sourceVersion: fallback(snapshot.capturedAt, null),
+      sourceVersion: fallback(snapshot?.capturedAt, null),
       reason: `Provider snapshot is invalid: ${errors.join(" ")}`,
     });
   }
@@ -507,6 +588,7 @@ function validateProviderSnapshot(snapshot, canonicalRepositoryId) {
 
 function validateProviderHeader(snapshot, canonicalRepositoryId) {
   return compactErrors([
+    ...unexpectedFieldErrors(snapshot, PROVIDER_SNAPSHOT_FIELDS, "Provider snapshot"),
     errorUnless(snapshot?.schemaVersion === "tabellio-analytics-provider-snapshot/v0.1", "Unsupported schemaVersion."),
     errorUnless(snapshot?.repository === canonicalRepositoryId, "Repository identity mismatch."),
     errorUnless(isDateTime(snapshot?.capturedAt), "capturedAt is invalid."),
@@ -516,6 +598,7 @@ function validateProviderHeader(snapshot, canonicalRepositoryId) {
 
 function validateProviderSource(system, source) {
   return compactErrors([
+    ...unexpectedFieldErrors(source, PROVIDER_SOURCE_FIELDS, `${system} source`),
     errorUnless(isProviderSource(source), `${system} source is invalid.`),
     errorUnless(providerSourceHasVersion(source), `${system} source version is required.`),
     errorUnless(providerSourceHasReason(source), `${system} unavailable reason is required.`),
@@ -528,6 +611,7 @@ function validateDeliveryChange(change) {
   const dateErrors = ["storyCreatedAt", "firstActivityAt", "mergedAt", "releasedAt"]
     .map((field) => errorUnless(isNullableDateTime(change[field]), `${changeId}: ${field} is invalid.`));
   return compactErrors([
+    ...unexpectedFieldErrors(change, DELIVERY_CHANGE_FIELDS, changeId),
     errorUnless(isNonEmptyString(change.id) && isCommitOid(change.headCommit), "Delivery change identity is invalid."),
     errorUnless(isLinkBasis(change.linkBasis), `${changeId}: linkBasis is invalid.`),
     errorUnless(isNullableString(change.linkEvidence), `${changeId}: linkEvidence is invalid.`),
@@ -574,6 +658,14 @@ function isNonEmptyString(value) {
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function unexpectedFieldErrors(value, allowedFields, label) {
+  if (!isPlainObject(value)) return [];
+  const allowed = new Set(allowedFields);
+  return Object.keys(value)
+    .filter((field) => !allowed.has(field))
+    .map((field) => `${label}: unexpected field ${field}.`);
 }
 
 function isOutcomeStatus(value) {
