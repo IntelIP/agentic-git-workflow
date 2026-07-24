@@ -267,7 +267,13 @@ function validateUnavailableSource(prefix, source) {
   return compactErrors([
     errorUnless(source.contentDigest === null, `${prefix}: unavailable source cannot have a content digest.`),
     errorUnless(isNonEmptyString(source.reason), `${prefix}: unavailable source requires a reason.`),
+    errorUnless(providerSourceReasonSafe(source), `${prefix}: provider reason contains unsafe detail.`),
   ]);
+}
+
+function providerSourceReasonSafe(source) {
+  if (!["plane", "github", "github-actions"].includes(source.system)) return true;
+  return isSafeProviderReason(source.reason);
 }
 
 function isMetricStatus(status) {
@@ -296,6 +302,7 @@ const MEASURED_METRIC_VALIDATORS = Object.freeze({
     Number.isInteger(metric.denominator),
     metric.denominator > 0,
     metric.numerator <= metric.denominator,
+    ratioMatchesFraction(metric),
   ].every(Boolean),
   hours: (metric) =>
     isNonNegativeFinite(metric.value)
@@ -316,6 +323,11 @@ function isBoundedRatio(value) {
   return isNonNegativeFinite(value) && value <= 1;
 }
 
+function ratioMatchesFraction(metric) {
+  if (!Number.isFinite(metric.numerator) || !Number.isFinite(metric.denominator)) return false;
+  return Math.abs(metric.value - (metric.numerator / metric.denominator)) <= 1e-12;
+}
+
 function metricSourcesSupportDefinition(metricId, metric, definition, sourceMap) {
   if (!definition) return false;
   const sources = asArray(metric.sourceIds).map((sourceId) => sourceMap.get(sourceId));
@@ -324,8 +336,14 @@ function metricSourcesSupportDefinition(metricId, metric, definition, sourceMap)
     new Set(metric.sourceIds).size === metric.sourceIds.length,
     sources.every(Boolean),
     sources.every((source) => definition.sourceSystems.includes(source?.system)),
+    hasEveryRequiredSourceSystem(sources, definition.sourceSystems),
     metricSourceAvailabilityMatches(metricId, metric, sources),
   ].every(Boolean);
+}
+
+function hasEveryRequiredSourceSystem(sources, requiredSystems) {
+  const observedSystems = new Set(sources.map((source) => source?.system));
+  return requiredSystems.every((system) => observedSystems.has(system));
 }
 
 function metricSourceAvailabilityMatches(metricId, metric, sources) {
@@ -799,7 +817,7 @@ function hasProviderSchema(snapshot) {
 }
 
 function hasProviderRepository(snapshot, canonicalRepositoryId) {
-  return snapshot?.repository === canonicalRepositoryId;
+  return repositoryIdsMatch(snapshot?.repository, canonicalRepositoryId);
 }
 
 function hasProviderCaptureTime(snapshot) {
@@ -876,11 +894,16 @@ function isProviderSource(source) {
 }
 
 function providerSourceHasVersion(source) {
-  return source?.status !== "available" || Boolean(source.version);
+  return source?.status !== "available" || isNonEmptyString(source.version);
 }
 
 function providerSourceHasReason(source) {
-  return source?.status !== "unavailable" || Boolean(source.reason);
+  return source?.status !== "unavailable" || isSafeProviderReason(source.reason);
+}
+
+function isSafeProviderReason(reason) {
+  if (!isNonEmptyString(reason) || reason.length > 300) return false;
+  return !/[\\/]|(?:bearer\s|github_pat_|ghp_|(?:password|token|secret)\s*[=:])/i.test(reason);
 }
 
 function isNullableDateTime(value) {

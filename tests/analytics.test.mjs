@@ -354,6 +354,24 @@ test("dataset validation enforces window ordering and metric semantics", async (
     () => validateAnalyticsDataset(futureSource),
     /source observation is newer than the dataset/,
   );
+
+  const inconsistentRatio = structuredClone(validForTampering);
+  inconsistentRatio.repositories[0].metrics.evidenceCompleteness.value = 0.5;
+  resignDataset(inconsistentRatio);
+  assert.throws(
+    () => validateAnalyticsDataset(inconsistentRatio),
+    /metric value, unit, or ratio fields violate its definition/,
+  );
+
+  const missingRequiredSystem = structuredClone(validForTampering);
+  const leadTime = missingRequiredSystem.repositories[0].metrics.leadTimeHours;
+  leadTime.sourceIds = [missingRequiredSystem.repositories[0].sources
+    .find((source) => source.system === "plane").id];
+  resignDataset(missingRequiredSystem);
+  assert.throws(
+    () => validateAnalyticsDataset(missingRequiredSystem),
+    /sources do not support the metric state or definition/,
+  );
 });
 
 test("repository identity excludes local paths and URL credentials", async (t) => {
@@ -451,6 +469,43 @@ test("unexpected provider fields are rejected before portable export", async (t)
   assert(!serialized.includes("do-not-export"));
   assert.match(serialized, /unexpected field privatePayload/);
   assert.equal(dataset.repositories[0].deliveryChanges.length, 0);
+});
+
+test("provider source metadata is typed, privacy-safe, and case-normalized", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-source-contract.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const malformed = providerSnapshotDocument(fixture.head);
+  malformed.sources.plane.version = { invalid: true };
+  await writeFile(providerSnapshot, JSON.stringify(malformed));
+
+  const malformedRepository = await collectProviderRepository(fixture, providerSnapshot, "provider-source-type");
+
+  assert.equal(malformedRepository.metrics.deliveryChangeCount.status, "unavailable");
+  assert.match(
+    malformedRepository.sources.find((source) => source.system === "plane").reason,
+    /source version is required/,
+  );
+
+  const sensitive = providerSnapshotDocument(fixture.head, {
+    sources: {
+      plane: { status: "unavailable", reason: "/home/alice/private/token.txt" },
+      github: { status: "available", version: "github-2026-07-23" },
+      "github-actions": { status: "available", version: "actions-2026-07-23" },
+    },
+  });
+  await writeFile(providerSnapshot, JSON.stringify(sensitive));
+  const sensitiveRepository = await collectProviderRepository(fixture, providerSnapshot, "provider-source-private");
+
+  assert.equal(sensitiveRepository.metrics.deliveryChangeCount.status, "unavailable");
+  assert(!JSON.stringify(sensitiveRepository).includes("/home/alice"));
+
+  const normalized = providerSnapshotDocument(fixture.head);
+  normalized.repository = "EXAMPLE/ANALYTICS";
+  await writeFile(providerSnapshot, JSON.stringify(normalized));
+  const normalizedRepository = await collectProviderRepository(fixture, providerSnapshot, "provider-source-case");
+
+  assert.equal(normalizedRepository.metrics.deliveryChangeCount.status, "measured");
 });
 
 test("malformed provider changes block provider metrics without aborting collection", async (t) => {
