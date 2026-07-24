@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 
@@ -28,23 +28,40 @@ try {
 
   const datasetPath = resolve(options.dataset);
   const reportPath = resolve(options.report);
-  const datasetRaw = await readFile(datasetPath, "utf8");
-  const reportRaw = await readFile(reportPath, "utf8");
-  const dataset = JSON.parse(datasetRaw);
+  const datasetInput = await readInput(datasetPath, "Dataset");
+  const reportInput = await readInput(reportPath, "Report");
+  const readErrors = compact([datasetInput.error, reportInput.error]);
+  const inputErrors = [...readErrors];
+  let dataset = null;
+  if (datasetInput.raw !== null) {
+    try {
+      dataset = JSON.parse(datasetInput.raw);
+    } catch {
+      inputErrors.push("Dataset JSON is invalid.");
+    }
+  }
   const startedAt = performance.now();
-  const result = runProfile(options.profile, { dataset, datasetRaw, reportRaw });
+  const result = inputErrors.length > 0
+    ? inputFailureResult(options.profile, inputErrors)
+    : runProfile(options.profile, {
+      dataset,
+      datasetRaw: datasetInput.raw,
+      reportRaw: reportInput.raw,
+    });
   const durationMs = performance.now() - startedAt;
   const evidence = {
     schemaVersion: "tabellio-validator-evidence/v0.1",
     validatorId: options.validatorId,
-    status: result.errors.length === 0 ? "passed" : "failed",
-    summary: result.errors.length === 0 ? result.summary : result.errors.join(" "),
+    status: readErrors.length > 0
+      ? "blocked"
+      : (result.errors.length === 0 ? "passed" : "failed"),
+    summary: evidenceSummary(result),
     metrics: [...result.metrics, { name: "analytics_validator_duration_ms", value: durationMs, unit: "milliseconds" }],
     cost: { telemetry: "available", usd: 0, modelCalls: 0, toolCalls: 0 },
-    artifacts: await Promise.all([
-      artifact("analytics-dataset", datasetPath, "application/json"),
-      artifact("analytics-report", reportPath, "text/markdown"),
-    ]),
+    artifacts: [
+      artifactFromInput("analytics-dataset", datasetInput.bytes, "application/json"),
+      artifactFromInput("analytics-report", reportInput.bytes, "text/markdown"),
+    ].filter(Boolean),
   };
   const out = resolve(options.out);
   await mkdir(dirname(out), { recursive: true });
@@ -57,6 +74,47 @@ try {
 
 function runProfile(profile, context) {
   return PROFILE_VALIDATORS[profile](context);
+}
+
+function inputFailureResult(profile, errors) {
+  const metrics = {
+    schema: [metric("analytics_schema_pass", 0, "boolean")],
+    semantic: [
+      metric("analytics_semantic_pass", 0, "boolean"),
+      metric("analytics_repository_count", 0, "count"),
+      metric("analytics_trace_count", 0, "count"),
+    ],
+    workflow: [metric("analytics_report_reproducible", 0, "boolean")],
+    operational: [metric("analytics_projection_25x_duration_ms", 0, "milliseconds")],
+    security: [metric("analytics_privacy_pass", 0, "boolean")],
+  };
+  return result("Analytics validator input is readable and parseable.", errors, metrics[profile]);
+}
+
+function evidenceSummary(result) {
+  const raw = result.errors.length === 0 ? result.summary : result.errors.join(" ");
+  const singleLine = raw.replace(/[\u0000-\u001F\u007F]+/g, " ").replace(/\s+/g, " ").trim();
+  if (containsSensitiveEvidenceText(singleLine)) {
+    return `Analytics validation failed with ${result.errors.length} issue(s); sensitive details were redacted.`;
+  }
+  return (singleLine || "Analytics validation failed.").slice(0, 2_000);
+}
+
+function containsSensitiveEvidenceText(value) {
+  return [
+    /github_pat_|gh[pousr]_|bearer\s|(?:password|token|secret)\s*[=:]/i.test(value),
+    /full\.jsonl|private transcript/i.test(value),
+    containsLocalFilesystemPath(value),
+  ].some(Boolean);
+}
+
+async function readInput(path, label) {
+  try {
+    const bytes = await readFile(path);
+    return { bytes, raw: bytes.toString("utf8"), error: null };
+  } catch {
+    return { bytes: null, raw: null, error: `${label} could not be read.` };
+  }
 }
 
 function validateSchemaProfile({ dataset }) {
@@ -192,15 +250,14 @@ function compact(values) {
   return values.filter(Boolean);
 }
 
-async function artifact(name, path, mediaType) {
-  const content = await readFile(path);
-  const details = await stat(path);
-  const digest = createHash("sha256").update(content).digest("hex");
+function artifactFromInput(name, bytes, mediaType) {
+  if (bytes === null) return null;
+  const digest = createHash("sha256").update(bytes).digest("hex");
   return {
     name,
     uri: `urn:tabellio:analytics:${name}:${digest}`,
     digest,
     mediaType,
-    bytes: details.size,
+    bytes: bytes.byteLength,
   };
 }

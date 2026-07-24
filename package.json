@@ -45,7 +45,8 @@
     "scripts",
     "examples",
     "templates",
-    "docs"
+    "docs",
+    "reports"
   ],
   "scripts": {
     "test": "node --test tests/*.test.mjs",

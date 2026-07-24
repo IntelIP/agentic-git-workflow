@@ -174,6 +174,7 @@ function hasMetricDefinitions(dataset) {
 function validateRepositoryMetrics(repository, definitionIds, observedAt) {
   const sources = repository.sources ?? [];
   const sourceMap = new Map(sources.map((source) => [source.id, source]));
+  const deliveryObservedAt = providerObservationCutoff(sources, observedAt);
   const errors = compactErrors([
     errorUnless(hasRepositoryIdentity(repository), "Repository identity is incomplete."),
     errorUnless(hasCanonicalSources(sources), `${repository.id}: repository sources must be unique and complete.`),
@@ -189,7 +190,29 @@ function validateRepositoryMetrics(repository, definitionIds, observedAt) {
   const metricErrors = Object.entries(metrics).flatMap(([metricId, metric]) =>
     validateMetric(repository.id, metricId, metric, definitionIds, sourceMap)
   );
-  return [...errors, ...sourceErrors, ...missingMetricErrors, ...metricErrors];
+  const deliveryErrors = repository.deliveryChanges.flatMap((change) =>
+    validateDeliveryChange(change, deliveryObservedAt)
+  );
+  const duplicateDeliveryErrors = duplicateDeliveryChangeErrors(repository.deliveryChanges);
+  return [
+    ...errors,
+    ...sourceErrors,
+    ...missingMetricErrors,
+    ...metricErrors,
+    ...deliveryErrors,
+    ...duplicateDeliveryErrors,
+  ];
+}
+
+function providerObservationCutoff(sources, fallback) {
+  const providerTimes = sources
+    .filter((source) => ["plane", "github", "github-actions"].includes(source?.system))
+    .map((source) => source.observedAt)
+    .filter(isDateTime)
+    .map(Date.parse);
+  return providerTimes.length === 0
+    ? fallback
+    : new Date(Math.min(...providerTimes)).toISOString();
 }
 
 function validateMetric(repositoryId, metricId, metric, definitionIds, sourceMap) {
@@ -239,6 +262,7 @@ function hasValidRepositoryRevision(repository, sourceMap, observedAt) {
   if (gitSource?.status === "available") {
     return [
       isCommitOid(repository.headCommit),
+      gitSource.sourceVersion === repository.headCommit,
       isDateTime(repository.headCommittedAt),
       isNonEmptyString(repository.branch),
       isDateTime(observedAt) && Date.parse(repository.headCommittedAt) <= Date.parse(observedAt),
@@ -865,7 +889,7 @@ function duplicateDeliveryChangeErrors(changes) {
   const ids = asArray(changes)
     .map((change) => change?.id)
     .filter(isNonEmptyString);
-  return duplicateValues(ids).map((id) => `Duplicate delivery change id: ${id}.`);
+  return duplicateValues(ids).map(() => "Duplicate delivery change id.");
 }
 
 function duplicateValues(values) {
@@ -922,7 +946,7 @@ function providerSourceVersionSafeBeforeExport(source) {
 
 function validateDeliveryChange(change, capturedAt) {
   if (!isPlainObject(change)) return ["Delivery change must be an object."];
-  const changeId = isNonEmptyString(change.id) ? change.id : "delivery change";
+  const changeId = isSafeProviderText(change.id) ? change.id : "Delivery change";
   const dateErrors = ["storyCreatedAt", "firstActivityAt", "mergedAt", "releasedAt"]
     .map((field) => errorUnless(isNullableDateTime(change[field]), `${changeId}: ${field} is invalid.`));
   return compactErrors([

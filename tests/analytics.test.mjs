@@ -235,6 +235,46 @@ test("dataset validation rejects tampering and zero denominators", async (t) => 
   assert.throws(() => validateAnalyticsDataset(dataset), /zero denominator|Integrity digest/);
 });
 
+test("dataset validation binds Git provenance and revalidates delivery rows", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const providerSnapshotPath = join(fixture.root, "provider-snapshot.json");
+  const providerSnapshot = providerSnapshotDocument(fixture.head);
+  providerSnapshot.capturedAt = "2026-07-23T19:00:00.000Z";
+  await writeFile(providerSnapshotPath, JSON.stringify(providerSnapshot));
+  const dataset = await collectAnalyticsDataset({
+    id: "provenance-baseline",
+    repositories: [{ id: "fixture", path: fixture.repo, providerSnapshot: providerSnapshotPath }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  const repository = dataset.repositories[0];
+  const gitSource = repository.sources.find((source) => source.system === "git");
+  gitSource.sourceVersion = "a".repeat(40);
+  resignDataset(dataset);
+
+  assert.throws(() => validateAnalyticsDataset(dataset), /invalid repository revision state/);
+
+  gitSource.sourceVersion = repository.headCommit;
+  repository.deliveryChanges.push({
+    ...providerSnapshotDocument(fixture.head).deliveryChanges[0],
+    id: "forged |\nrow",
+  });
+  resignDataset(dataset);
+
+  assert.throws(() => validateAnalyticsDataset(dataset), /Delivery change identity is invalid/);
+
+  repository.deliveryChanges.pop();
+  repository.deliveryChanges[0].releasedAt = "2026-07-23T19:30:00.000Z";
+  resignDataset(dataset);
+
+  assert.throws(
+    () => validateAnalyticsDataset(dataset),
+    /delivery timestamp is newer than capturedAt/,
+  );
+});
+
 test("dataset validation rejects not-applicable repository metrics", async (t) => {
   const fixture = await createAnalyticsFixture();
   t.after(() => rm(fixture.root, { recursive: true, force: true }));
@@ -1076,6 +1116,11 @@ test("analytics JSON schema remains loadable and identifies the executable contr
   assert.equal(schema.additionalProperties, false);
 });
 
+test("published package includes analytics baselines required by product validation", async () => {
+  const packageDocument = JSON.parse(await readFile(new URL("../package.json", import.meta.url)));
+  assert(packageDocument.files.includes("reports"));
+});
+
 test("analytics validator separates direct failure exits from runner evidence evaluation", async (t) => {
   const fixture = await createAnalyticsFixture();
   const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-validator-"));
@@ -1095,6 +1140,11 @@ test("analytics validator separates direct failure exits from runner evidence ev
   const malformedDatasetPath = join(root, "malformed-dataset.json");
   const malformedEvidencePath = join(root, "malformed-evidence.json");
   const malformedOperationalEvidencePath = join(root, "malformed-operational-evidence.json");
+  const invalidJsonDatasetPath = join(root, "invalid-json-dataset.json");
+  const invalidJsonEvidencePath = join(root, "invalid-json-evidence.json");
+  const missingEvidencePath = join(root, "missing-evidence.json");
+  const binaryDatasetPath = join(root, "binary-dataset.json");
+  const binaryEvidencePath = join(root, "binary-evidence.json");
   const duplicateDatasetPath = join(root, "duplicate-dataset.json");
   const duplicateReportPath = join(root, "duplicate-report.md");
   const duplicateEvidencePath = join(root, "duplicate-evidence.json");
@@ -1118,6 +1168,7 @@ test("analytics validator separates direct failure exits from runner evidence ev
   assert.equal(result.stderr, "");
   assert.equal(JSON.parse(result.stdout).ok, false);
   assert.equal(evidence.status, "failed");
+  assert.equal(evidence.artifacts.length, 2);
   assert.equal(evidence.metrics.find((metric) => metric.name === "analytics_semantic_pass").value, 0);
 
   await assert.rejects(
@@ -1150,9 +1201,64 @@ test("analytics validator separates direct failure exits from runner evidence ev
 
   assert.equal(malformedResult.stderr, "");
   assert.equal(malformedEvidence.status, "failed");
+  assert.equal(malformedEvidence.summary.includes("\n"), false);
+  assert(malformedEvidence.summary.length <= 2_000);
   assert.equal(
     malformedEvidence.metrics.find((metric) => metric.name === "analytics_semantic_pass").value,
     0,
+  );
+
+  await writeFile(invalidJsonDatasetPath, "{invalid-json\n");
+  const invalidJsonResult = await execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+    "--profile", "schema",
+    "--validator-id", "analytics-schema-invalid-json-test",
+    "--dataset", invalidJsonDatasetPath,
+    "--report", reportPath,
+    "--out", invalidJsonEvidencePath,
+    "--exit-mode", "evidence",
+  ], { encoding: "utf8" });
+  const invalidJsonEvidence = JSON.parse(await readFile(invalidJsonEvidencePath, "utf8"));
+
+  assert.equal(invalidJsonResult.stderr, "");
+  assert.equal(invalidJsonEvidence.status, "failed");
+  assert.equal(invalidJsonEvidence.summary, "Dataset JSON is invalid.");
+  assert.equal(invalidJsonEvidence.artifacts.length, 2);
+  assert.equal(
+    invalidJsonEvidence.metrics.find((metric) => metric.name === "analytics_schema_pass").value,
+    0,
+  );
+
+  await execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+    "--profile", "schema",
+    "--validator-id", "analytics-schema-missing-input-test",
+    "--dataset", join(root, "missing-dataset.json"),
+    "--report", reportPath,
+    "--out", missingEvidencePath,
+    "--exit-mode", "evidence",
+  ], { encoding: "utf8" });
+  const missingEvidence = JSON.parse(await readFile(missingEvidencePath, "utf8"));
+  assert.equal(missingEvidence.status, "blocked");
+  assert.equal(missingEvidence.artifacts.length, 1);
+
+  const binaryDataset = Buffer.from([0xff, 0xfe, 0xfd]);
+  await writeFile(binaryDatasetPath, binaryDataset);
+  await execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+    "--profile", "schema",
+    "--validator-id", "analytics-schema-binary-input-test",
+    "--dataset", binaryDatasetPath,
+    "--report", reportPath,
+    "--out", binaryEvidencePath,
+    "--exit-mode", "evidence",
+  ], { encoding: "utf8" });
+  const binaryEvidence = JSON.parse(await readFile(binaryEvidencePath, "utf8"));
+  assert.equal(binaryEvidence.status, "failed");
+  assert.equal(binaryEvidence.artifacts[0].bytes, binaryDataset.byteLength);
+  assert.equal(
+    binaryEvidence.artifacts[0].digest,
+    createHash("sha256").update(binaryDataset).digest("hex"),
   );
 
   const malformedOperationalResult = await execFileAsync(process.execPath, [
@@ -1205,6 +1311,30 @@ test("analytics validator separates direct failure exits from runner evidence ev
     duplicateEvidence.metrics.find((metric) => metric.name === "analytics_repository_count").value,
     1,
   );
+
+  const sensitiveDataset = structuredClone(dataset);
+  const sensitiveChange = {
+    ...providerSnapshotDocument(fixture.head).deliveryChanges[0],
+    id: "github_pat_EXPOSED-CREDENTIAL",
+  };
+  sensitiveDataset.repositories[0].deliveryChanges.push(sensitiveChange, sensitiveChange);
+  resignDataset(sensitiveDataset);
+  await writeFile(duplicateDatasetPath, JSON.stringify(sensitiveDataset));
+  await execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+    "--profile", "schema",
+    "--validator-id", "analytics-schema-sensitive-summary-test",
+    "--dataset", duplicateDatasetPath,
+    "--report", reportPath,
+    "--out", duplicateEvidencePath,
+    "--exit-mode", "evidence",
+  ], { encoding: "utf8" });
+  const sensitiveEvidence = JSON.parse(await readFile(duplicateEvidencePath, "utf8"));
+
+  assert.equal(sensitiveEvidence.status, "failed");
+  assert.equal(sensitiveEvidence.summary.includes("github_pat_"), false);
+  assert.match(sensitiveEvidence.summary, /Delivery change identity is invalid/);
+  assert.equal(sensitiveEvidence.artifacts.length, 2);
 
   const credentialDataset = structuredClone(dataset);
   const unavailableMetric = Object.values(credentialDataset.repositories[0].metrics)
