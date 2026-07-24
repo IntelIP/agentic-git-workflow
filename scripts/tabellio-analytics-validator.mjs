@@ -240,7 +240,7 @@ function validateSecurityProfile({ dataset, datasetRaw, reportRaw, source, sourc
     ["private transcript", "Transcript content leaked."],
     [/github_pat_|gh[pousr]_/i, "GitHub token prefix leaked."],
     [/bearer\s/i, "Bearer credential leaked."],
-    [/(?:password|token|secret)\s*[=:]/i, "Credential-shaped value leaked."],
+    [/(?:api[_-]?key|apikey|authorization|access[_-]?token|client[_-]?secret|private[_-]?key|password|token|secret)\s*[=:]/i, "Credential-shaped value leaked."],
     [/\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^@\s/]+@/i, "URL credential leaked."],
   ];
   const errors = forbidden.flatMap(([needle, message]) =>

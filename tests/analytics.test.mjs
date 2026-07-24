@@ -703,6 +703,21 @@ test("repository identity excludes local paths and URL credentials", async (t) =
     assert.match(sshDataset.repositories[0].canonicalRepositoryId, /^remote\/[0-9a-f]{16}$/);
     assert(!JSON.stringify(sshDataset).includes("/home/alice"));
   }
+
+  for (const remote of [
+    "ssh://git@gitlab.com/acme/project.git",
+    "ssh://deploy@gitlab.com/acme/project.git",
+  ]) {
+    await runGit({ cwd: repo, args: ["remote", "set-url", "origin", remote] });
+    const sshDataset = await collectAnalyticsDataset({
+      id: "portable-ssh",
+      repositories: [{ id: "fixture", path: repo }],
+      observedAt: OBSERVED_AT,
+      since: SINCE,
+      until: UNTIL,
+    });
+    assert.equal(sshDataset.repositories[0].canonicalRepositoryId, "gitlab.com/acme/project");
+  }
 });
 
 test("credential-shaped branch names never enter portable analytics", async (t) => {
@@ -989,6 +1004,16 @@ test("provider source metadata is typed, privacy-safe, and case-normalized", asy
 
   assert.equal(sensitiveRepository.metrics.deliveryChangeCount.status, "unavailable");
   assert(!JSON.stringify(sensitiveRepository).includes("/home/alice"));
+
+  sensitive.sources.plane.reason = "api_key=qwertyuiopasdfgh";
+  await writeFile(providerSnapshot, JSON.stringify(sensitive));
+  const apiKeyRepository = await collectProviderRepository(
+    fixture,
+    providerSnapshot,
+    "provider-source-api-key",
+  );
+  assert.equal(apiKeyRepository.metrics.deliveryChangeCount.status, "unavailable");
+  assert(!JSON.stringify(apiKeyRepository).includes("qwertyuiopasdfgh"));
 
   const sensitiveFields = providerSnapshotDocument(fixture.head);
   sensitiveFields.sources.plane.version = "/Users/alice/private-version";
@@ -1350,6 +1375,25 @@ test("partial provider sources cannot export unsupported evidence", async (t) =>
   assert.equal(withoutPlane.deliveryChanges[0].linkBasis, "unlinked");
   assert.equal(withoutPlane.metrics.deliveryChangeCount.status, "unavailable");
 
+  const fabricatedPlane = await collectAnalyticsDataset({
+    id: "fabricated-plane",
+    repositories: [{ id: "fixture", path: fixture.repo, providerSnapshot }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  Object.assign(fabricatedPlane.repositories[0].deliveryChanges[0], {
+    linkBasis: "explicit",
+    linkEvidence: "Unsupported link",
+    planeStoryId: "INTB-999",
+    storyCreatedAt: "2026-07-10T10:00:00.000Z",
+  });
+  resignDataset(fabricatedPlane);
+  assert.throws(
+    () => validateAnalyticsDataset(fabricatedPlane),
+    /Plane delivery fields require available Plane evidence/,
+  );
+
   const missingActions = providerSnapshotDocument(fixture.head);
   missingActions.sources["github-actions"] = { status: "unavailable", reason: "Actions capture unavailable." };
   missingActions.deliveryChanges[0].validationStatus = "failed";
@@ -1360,6 +1404,39 @@ test("partial provider sources cannot export unsupported evidence", async (t) =>
 
   assert.equal(withoutActions.deliveryChanges[0].validationStatus, "passed");
   assert.equal(withoutActions.deliveryChanges[0].hostedStatus, "unavailable");
+
+  const fabricatedHostedStatus = await collectAnalyticsDataset({
+    id: "fabricated-hosted-status",
+    repositories: [{ id: "fixture", path: fixture.repo, providerSnapshot }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  fabricatedHostedStatus.repositories[0].deliveryChanges[0].hostedStatus = "passed";
+  resignDataset(fabricatedHostedStatus);
+  assert.throws(
+    () => validateAnalyticsDataset(fabricatedHostedStatus),
+    /hosted status requires available GitHub Actions evidence/,
+  );
+
+  const missingGithub = providerSnapshotDocument(fixture.head);
+  missingGithub.sources.github = { status: "unavailable", reason: "GitHub capture unavailable." };
+  await writeFile(providerSnapshot, JSON.stringify(missingGithub));
+  const fabricatedWithoutGithub = await collectAnalyticsDataset({
+    id: "provider-without-github",
+    repositories: [{ id: "fixture", path: fixture.repo, providerSnapshot }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  fabricatedWithoutGithub.repositories[0].deliveryChanges = structuredClone(
+    missingGithub.deliveryChanges,
+  );
+  resignDataset(fabricatedWithoutGithub);
+  assert.throws(
+    () => validateAnalyticsDataset(fabricatedWithoutGithub),
+    /delivery changes require available GitHub evidence/,
+  );
 });
 
 test("malformed validation evidence blocks its metrics without blocking local Git", async (t) => {

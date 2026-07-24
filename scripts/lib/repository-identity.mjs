@@ -17,6 +17,9 @@ export function normalizeRepositoryRemote(remote) {
   if (remote.includes("://")) {
     try {
       const parsed = new URL(remote);
+      if (parsed.protocol === "ssh:") {
+        return normalizedSshUrl(parsed) ?? hashedRemote(remote);
+      }
       if (!["http:", "https:"].includes(parsed.protocol)) return hashedRemote(remote);
       return `${parsed.host}${parsed.pathname}`.replace(/^\/+/, "").replace(/\.git$/, "");
     } catch {
@@ -26,6 +29,17 @@ export function normalizeRepositoryRemote(remote) {
   const scpLike = remote.match(/^(?:[^@]+@)?([^:]+):(.+)$/);
   if (!scpLike || scpLike[2].startsWith("/")) return hashedRemote(remote);
   return `${scpLike[1]}/${scpLike[2]}`.replace(/\.git$/, "");
+}
+
+function normalizedSshUrl(parsed) {
+  if (`${parsed.password}${parsed.port}${parsed.search}${parsed.hash}` !== "") return null;
+  const parts = parsed.pathname.replace(/^\/+|\/+$/g, "").split("/");
+  if (parts.length !== 2 || !parts.every(safeRemoteSegment)) return null;
+  return `${parsed.hostname}/${parts.join("/")}`.replace(/\.git$/, "");
+}
+
+function safeRemoteSegment(value) {
+  return /^[A-Za-z0-9._-]+$/.test(value) && ![".", ".."].includes(value);
 }
 
 export function localRepositoryId(repoPath) {

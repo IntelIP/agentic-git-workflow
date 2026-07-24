@@ -214,6 +214,7 @@ function validateRepositoryMetrics(repository, definitionIds, observedAt) {
     validateDeliveryChange(change, deliveryObservedAt)
   );
   const duplicateDeliveryErrors = duplicateDeliveryChangeErrors(repository.deliveryChanges);
+  const deliverySourceErrors = validateDeliverySourceConsistency(repository);
   return [
     ...errors,
     ...sourceErrors,
@@ -221,7 +222,34 @@ function validateRepositoryMetrics(repository, definitionIds, observedAt) {
     ...metricErrors,
     ...deliveryErrors,
     ...duplicateDeliveryErrors,
+    ...deliverySourceErrors,
   ];
+}
+
+function validateDeliverySourceConsistency(repository) {
+  const changes = repository.deliveryChanges ?? [];
+  const sourceAvailable = (system) =>
+    repository.sources?.some((source) => source.system === system && source.status === "available");
+  if (!sourceAvailable("github") && changes.length > 0) {
+    return [`${repository.id}: delivery changes require available GitHub evidence.`];
+  }
+  return changes.flatMap((change) => compactErrors([
+    errorUnless(
+      sourceAvailable("plane") || hasRedactedPlaneEvidence(change),
+      `${repository.id}: Plane delivery fields require available Plane evidence.`,
+    ),
+    errorUnless(
+      sourceAvailable("github-actions") || change.hostedStatus === "unavailable",
+      `${repository.id}: hosted status requires available GitHub Actions evidence.`,
+    ),
+  ]));
+}
+
+function hasRedactedPlaneEvidence(change) {
+  return change.linkBasis === "unlinked"
+    && change.linkEvidence === null
+    && change.planeStoryId === null
+    && change.storyCreatedAt === null;
 }
 
 function providerObservationCutoff(sources, fallback) {
@@ -1120,7 +1148,8 @@ function isHttpEntityTag(value) {
 
 function hasCredentialShape(value) {
   return [
-    /(?:bearer\s|github_pat_|gh[pousr]_|(?:password|token|secret)\s*[=:])/i,
+    /(?:bearer\s|github_pat_|gh[pousr]_)/i,
+    /(?:api[_-]?key|apikey|authorization|access[_-]?token|client[_-]?secret|private[_-]?key|password|token|secret)\s*[=:]/i,
     /\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^@\s/]+@/i,
     /\bsk_(?:live|test)_[A-Za-z0-9]{8,}\b/,
     /\bAKIA[0-9A-Z]{16}\b/,
