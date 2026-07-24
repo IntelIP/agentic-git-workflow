@@ -27,8 +27,7 @@ export function normalizeRepositoryRemote(remote) {
     }
   }
   const scpLike = remote.match(/^(?:[^@]+@)?([^:]+):(.+)$/);
-  if (!scpLike || scpLike[2].startsWith("/")) return hashedRemote(remote);
-  return `${scpLike[1]}/${scpLike[2]}`.replace(/\.git$/, "");
+  return normalizedScpRemote(scpLike) ?? hashedRemote(remote);
 }
 
 function normalizedSshUrl(parsed) {
@@ -36,6 +35,13 @@ function normalizedSshUrl(parsed) {
   const parts = parsed.pathname.replace(/^\/+|\/+$/g, "").split("/");
   if (parts.length !== 2 || !parts.every(safeRemoteSegment)) return null;
   return `${parsed.hostname}/${parts.join("/")}`.replace(/\.git$/, "");
+}
+
+function normalizedScpRemote(match) {
+  if (!match || match[2].startsWith("/")) return null;
+  const parts = match[2].replace(/\/+$/g, "").split("/");
+  if (parts.length !== 2 || !parts.every(safeRemoteSegment)) return null;
+  return `${match[1]}/${parts.join("/")}`.replace(/\.git$/, "");
 }
 
 function safeRemoteSegment(value) {

@@ -18,9 +18,10 @@ import { runGit } from "../scripts/lib/git-process.mjs";
 import { assertOutputBoundary } from "../scripts/lib/output-boundary.mjs";
 import { identityEnv } from "./helpers/git-fixture.mjs";
 
-const OBSERVED_AT = "2026-07-23T20:00:00.000Z";
+const OBSERVED_AT = new Date().toISOString();
 const SINCE = "2026-07-01T00:00:00.000Z";
 const UNTIL = "2026-07-23T19:59:59.000Z";
+const FUTURE_AT = "2099-01-01T00:00:00.000Z";
 const execFileAsync = promisify(execFile);
 
 test("analytics collection is deterministic, provenance-bound, and preserves unknown metrics", async (t) => {
@@ -520,7 +521,7 @@ test("dataset validation enforces window ordering and metric semantics", async (
     until: UNTIL,
   });
   const futureHead = structuredClone(validForTampering);
-  futureHead.repositories[0].headCommittedAt = "2026-07-24T00:00:00.000Z";
+  futureHead.repositories[0].headCommittedAt = FUTURE_AT;
   resignDataset(futureHead);
   assert.throws(
     () => validateAnalyticsDataset(futureHead),
@@ -558,7 +559,7 @@ test("dataset validation enforces window ordering and metric semantics", async (
   );
 
   const futureSource = structuredClone(validForTampering);
-  futureSource.repositories[0].sources[0].observedAt = "2026-07-24T00:00:00.000Z";
+  futureSource.repositories[0].sources[0].observedAt = FUTURE_AT;
   resignDataset(futureSource);
   assert.throws(
     () => validateAnalyticsDataset(futureSource),
@@ -603,6 +604,22 @@ test("dataset validation enforces window ordering and metric semantics", async (
     () => validateAnalyticsDataset(falseCompleteness),
     /sources do not support the metric state or definition/,
   );
+});
+
+test("analytics collection rejects synthetic live observation timestamps", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-live-time-");
+  for (const observedAt of ["2026-07-23T20:00:00.000Z", FUTURE_AT]) {
+    await assert.rejects(
+      collectAnalyticsDataset({
+        id: "synthetic-observation",
+        repositories: [{ id: "fixture", path: repo }],
+        observedAt,
+        since: SINCE,
+        until: UNTIL,
+      }),
+      /current live collection time/,
+    );
+  }
 });
 
 test("dataset and collection reject duplicate canonical repositories", async (t) => {
@@ -692,6 +709,7 @@ test("repository identity excludes local paths and URL credentials", async (t) =
   for (const [index, remote] of [
     "ssh://git@example.com/home/alice/private/repository.git",
     "git@example.com:/home/alice/private/repository.git",
+    "git@example.com:home/alice/private/repository.git",
   ].entries()) {
     await runGit({ cwd: repo, args: ["remote", "set-url", "origin", remote] });
     const sshDataset = await collectAnalyticsDataset({
@@ -708,6 +726,7 @@ test("repository identity excludes local paths and URL credentials", async (t) =
   for (const remote of [
     "ssh://git@gitlab.com/acme/project.git",
     "ssh://deploy@gitlab.com/acme/project.git",
+    "git@gitlab.com:acme/project.git",
   ]) {
     await runGit({ cwd: repo, args: ["remote", "set-url", "origin", remote] });
     const sshDataset = await collectAnalyticsDataset({
@@ -1184,7 +1203,7 @@ test("provider evidence cannot postdate observation or violate lifecycle orderin
   const providerSnapshot = join(fixture.root, "provider-time-invalid.json");
   t.after(() => rm(fixture.root, { recursive: true, force: true }));
   const future = providerSnapshotDocument(fixture.head);
-  future.capturedAt = "2026-07-24T00:00:00.000Z";
+  future.capturedAt = FUTURE_AT;
   await writeFile(providerSnapshot, JSON.stringify(future));
 
   const futureRepository = await collectProviderRepository(fixture, providerSnapshot, "provider-future");
@@ -1636,7 +1655,7 @@ test("control refs newer than the observation are blocked", async (t) => {
   await createMetadataRef(repo, {
     branch: "future-validation",
     ref: "refs/tabellio/validations",
-    committedAt: "2026-07-24T06:00:00Z",
+    committedAt: FUTURE_AT,
     files: {
       "commits/future/validation.json": await controlFixture(
         "../examples/tabellio-validation/minimal-result.json",
@@ -1686,7 +1705,7 @@ test("Entire refs newer than the observation are blocked", async (t) => {
   await createMetadataRef(repo, {
     branch: "future-entire",
     ref: "refs/heads/entire/checkpoints/v1",
-    committedAt: "2026-07-24T06:00:00Z",
+    committedAt: FUTURE_AT,
     files: { "aa/session/metadata.json": "{}" },
   });
 

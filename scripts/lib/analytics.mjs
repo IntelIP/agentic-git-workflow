@@ -46,6 +46,7 @@ const DECLARED_SOURCE_SYSTEMS = Object.freeze([
 ]);
 
 const AVAILABILITY_METRICS = new Set(["evidenceCompleteness", "repositoryAdoption"]);
+const LIVE_OBSERVATION_TOLERANCE_MS = 5 * 60 * 1000;
 
 const PROVIDER_SNAPSHOT_FIELDS = Object.freeze([
   "schemaVersion",
@@ -79,6 +80,7 @@ const DELIVERY_CHANGE_FIELDS = Object.freeze([
 
 export async function collectAnalyticsDataset({ id, repositories, observedAt, since, until }) {
   assertDateRange({ observedAt, since, until });
+  assertLiveObservation(observedAt);
   assertRepositoryInputs(id, repositories);
   const seen = new Set();
   for (const repository of repositories) {
@@ -1625,6 +1627,13 @@ function assertDateRange({ observedAt, since, until }) {
   if (![observedAt, since, until].every(isDateTime)) throw new Error("observedAt, since, and until must be ISO date-times.");
   if (Date.parse(since) >= Date.parse(until)) throw new Error("Analytics window since must be before until.");
   if (Date.parse(observedAt) < Date.parse(until)) throw new Error("observedAt cannot precede the window end.");
+}
+
+function assertLiveObservation(observedAt) {
+  const drift = Math.abs(Date.now() - Date.parse(observedAt));
+  if (drift > LIVE_OBSERVATION_TOLERANCE_MS) {
+    throw new Error("observedAt must represent the current live collection time.");
+  }
 }
 
 function arrayLength(value) {
