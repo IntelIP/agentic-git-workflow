@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -705,6 +705,36 @@ test("repository identity excludes local paths and URL credentials", async (t) =
   }
 });
 
+test("credential-shaped branch names never enter portable analytics", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-private-branch-");
+  const credential = "github_pat_private-branch-value";
+  await runGit({ cwd: repo, args: ["switch", "-c", `feature/${credential}`] });
+
+  const dataset = await collectAnalyticsDataset({
+    id: "private-branch",
+    repositories: [{ id: "fixture", path: repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+
+  assert.equal(dataset.repositories[0].headCommit, null);
+  assert.equal(JSON.stringify(dataset).includes(credential), false);
+
+  const tampered = structuredClone(dataset);
+  const repository = tampered.repositories[0];
+  const gitSource = repository.sources.find((source) => source.system === "git");
+  repository.headCommit = "a".repeat(40);
+  repository.headCommittedAt = "2026-07-10T12:00:00.000Z";
+  repository.branch = credential;
+  gitSource.status = "available";
+  gitSource.sourceVersion = repository.headCommit;
+  gitSource.contentDigest = "b".repeat(64);
+  gitSource.reason = null;
+  resignDataset(tampered);
+  assert.throws(() => validateAnalyticsDataset(tampered), /invalid repository revision state/);
+});
+
 test("analytics collector rejects colliding dataset and report paths", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-output-collision-"));
   const outputPath = join(root, "analytics-output");
@@ -725,7 +755,39 @@ test("analytics collector rejects colliding dataset and report paths", async (t)
       && /must resolve to distinct paths/.test(error.stderr),
   );
   await assert.rejects(readFile(outputPath), (error) => error.code === "ENOENT");
+
+  const shared = join(root, "shared-output");
+  const datasetLink = join(root, "dataset-link");
+  const reportLink = join(root, "report-link");
+  await symlink(shared, datasetLink);
+  await symlink(shared, reportLink);
+  await assertAnalyticsOutputCollision(datasetLink, reportLink, /must not be symbolic links/);
+  await assert.rejects(readFile(shared), (error) => error.code === "ENOENT");
+
+  await writeFile(shared, "unchanged");
+  const datasetHardLink = join(root, "dataset-hard-link");
+  const reportHardLink = join(root, "report-hard-link");
+  await link(shared, datasetHardLink);
+  await link(shared, reportHardLink);
+  await assertAnalyticsOutputCollision(datasetHardLink, reportHardLink, /must resolve to distinct files/);
+  assert.equal(await readFile(shared, "utf8"), "unchanged");
 });
+
+async function assertAnalyticsOutputCollision(datasetPath, reportPath, message) {
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      fileURLToPath(new URL("../scripts/tabellio-analytics.mjs", import.meta.url)),
+      "collect",
+      "--config", fileURLToPath(new URL("../examples/tabellio-analytics/minimal-repositories.json", import.meta.url)),
+      "--id", "output-alias-collision",
+      "--since", SINCE,
+      "--until", UNTIL,
+      "--out", datasetPath,
+      "--report", reportPath,
+    ], { encoding: "utf8" }),
+    (error) => error.code === 1 && message.test(error.stderr),
+  );
+}
 
 test("dataset validation rejects non-portable source identifiers", async (t) => {
   const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-source-id-");
@@ -1270,6 +1332,32 @@ test("malformed validation evidence blocks its metrics without blocking local Gi
   assert.equal(validationSource.status, "blocked");
   assert.equal(repository.metrics.validationAttemptCount.value, null);
   assert.equal(repository.metrics.commitCount.status, "measured");
+});
+
+test("control refs preserve Git paths that require quoting", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-quoted-control-");
+  const head = (await runGit({ cwd: repo, args: ["rev-parse", "HEAD"] })).stdout.trim();
+  await createMetadataRef(repo, {
+    branch: "quoted-validation",
+    ref: "refs/tabellio/validations",
+    files: {
+      "commits/odd\nname/validation.json": await controlFixture(
+        "../examples/tabellio-validation/minimal-result.json",
+        "example/analytics",
+        head,
+      ),
+    },
+  });
+  await createMetadataRef(repo, {
+    branch: "quoted-entire",
+    ref: "refs/heads/entire/checkpoints/v1",
+    files: { "aa/session\nname/metadata.json": "{}" },
+  });
+
+  const repository = await collectSingleRepository(repo, "quoted-control");
+
+  assert.equal(repository.metrics.validationAttemptCount.value, 1);
+  assert.equal(repository.metrics.entireCheckpointCount.value, 1);
 });
 
 test("schema-invalid control records block their source metrics", async (t) => {

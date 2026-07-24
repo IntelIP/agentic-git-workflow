@@ -284,7 +284,7 @@ function hasValidRepositoryRevision(repository, sourceMap, observedAt) {
       isCommitOid(repository.headCommit),
       gitSource.sourceVersion === repository.headCommit,
       isDateTime(repository.headCommittedAt),
-      isNonEmptyString(repository.branch),
+      isSafeBranchName(repository.branch),
       isDateTime(observedAt) && Date.parse(repository.headCommittedAt) <= Date.parse(observedAt),
     ].every(Boolean);
   }
@@ -597,6 +597,10 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     git(repositoryPath, ["rev-list", "--count", `--since-as-filter=${since}`, `--until=${until}`, "HEAD"]),
   ]);
   assertHeadObserved(committedAt, observedAt);
+  const exportedBranch = fallback(branch, "(detached)");
+  if (!isSafeBranchName(exportedBranch)) {
+    throw new Error("Repository branch name contains unsafe detail.");
+  }
   const canonicalRepositoryId = canonicalRepositoryIdentity(remote, id);
   const validationRecordValidator = repositoryControlValidator(canonicalRepositoryId, validateValidationResult);
   const reviewRecordValidator = repositoryControlValidator(
@@ -647,7 +651,7 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     canonicalRepositoryId,
     headCommit: head,
     headCommittedAt: committedAt,
-    branch: fallback(branch, "(detached)"),
+    branch: exportedBranch,
     sources,
     metrics,
     deliveryChanges: provider.changes,
@@ -1117,6 +1121,13 @@ function hasCredentialShape(value) {
   ].some((pattern) => pattern.test(String(value)));
 }
 
+function isSafeBranchName(value) {
+  return isNonEmptyString(value)
+    && value.length <= 1024
+    && !hasCredentialShape(value)
+    && !/[\u0000-\u001F\u007F]/.test(value);
+}
+
 function hasPortableTextControls(value, { allowSlash = false } = {}) {
   const unsafe = allowSlash ? /[\u0000-\u001F\u007F|\\]/ : /[\u0000-\u001F\u007F|\\/]/;
   return unsafe.test(value);
@@ -1183,8 +1194,9 @@ async function collectJsonRef(repositoryPath, { id, system, ref, observedAt, inc
   const resolved = await resolveControlRef(repositoryPath, { id, system, ref, observedAt });
   if (resolved.source) return { source: resolved.source, values: [] };
   const version = resolved.version;
-  const names = (await git(repositoryPath, ["ls-tree", "-r", "--name-only", version]))
-    .split("\n").filter((name) => name && include(name)).sort();
+  const names = (await listTreeNames(repositoryPath, version))
+    .filter(include)
+    .sort(compareCodePoints);
   const values = [];
   const canonical = [];
   for (const name of names) {
@@ -1293,10 +1305,9 @@ async function collectEntireRef(repositoryPath, { id, observedAt, ref }) {
     };
   }
   const version = resolved.version;
-  const names = (await git(repositoryPath, ["ls-tree", "-r", "--name-only", version]))
-    .split("\n")
+  const names = (await listTreeNames(repositoryPath, version))
     .filter((name) => /^[^/]+\/[^/]+\/metadata\.json$/.test(name))
-    .sort();
+    .sort(compareCodePoints);
   return {
     source: availableSource({ id, system: "entire", observedAt, sourceVersion: version, content: JSON.stringify(names) }),
     count: names.length,
@@ -1362,6 +1373,14 @@ function safeControlRemote(remote) {
 async function git(cwd, args, acceptableExitCodes = [0]) {
   const result = await runGit({ cwd, args, acceptableExitCodes });
   return result.stdout.trim();
+}
+
+async function listTreeNames(cwd, version) {
+  const result = await runGit({
+    cwd,
+    args: ["ls-tree", "-rz", "--name-only", version],
+  });
+  return result.stdout.split("\0").filter(Boolean);
 }
 
 function validationCostComplete(result) {
