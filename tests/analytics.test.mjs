@@ -124,6 +124,21 @@ test("provider versions cannot postdate their snapshot capture", async (t) => {
   assert.equal(repository.deliveryChanges.length, 0);
 });
 
+test("unsafe provider versions are blocked before portable export", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-unsafe-version.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const snapshot = providerSnapshotDocument(fixture.head);
+  snapshot.sources.github.version = "github_pat_private-value";
+  await writeFile(providerSnapshot, JSON.stringify(snapshot));
+
+  const repository = await collectProviderRepository(fixture, providerSnapshot, "provider-unsafe-version");
+  const serialized = JSON.stringify(repository);
+
+  assert.equal(repository.sources.find((source) => source.system === "github").status, "blocked");
+  assert(!serialized.includes("github_pat_private-value"));
+});
+
 test("commit count traverses non-monotonic commit dates", async (t) => {
   const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-commit-window-");
   await commitFixtureFile(repo, "older-middle.txt", "older middle\n", "2026-06-01T00:00:00Z");
@@ -495,8 +510,31 @@ test("analytics collection rejects unsafe configured identifiers", async () => {
 
 test("bare repositories preserve Git analytics while worktree state stays unavailable", async (t) => {
   const { root, repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-bare-");
+  await commitFixtureFile(
+    repo,
+    "tabellio.platform.json",
+    JSON.stringify({ workflow: { controlRemoteName: "control" } }),
+    "2026-07-10T12:00:00.000Z",
+  );
+  await createMetadataRef(repo, {
+    branch: "bare-control-entire",
+    ref: "refs/remotes/control/entire/checkpoints/v1",
+    files: { "aa/session/metadata.json": "{}" },
+  });
+  const entireCommit = (await runGit({
+    cwd: repo,
+    args: ["rev-parse", "refs/remotes/control/entire/checkpoints/v1"],
+  })).stdout.trim();
+  await runGit({ cwd: repo, args: ["tag", "bare-entire-fixture", entireCommit] });
   const bare = join(root, "repository.git");
   await runGit({ cwd: root, args: ["clone", "--bare", repo, bare] });
+  await runGit({
+    cwd: bare,
+    args: ["update-ref", "refs/remotes/control/entire/checkpoints/v1", entireCommit],
+  });
+  await writeFile(join(bare, "tabellio.platform.json"), JSON.stringify({
+    workflow: { controlRemoteName: "untrusted-loose-file" },
+  }));
 
   const dataset = await collectAnalyticsDataset({
     id: "bare-baseline",
@@ -513,6 +551,8 @@ test("bare repositories preserve Git analytics while worktree state stays unavai
   assert.equal(repository.metrics.worktreeDirty.status, "unavailable");
   assert.equal(repository.metrics.worktreeDirty.value, null);
   assert.match(repository.metrics.worktreeDirty.reason, /no worktree/i);
+  assert.equal(repository.metrics.entireCheckpointCount.status, "measured");
+  assert.equal(repository.metrics.entireCheckpointCount.value, 1);
 });
 
 test("provider read failures are blocked without leaking local paths", async (t) => {
@@ -964,9 +1004,12 @@ test("Entire metadata is collected from the configured control remote", async (t
     ref: "refs/remotes/control/entire/checkpoints/v1",
     files: { "aa/session/metadata.json": "{}" },
   });
-  await writeFile(join(repo, "tabellio.platform.json"), JSON.stringify({
-    workflow: { controlRemoteName: "control" },
-  }));
+  await commitFixtureFile(
+    repo,
+    "tabellio.platform.json",
+    JSON.stringify({ workflow: { controlRemoteName: "control" } }),
+    "2026-07-10T12:00:00.000Z",
+  );
 
   const repository = await collectSingleRepository(repo, "control");
   const checkpointMetric = repository.metrics.entireCheckpointCount;
@@ -977,6 +1020,10 @@ test("Entire metadata is collected from the configured control remote", async (t
     repository.sources.find((source) => source.system === "entire").sourceVersion.length,
     40,
   );
+
+  await writeFile(join(repo, "tabellio.platform.json"), "{malformed");
+  const malformedWorktree = await collectSingleRepository(repo, "control-malformed");
+  assert.equal(malformedWorktree.metrics.entireCheckpointCount.status, "unavailable");
 });
 
 test("analytics JSON schema remains loadable and identifies the executable contract", async () => {
@@ -1001,6 +1048,8 @@ test("analytics validator separates direct failure exits from runner evidence ev
   const reportPath = join(root, "report.md");
   const evidencePath = join(root, "evidence.json");
   const directEvidencePath = join(root, "direct-evidence.json");
+  const malformedDatasetPath = join(root, "malformed-dataset.json");
+  const malformedEvidencePath = join(root, "malformed-evidence.json");
   await writeFile(datasetPath, `${JSON.stringify(dataset, null, 2)}\n`);
   await writeFile(reportPath, renderAnalyticsReport(dataset));
 
@@ -1032,6 +1081,28 @@ test("analytics validator separates direct failure exits from runner evidence ev
     (error) => error.code === 1,
   );
   assert.equal(JSON.parse(await readFile(directEvidencePath, "utf8")).status, "failed");
+
+  await writeFile(malformedDatasetPath, JSON.stringify({
+    schemaVersion: "tabellio-analytics-dataset/v0.1",
+    repositories: [{ deliveryChanges: [null], metrics: {} }],
+  }));
+  const malformedResult = await execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+    "--profile", "semantic",
+    "--validator-id", "analytics-semantic-malformed-test",
+    "--dataset", malformedDatasetPath,
+    "--report", reportPath,
+    "--out", malformedEvidencePath,
+    "--exit-mode", "evidence",
+  ], { encoding: "utf8" });
+  const malformedEvidence = JSON.parse(await readFile(malformedEvidencePath, "utf8"));
+
+  assert.equal(malformedResult.stderr, "");
+  assert.equal(malformedEvidence.status, "failed");
+  assert.equal(
+    malformedEvidence.metrics.find((metric) => metric.name === "analytics_semantic_pass").value,
+    0,
+  );
 });
 
 async function createAnalyticsFixture() {

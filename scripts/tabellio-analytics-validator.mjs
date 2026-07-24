@@ -67,12 +67,16 @@ function validateSchemaProfile({ dataset }) {
 }
 
 function validateSemanticProfile({ dataset, reportRaw }) {
-  const repositories = dataset.repositories;
-  const traces = repositories.flatMap((repository) => repository.deliveryChanges);
+  const datasetErrors = captureError(() => validateAnalyticsDataset(dataset));
+  const repositories = Array.isArray(dataset?.repositories) ? dataset.repositories : [];
+  const traces = repositories.flatMap((repository) =>
+    Array.isArray(repository?.deliveryChanges) ? repository.deliveryChanges : []
+  );
   const unavailableMetrics = repositories.flatMap((repository) =>
-    Object.values(repository.metrics).filter((entry) => entry.status === "unavailable")
+    Object.values(repository?.metrics ?? {}).filter((entry) => entry?.status === "unavailable")
   );
   const errors = compact([
+    ...datasetErrors,
     errorUnless(repositories.length >= 4, "Fewer than four repositories were compared."),
     errorUnless(traces.length >= 1, "No cross-system delivery trace is present."),
     errorUnless(traces.every(hasLinkProvenance), "A delivery trace lacks explicit link provenance."),
@@ -134,7 +138,9 @@ function metric(name, value, unit) {
 }
 
 function hasLinkProvenance(change) {
-  return change.linkBasis !== "manual-reconciliation" || Boolean(change.linkEvidence);
+  return Boolean(change)
+    && typeof change === "object"
+    && (change.linkBasis !== "manual-reconciliation" || Boolean(change.linkEvidence));
 }
 
 function captureError(action) {

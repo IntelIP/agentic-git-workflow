@@ -910,9 +910,14 @@ function validateProviderSource(system, source, observedAt) {
     ...unexpectedFieldErrors(source, PROVIDER_SOURCE_FIELDS, `${system} source`),
     errorUnless(isProviderSource(source), `${system} source is invalid.`),
     errorUnless(providerSourceHasVersion(source), `${system} source version is required.`),
+    errorUnless(providerSourceVersionSafeBeforeExport(source), `${system} source version contains unsafe detail.`),
     errorUnless(providerSourceHasReason(source), `${system} unavailable reason is required.`),
     errorUnless(versionNotAfter(source?.version, observedAt), `${system} source version is newer than observedAt.`),
   ]);
+}
+
+function providerSourceVersionSafeBeforeExport(source) {
+  return source?.status !== "available" || isSafeProviderVersion(source.version);
 }
 
 function validateDeliveryChange(change, capturedAt) {
@@ -1165,12 +1170,40 @@ function parseControlRecord(raw, validate) {
 }
 
 async function configuredControlRemote(repositoryPath) {
-  try {
-    const platform = JSON.parse(await readFile(`${repositoryPath}/tabellio.platform.json`, "utf8"));
-    return safeControlRemote(platform?.workflow?.controlRemoteName);
-  } catch {
-    return null;
+  if (await repositoryIsBare(repositoryPath)) {
+    return committedPlatformControlRemote(repositoryPath);
   }
+  const worktreeConfig = await readPlatformControlRemote(
+    () => readFile(`${repositoryPath}/tabellio.platform.json`, "utf8")
+  );
+  return worktreeConfig.readable ? worktreeConfig.remote : null;
+}
+
+async function readPlatformControlRemote(read) {
+  try {
+    const platform = JSON.parse(await read());
+    return {
+      readable: true,
+      remote: safeControlRemote(platform?.workflow?.controlRemoteName),
+    };
+  } catch {
+    return { readable: false, remote: null };
+  }
+}
+
+async function repositoryIsBare(repositoryPath) {
+  return await git(repositoryPath, ["rev-parse", "--is-bare-repository"]) === "true";
+}
+
+async function committedPlatformControlRemote(repositoryPath) {
+  const committed = await runGit({
+    cwd: repositoryPath,
+    args: ["show", "HEAD:tabellio.platform.json"],
+    acceptableExitCodes: [0, 128],
+  });
+  if (committed.exitCode !== 0) return null;
+  const config = await readPlatformControlRemote(() => Promise.resolve(committed.stdout));
+  return config.remote;
 }
 
 function safeControlRemote(remote) {
