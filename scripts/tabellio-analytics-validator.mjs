@@ -127,6 +127,7 @@ function evidenceSummary(result) {
 function containsSensitiveEvidenceText(value) {
   return [
     /github_pat_|gh[pousr]_|bearer\s|(?:password|token|secret)\s*[=:]/i.test(value),
+    /\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^@\s/]+@/i.test(value),
     /full\.jsonl|private transcript/i.test(value),
     containsLocalFilesystemPath(value),
   ].some(Boolean);

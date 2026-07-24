@@ -1211,21 +1211,26 @@ async function resolveControlRef(repositoryPath, { id, system, ref, observedAt }
       version: null,
     };
   }
-  const version = await git(repositoryPath, ["rev-parse", ref]);
-  const committedAt = await git(repositoryPath, ["show", "-s", "--format=%cI", version]);
-  if (!dateNotAfter(committedAt, observedAt)) {
+  const resolved = await resolveObservedRefVersion(repositoryPath, ref, observedAt);
+  if (!resolved.observed) {
     return {
       source: blockedSource({
         id,
         system,
         observedAt,
-        sourceVersion: version,
+        sourceVersion: resolved.version,
         reason: `${controlSourceLabel(system)} evidence ref is newer than the requested observation.`,
       }),
-      version,
+      version: resolved.version,
     };
   }
-  return { source: null, version };
+  return { source: null, version: resolved.version };
+}
+
+async function resolveObservedRefVersion(repositoryPath, ref, observedAt) {
+  const version = await git(repositoryPath, ["rev-parse", ref]);
+  const committedAt = await git(repositoryPath, ["show", "-s", "--format=%cI", version]);
+  return { version, observed: dateNotAfter(committedAt, observedAt) };
 }
 
 function controlSourceLabel(system) {
@@ -1241,25 +1246,43 @@ async function collectEntireMetadata(repositoryPath, { id, observedAt }) {
     ...(controlRemote ? [`refs/remotes/${controlRemote}/entire/checkpoints/v1`] : []),
   ];
   for (const ref of candidates) {
-    const exists = await runGit({
-      cwd: repositoryPath,
-      args: ["show-ref", "--verify", "--quiet", ref],
-      acceptableExitCodes: [0, 1],
-    });
-    if (exists.exitCode !== 0) continue;
-    const version = await git(repositoryPath, ["rev-parse", ref]);
-    const names = (await git(repositoryPath, ["ls-tree", "-r", "--name-only", version]))
-      .split("\n")
-      .filter((name) => /^[^/]+\/[^/]+\/metadata\.json$/.test(name))
-      .sort();
-    return {
-      source: availableSource({ id, system: "entire", observedAt, sourceVersion: version, content: JSON.stringify(names) }),
-      count: names.length,
-    };
+    const result = await collectEntireRef(repositoryPath, { id, observedAt, ref });
+    if (result) return result;
   }
   return {
     source: unavailableSource({ id, system: "entire", observedAt, reason: "Entire metadata checkpoint ref is absent." }),
     count: 0,
+  };
+}
+
+async function collectEntireRef(repositoryPath, { id, observedAt, ref }) {
+  const exists = await runGit({
+    cwd: repositoryPath,
+    args: ["show-ref", "--verify", "--quiet", ref],
+    acceptableExitCodes: [0, 1],
+  });
+  if (exists.exitCode !== 0) return null;
+  const resolved = await resolveObservedRefVersion(repositoryPath, ref, observedAt);
+  if (!resolved.observed) {
+    return {
+      source: blockedSource({
+        id,
+        system: "entire",
+        observedAt,
+        sourceVersion: resolved.version,
+        reason: "Entire metadata checkpoint ref is newer than the requested observation.",
+      }),
+      count: 0,
+    };
+  }
+  const version = resolved.version;
+  const names = (await git(repositoryPath, ["ls-tree", "-r", "--name-only", version]))
+    .split("\n")
+    .filter((name) => /^[^/]+\/[^/]+\/metadata\.json$/.test(name))
+    .sort();
+  return {
+    source: availableSource({ id, system: "entire", observedAt, sourceVersion: version, content: JSON.stringify(names) }),
+    count: names.length,
   };
 }
 

@@ -1239,6 +1239,22 @@ test("Entire metadata is collected from the configured control remote", async (t
   assert.equal(malformedWorktree.metrics.entireCheckpointCount.status, "unavailable");
 });
 
+test("Entire refs newer than the observation are blocked", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-future-entire-");
+  await createMetadataRef(repo, {
+    branch: "future-entire",
+    ref: "refs/heads/entire/checkpoints/v1",
+    committedAt: "2026-07-24T06:00:00Z",
+    files: { "aa/session/metadata.json": "{}" },
+  });
+
+  const repository = await collectSingleRepository(repo, "future-entire");
+  const source = repository.sources.find((entry) => entry.system === "entire");
+  assert.equal(source.status, "blocked");
+  assert.match(source.reason, /newer than the requested observation/);
+  assert.equal(repository.metrics.entireCheckpointCount.status, "unavailable");
+});
+
 test("analytics JSON schema remains loadable and identifies the executable contract", async () => {
   const schema = JSON.parse(await readFile(new URL("../schemas/analytics-dataset.v0.1.schema.json", import.meta.url)));
   assert.equal(schema.properties.schemaVersion.const, "tabellio-analytics-dataset/v0.1");
@@ -1464,6 +1480,26 @@ test("analytics validator separates direct failure exits from runner evidence ev
   assert.equal(sensitiveEvidence.summary.includes("github_pat_"), false);
   assert.match(sensitiveEvidence.summary, /Delivery change identity is invalid/);
   assert.equal(sensitiveEvidence.artifacts.length, 2);
+
+  const urlCredentialDataset = structuredClone(dataset);
+  urlCredentialDataset["https://alice:hunter2@example.com/private"] = true;
+  resignDataset(urlCredentialDataset);
+  await writeFile(duplicateDatasetPath, JSON.stringify(urlCredentialDataset));
+  await execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+    "--profile", "schema",
+    "--validator-id", "analytics-schema-url-credential-summary-test",
+    "--dataset", duplicateDatasetPath,
+    "--report", reportPath,
+    "--out", duplicateEvidencePath,
+    "--exit-mode", "evidence",
+  ], { encoding: "utf8" });
+  const urlCredentialSummaryEvidence = JSON.parse(
+    await readFile(duplicateEvidencePath, "utf8"),
+  );
+  assert.equal(urlCredentialSummaryEvidence.status, "failed");
+  assert.match(urlCredentialSummaryEvidence.summary, /sensitive details were redacted/);
+  assert.equal(urlCredentialSummaryEvidence.summary.includes("hunter2"), false);
 
   const credentialDataset = structuredClone(dataset);
   const unavailableMetric = Object.values(credentialDataset.repositories[0].metrics)
