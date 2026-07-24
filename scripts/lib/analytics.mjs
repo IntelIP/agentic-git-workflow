@@ -57,6 +57,10 @@ const PROVIDER_SNAPSHOT_FIELDS = Object.freeze([
 
 const PROVIDER_SOURCE_FIELDS = Object.freeze(["status", "version", "reason"]);
 const PROVIDER_SOURCE_SYSTEMS = Object.freeze(["plane", "github", "github-actions"]);
+const PROVIDER_SOURCE_STATE_FIELDS = Object.freeze({
+  available: Object.freeze(["status", "version"]),
+  unavailable: Object.freeze(["reason", "status"]),
+});
 
 const DELIVERY_CHANGE_FIELDS = Object.freeze([
   "id",
@@ -1055,11 +1059,8 @@ function isProviderSource(source) {
 
 function providerSourceHasExactStateFields(source) {
   if (!isProviderSource(source)) return false;
-  const hasVersion = Object.hasOwn(source, "version");
-  const hasReason = Object.hasOwn(source, "reason");
-  return source.status === "available"
-    ? hasVersion && !hasReason
-    : !hasVersion && hasReason;
+  return canonicalJson(Object.keys(source).sort())
+    === canonicalJson(PROVIDER_SOURCE_STATE_FIELDS[source.status]);
 }
 
 function isSafeProviderReason(reason) {
