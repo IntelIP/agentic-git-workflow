@@ -4,33 +4,41 @@
   "failFast": false,
   "requireEntireCheckpoint": true,
   "acceptance": {
-    "id": "tabellio-v0.4-control-plane",
-    "source": "repository product contract and docs/product-validation.md",
+    "id": "tabellio-v0.5-control-plane-and-analytics",
+    "source": "repository product contract, docs/product-validation.md, and INTB-261",
     "risk": "high",
     "outcomes": [
       "Agent runs, checkpoints, reviews, and validation results remain bound to exact Git state.",
       "Typed validation distinguishes passed, failed, and blocked evidence.",
       "External actions and release operations remain approval-gated and fail closed.",
-      "Validation worktrees and isolated home directories remain outside the repository and Git common directory and are removed after each run."
+      "Validation worktrees and isolated home directories remain outside the repository and Git common directory and are removed after each run.",
+      "Cross-repository analytics preserve exact repository heads, source versions, link provenance, and unknown-not-zero semantics."
     ],
     "invariants": [
       "Validation never publishes, deploys, or mutates a live external system.",
       "Unknown or missing cost telemetry cannot be treated as zero.",
-      "A validation run cannot select a workspace root inside the repository or Git common directory."
+      "A validation run cannot select a workspace root inside the repository or Git common directory.",
+      "Portable analytics artifacts exclude local paths, transcript bodies, credentials, and private provider response bodies."
     ],
     "forbiddenOutcomes": [
       "A stale validation result is accepted for a moved head.",
       "A blocked validator is reported as passed.",
       "An unapproved external action is executed.",
-      "A validation worktree, temporary HOME, dependency cache, or generated validator output is created under .git."
+      "A validation worktree, temporary HOME, dependency cache, or generated validator output is created under .git.",
+      "Missing analytics evidence becomes numeric zero or a repository or developer vanity ranking."
     ],
-    "requiredValidatorTypes": ["static", "schema", "semantic", "workflow", "security"]
+    "requiredValidatorTypes": ["static", "schema", "semantic", "workflow", "operational", "security"]
   },
   "validators": [
     {"id": "control-plane-static", "type": "static", "argv": ["node", "scripts/tabellio-validator.mjs", "--profile", "static"], "cwd": ".", "timeoutMs": 1200000, "required": true, "evidence": null, "policy": {"metricThresholds": [], "maxCostUsd": null, "requireCostTelemetry": false}},
     {"id": "control-plane-schema", "type": "schema", "argv": ["node", "scripts/tabellio-validator.mjs", "--profile", "schema", "--validator-id", "control-plane-schema", "--out", ".artifacts/tabellio/schema.json"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/schema.json"}, "policy": {"metricThresholds": [{"metric": "platform_contract_pass", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}},
     {"id": "control-plane-semantic", "type": "semantic", "argv": ["node", "scripts/tabellio-validator.mjs", "--profile", "semantic", "--validator-id", "control-plane-semantic", "--out", ".artifacts/tabellio/semantic.json"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/semantic.json"}, "policy": {"metricThresholds": [{"metric": "validation_contract_examples_pass", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}},
     {"id": "control-plane-workflow", "type": "workflow", "argv": ["node", "scripts/tabellio-validator.mjs", "--profile", "workflow", "--validator-id", "control-plane-workflow", "--out", ".artifacts/tabellio/workflow.json"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/workflow.json"}, "policy": {"metricThresholds": [{"metric": "run_review_workflows_pass", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}},
-    {"id": "control-plane-security", "type": "security", "argv": ["node", "scripts/tabellio-validator.mjs", "--profile", "security", "--validator-id", "control-plane-security", "--out", ".artifacts/tabellio/security.json"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/security.json"}, "policy": {"metricThresholds": [{"metric": "external_action_policy_pass", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}}
+    {"id": "control-plane-security", "type": "security", "argv": ["node", "scripts/tabellio-validator.mjs", "--profile", "security", "--validator-id", "control-plane-security", "--out", ".artifacts/tabellio/security.json"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/security.json"}, "policy": {"metricThresholds": [{"metric": "external_action_policy_pass", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}},
+    {"id": "analytics-schema", "type": "schema", "argv": ["node", "scripts/tabellio-analytics-validator.mjs", "--profile", "schema", "--validator-id", "analytics-schema", "--dataset", "reports/analytics/2026-07-23-intb-261-baseline.json", "--report", "reports/analytics/2026-07-23-intb-261-baseline.md", "--expected-digest", "ebfad995403d4cbd7af750f254dda6c73f9ad3da4ab1cb5d33d3d1866b40b103", "--out", ".artifacts/tabellio/analytics-schema.json", "--exit-mode", "evidence"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/analytics-schema.json"}, "policy": {"metricThresholds": [{"metric": "analytics_schema_pass", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}},
+    {"id": "analytics-semantic", "type": "semantic", "argv": ["node", "scripts/tabellio-analytics-validator.mjs", "--profile", "semantic", "--validator-id", "analytics-semantic", "--dataset", "reports/analytics/2026-07-23-intb-261-baseline.json", "--report", "reports/analytics/2026-07-23-intb-261-baseline.md", "--expected-digest", "ebfad995403d4cbd7af750f254dda6c73f9ad3da4ab1cb5d33d3d1866b40b103", "--source", "reports/analytics/sources/2026-07-23-tabellio-provider-snapshot.json", "--out", ".artifacts/tabellio/analytics-semantic.json", "--exit-mode", "evidence"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/analytics-semantic.json"}, "policy": {"metricThresholds": [{"metric": "analytics_semantic_pass", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}},
+    {"id": "analytics-workflow", "type": "workflow", "argv": ["node", "scripts/tabellio-analytics-validator.mjs", "--profile", "workflow", "--validator-id", "analytics-workflow", "--dataset", "reports/analytics/2026-07-23-intb-261-baseline.json", "--report", "reports/analytics/2026-07-23-intb-261-baseline.md", "--expected-digest", "ebfad995403d4cbd7af750f254dda6c73f9ad3da4ab1cb5d33d3d1866b40b103", "--out", ".artifacts/tabellio/analytics-workflow.json", "--exit-mode", "evidence"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/analytics-workflow.json"}, "policy": {"metricThresholds": [{"metric": "analytics_report_reproducible", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}},
+    {"id": "analytics-operational", "type": "operational", "argv": ["node", "scripts/tabellio-analytics-validator.mjs", "--profile", "operational", "--validator-id", "analytics-operational", "--dataset", "reports/analytics/2026-07-23-intb-261-baseline.json", "--report", "reports/analytics/2026-07-23-intb-261-baseline.md", "--expected-digest", "ebfad995403d4cbd7af750f254dda6c73f9ad3da4ab1cb5d33d3d1866b40b103", "--out", ".artifacts/tabellio/analytics-operational.json", "--exit-mode", "evidence"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/analytics-operational.json"}, "policy": {"metricThresholds": [{"metric": "analytics_projection_25x_duration_ms", "operator": "lte", "value": 1000}], "maxCostUsd": 0, "requireCostTelemetry": true}},
+    {"id": "analytics-security", "type": "security", "argv": ["node", "scripts/tabellio-analytics-validator.mjs", "--profile", "security", "--validator-id", "analytics-security", "--dataset", "reports/analytics/2026-07-23-intb-261-baseline.json", "--report", "reports/analytics/2026-07-23-intb-261-baseline.md", "--expected-digest", "ebfad995403d4cbd7af750f254dda6c73f9ad3da4ab1cb5d33d3d1866b40b103", "--source", "reports/analytics/sources/2026-07-23-tabellio-provider-snapshot.json", "--out", ".artifacts/tabellio/analytics-security.json", "--exit-mode", "evidence"], "cwd": ".", "timeoutMs": 300000, "required": true, "evidence": {"path": ".artifacts/tabellio/analytics-security.json"}, "policy": {"metricThresholds": [{"metric": "analytics_privacy_pass", "operator": "eq", "value": 1}], "maxCostUsd": 0, "requireCostTelemetry": true}}
   ]
 }

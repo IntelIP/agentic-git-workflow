@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intelip.co/tabellio/schemas/analytics-dataset.v0.1.schema.json",
+  "title": "Tabellio analytics dataset v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "observedAt",
+    "window",
+    "metricDefinitions",
+    "repositories",
+    "integrity"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "tabellio-analytics-dataset/v0.1" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["since", "until"],
+      "properties": {
+        "since": { "type": "string", "format": "date-time" },
+        "until": { "type": "string", "format": "date-time" }
+      }
+    },
+    "metricDefinitions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/metricDefinition" }
+    },
+    "repositories": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/repository" }
+    },
+    "integrity": { "$ref": "#/$defs/integrity" }
+  },
+  "$defs": {
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "digest"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "metricDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "unit", "definition", "sourceSystems", "missingSemantics"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9]*$" },
+        "unit": { "type": "string", "minLength": 1 },
+        "definition": { "type": "string", "minLength": 1 },
+        "sourceSystems": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "missingSemantics": { "type": "string", "minLength": 1 }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "system", "status", "observedAt", "sourceVersion", "contentDigest", "reason"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "system": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["available", "unavailable", "blocked"] },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "sourceVersion": { "type": ["string", "null"] },
+        "contentDigest": {
+          "oneOf": [
+            { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            { "type": "null" }
+          ]
+        },
+        "reason": { "type": ["string", "null"] }
+      }
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "value", "unit", "sourceIds", "reason", "numerator", "denominator"],
+      "properties": {
+        "status": { "enum": ["measured", "unavailable"] },
+        "value": { "type": ["number", "boolean", "string", "null"] },
+        "unit": { "type": "string", "minLength": 1 },
+        "sourceIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "reason": { "type": ["string", "null"] },
+        "numerator": { "type": ["number", "null"] },
+        "denominator": { "type": ["number", "null"] }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "canonicalRepositoryId",
+        "headCommit",
+        "headCommittedAt",
+        "branch",
+        "sources",
+        "metrics",
+        "deliveryChanges"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "canonicalRepositoryId": { "type": "string", "minLength": 1 },
+        "headCommit": {
+          "oneOf": [
+            { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+            { "type": "null" }
+          ]
+        },
+        "headCommittedAt": {
+          "oneOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        },
+        "branch": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/source" }
+        },
+        "metrics": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/metric" }
+        },
+        "deliveryChanges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "linkBasis",
+              "linkEvidence",
+              "planeStoryId",
+              "pullRequestNumber",
+              "storyCreatedAt",
+              "firstActivityAt",
+              "mergedAt",
+              "releasedAt",
+              "headCommit",
+              "validationStatus",
+              "hostedStatus"
+            ],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "linkBasis": { "enum": ["explicit", "manual-reconciliation", "unlinked"] },
+              "linkEvidence": { "type": ["string", "null"], "maxLength": 500 },
+              "planeStoryId": { "type": ["string", "null"] },
+              "pullRequestNumber": { "type": ["integer", "null"], "minimum": 1 },
+              "storyCreatedAt": { "type": ["string", "null"], "format": "date-time" },
+              "firstActivityAt": { "type": ["string", "null"], "format": "date-time" },
+              "mergedAt": { "type": ["string", "null"], "format": "date-time" },
+              "releasedAt": { "type": ["string", "null"], "format": "date-time" },
+              "headCommit": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+              "validationStatus": { "enum": ["passed", "failed", "blocked", "unavailable"] },
+              "hostedStatus": { "enum": ["passed", "failed", "blocked", "unavailable"] }
+            }
+          }
+        }
+      }
+    }
+  }
+}

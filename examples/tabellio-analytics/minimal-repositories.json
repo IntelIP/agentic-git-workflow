@@ -1,0 +1,9 @@
+{
+  "repositories": [
+    {
+      "id": "example",
+      "path": ".",
+      "required": true
+    }
+  ]
+}
