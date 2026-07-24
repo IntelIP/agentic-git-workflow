@@ -622,9 +622,9 @@ function buildRepositoryMetrics({ commits, status, since, until, gitSource, vali
   const nativeSources = [validation.source, review.source, entire.source];
   const nativeAvailable = nativeSources.filter((source) => source.status === "available").length;
   const changes = provider.changes;
-  const traced = changes.filter(hasTaskAndPullRequest);
-  const leadTimes = changes.flatMap((change) => durationHours(change.storyCreatedAt, change.mergedAt));
-  const cycleTimes = changes.flatMap((change) => durationHours(change.firstActivityAt, change.mergedAt));
+  const linkedChanges = changes.filter(hasTaskAndPullRequest);
+  const leadTimes = linkedChanges.flatMap((change) => durationHours(change.storyCreatedAt, change.mergedAt));
+  const cycleTimes = linkedChanges.flatMap((change) => durationHours(change.firstActivityAt, change.mergedAt));
   const releaseLags = changes.flatMap((change) => durationHours(change.mergedAt, change.releasedAt));
   const ciComparisons = changes.flatMap((change) =>
     exactCiComparison(change, validation.values)
@@ -644,7 +644,7 @@ function buildRepositoryMetrics({ commits, status, since, until, gitSource, vali
     worktreeDirty: measured(status.length > 0, "boolean", [gitSource.id]),
     evidenceCompleteness: measured(availableCount / DECLARED_SOURCE_SYSTEMS.length, "ratio", sources.map((source) => source.id), availableCount, DECLARED_SOURCE_SYSTEMS.length),
     deliveryChangeCount: providerMetric(provider, measured(changes.length, "count", providerSourceIds), "count", providerSourceIds),
-    taskToPrTraceability: providerMetric(provider, ratioOrMissing(traced.length, changes.length, "ratio", providerSourceIds, "No eligible delivery changes in the provider snapshot."), "ratio", providerSourceIds),
+    taskToPrTraceability: providerMetric(provider, ratioOrMissing(linkedChanges.length, changes.length, "ratio", providerSourceIds, "No eligible delivery changes in the provider snapshot."), "ratio", providerSourceIds),
     leadTimeHours: providerMetric(provider, averageOrMissing(leadTimes, "hours", providerSourceIds, "No linked story creation and merge timestamps."), "hours", providerSourceIds),
     cycleTimeHours: providerMetric(provider, averageOrMissing(cycleTimes, "hours", [gitSource.id, ...providerSourceIds], "No linked first-activity and merge timestamps."), "hours", [gitSource.id, ...providerSourceIds]),
     ciDisagreementRate: sourceMetric([validation.source, provider.sources[2]], ratioOrMissing(ciDisagreements.length, ciComparisons.length, "ratio", [validation.source.id, provider.sources[2].id], "No candidates have both hosted and exact validation outcomes."), "ratio"),
@@ -974,7 +974,7 @@ function isSafeLinkEvidence(change) {
 
 function isSafeProviderText(value) {
   if (!isNonEmptyString(value) || value.length > 300) return false;
-  return !/[\\/]/.test(value) && !hasCredentialShape(value);
+  return !hasPortableTextControls(value) && !hasCredentialShape(value);
 }
 
 function isSafeProviderVersion(value) {
@@ -982,6 +982,7 @@ function isSafeProviderVersion(value) {
     isNonEmptyString(value),
     value?.length <= 300,
     !hasCredentialShape(value),
+    !hasPortableTextControls(value, { allowSlash: true }),
     providerVersionShapeSafe(value),
   ].every(Boolean);
 }
@@ -996,6 +997,11 @@ function isHttpEntityTag(value) {
 
 function hasCredentialShape(value) {
   return /(?:bearer\s|github_pat_|ghp_|(?:password|token|secret)\s*[=:])/i.test(value);
+}
+
+function hasPortableTextControls(value, { allowSlash = false } = {}) {
+  const unsafe = allowSlash ? /[\u0000-\u001F\u007F|\\]/ : /[\u0000-\u001F\u007F|\\/]/;
+  return unsafe.test(value);
 }
 
 function isNullableDateTime(value) {

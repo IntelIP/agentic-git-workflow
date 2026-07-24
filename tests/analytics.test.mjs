@@ -670,6 +670,23 @@ test("explicitly unlinked changes do not inflate task-to-PR traceability", async
   assert.equal(repository.metrics.taskToPrTraceability.status, "measured");
   assert.equal(repository.metrics.taskToPrTraceability.value, 0);
   assert.equal(repository.metrics.taskToPrTraceability.numerator, 0);
+  assert.equal(repository.metrics.leadTimeHours.status, "unavailable");
+  assert.equal(repository.metrics.cycleTimeHours.status, "unavailable");
+});
+
+test("provider identifiers cannot inject report rows", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-report-injection.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const document = providerSnapshotDocument(fixture.head);
+  document.deliveryChanges[0].id = "change|forged\nrow";
+  document.deliveryChanges[0].planeStoryId = "INTB-1|forged";
+  await writeFile(providerSnapshot, JSON.stringify(document));
+
+  const repository = await collectProviderRepository(fixture, providerSnapshot, "provider-report-injection");
+
+  assert.equal(repository.deliveryChanges.length, 0);
+  assert(!JSON.stringify(repository).includes("forged"));
 });
 
 test("CI disagreement uses unique exact-head validation evidence", async (t) => {
