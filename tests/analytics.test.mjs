@@ -1094,6 +1094,7 @@ test("analytics validator separates direct failure exits from runner evidence ev
   const directEvidencePath = join(root, "direct-evidence.json");
   const malformedDatasetPath = join(root, "malformed-dataset.json");
   const malformedEvidencePath = join(root, "malformed-evidence.json");
+  const malformedOperationalEvidencePath = join(root, "malformed-operational-evidence.json");
   const duplicateDatasetPath = join(root, "duplicate-dataset.json");
   const duplicateReportPath = join(root, "duplicate-report.md");
   const duplicateEvidencePath = join(root, "duplicate-evidence.json");
@@ -1154,6 +1155,22 @@ test("analytics validator separates direct failure exits from runner evidence ev
     0,
   );
 
+  const malformedOperationalResult = await execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+    "--profile", "operational",
+    "--validator-id", "analytics-operational-malformed-test",
+    "--dataset", malformedDatasetPath,
+    "--report", reportPath,
+    "--out", malformedOperationalEvidencePath,
+    "--exit-mode", "evidence",
+  ], { encoding: "utf8" });
+  const malformedOperationalEvidence = JSON.parse(
+    await readFile(malformedOperationalEvidencePath, "utf8"),
+  );
+
+  assert.equal(malformedOperationalResult.stderr, "");
+  assert.equal(malformedOperationalEvidence.status, "failed");
+
   const duplicateDataset = structuredClone(dataset);
   const repositoryAliases = [
     "Example/Analytics",
@@ -1210,6 +1227,54 @@ test("analytics validator separates direct failure exits from runner evidence ev
   assert.equal(credentialEvidence.status, "failed");
   assert.equal(
     credentialEvidence.metrics.find((metric) => metric.name === "analytics_privacy_pass").value,
+    0,
+  );
+
+  await writeFile(
+    credentialReportPath,
+    "Remote URLs remain portable: https://example.com/home/alice\n",
+  );
+  await execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+    "--profile", "security",
+    "--validator-id", "analytics-security-url-test",
+    "--dataset", datasetPath,
+    "--report", credentialReportPath,
+    "--out", credentialEvidencePath,
+    "--exit-mode", "evidence",
+  ], { encoding: "utf8" });
+  assert.equal(
+    JSON.parse(await readFile(credentialEvidencePath, "utf8")).status,
+    "passed",
+  );
+
+  await writeFile(
+    credentialReportPath,
+    [
+      "Local paths must be blocked:",
+      "/home/alice/repo",
+      "/etc/ssh/ssh_config",
+      "path=/home/alice/repo",
+      "file:///home/alice/repo",
+      "C:\\Users\\alice\\repo",
+      "\\\\server\\share",
+      "",
+    ].join("\n"),
+  );
+  await execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+    "--profile", "security",
+    "--validator-id", "analytics-security-path-test",
+    "--dataset", datasetPath,
+    "--report", credentialReportPath,
+    "--out", credentialEvidencePath,
+    "--exit-mode", "evidence",
+  ], { encoding: "utf8" });
+  const pathEvidence = JSON.parse(await readFile(credentialEvidencePath, "utf8"));
+
+  assert.equal(pathEvidence.status, "failed");
+  assert.equal(
+    pathEvidence.metrics.find((metric) => metric.name === "analytics_privacy_pass").value,
     0,
   );
 });

@@ -106,12 +106,16 @@ function validateWorkflowProfile({ dataset, reportRaw }) {
 
 function validateOperationalProfile({ dataset }) {
   const startedAt = performance.now();
-  for (let index = 0; index < 25; index += 1) {
-    validateAnalyticsDataset(dataset);
-    renderAnalyticsReport(dataset);
-  }
+  const errors = captureError(() => {
+    for (let index = 0; index < 25; index += 1) {
+      validateAnalyticsDataset(dataset);
+      renderAnalyticsReport(dataset);
+    }
+  });
   const durationMs = performance.now() - startedAt;
-  const errors = compact([errorUnless(durationMs <= 1_000, `Twenty-five local projections took ${durationMs.toFixed(2)}ms.`)]);
+  if (errors.length === 0 && durationMs > 1_000) {
+    errors.push(`Twenty-five local projections took ${durationMs.toFixed(2)}ms.`);
+  }
   return result("Twenty-five local validation and report projections complete within one second.", errors, [
     metric("analytics_projection_25x_duration_ms", durationMs, "milliseconds"),
   ]);
@@ -130,9 +134,23 @@ function validateSecurityProfile({ datasetRaw, reportRaw }) {
   const errors = forbidden.flatMap(([needle, message]) =>
     typeof needle === "string" ? (payload.includes(needle) ? [message] : []) : (needle.test(payload) ? [message] : [])
   );
+  if (containsLocalFilesystemPath(payload)) errors.push("Local filesystem path leaked.");
   return result("Portable analytics artifacts contain no local paths, transcript bodies, or credential-shaped values.", errors, [
     metric("analytics_privacy_pass", errors.length === 0 ? 1 : 0, "boolean"),
   ]);
+}
+
+function containsLocalFilesystemPath(payload) {
+  if (/file:\/\/+/i.test(payload)) return true;
+  const withoutRemoteUrls = payload.replace(
+    /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>)]*/gi,
+    "",
+  );
+  return [
+    /(?:^|[^A-Za-z0-9/])\/(?!\/)[^\s"'<>|]+/m,
+    /(?:^|[^A-Za-z0-9+.-])[A-Za-z]:[\\/]+[^\s"'<>|]+/,
+    /(?:^|[^\\])\\{2,}[^\\\s]+\\+/,
+  ].some((pattern) => pattern.test(withoutRemoteUrls));
 }
 
 function result(summary, errors, metrics) {
