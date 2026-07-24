@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +10,7 @@ import {
   renderAnalyticsReport,
   validateAnalyticsDataset,
 } from "../scripts/lib/analytics.mjs";
+import { canonicalJson } from "../scripts/lib/context-packet.mjs";
 import { runGit } from "../scripts/lib/git-process.mjs";
 import { identityEnv } from "./helpers/git-fixture.mjs";
 
@@ -61,10 +63,10 @@ test("analytics collection is deterministic, provenance-bound, and preserves unk
   assert.equal(first.repositories[0].metrics.commitCount.value, 1);
   assert.equal(first.repositories[0].metrics.validationAttemptCount.value, 1);
   assert.equal(first.repositories[0].metrics.validationPassRate.value, 1);
-  assert.equal(first.repositories[0].metrics.costTelemetryCoverage.value, 1);
+  assert.equal(first.repositories[0].metrics.costTelemetryCoverage.value, 0);
   assert.equal(first.repositories[0].metrics.entireCheckpointCount.value, 1);
-  assert.equal(first.repositories[0].metrics.reviewFindingCount.value, 1);
-  assert.equal(first.repositories[0].metrics.repairCount.value, 1);
+  assert.equal(first.repositories[0].metrics.reviewFindingCount.value, 0);
+  assert.equal(first.repositories[0].metrics.repairCount.value, 0);
   assert.equal(first.repositories[0].metrics.taskToPrTraceability.value, 1);
   assert.equal(first.repositories[0].metrics.leadTimeHours.value, 26);
   assert.equal(first.repositories[0].metrics.cycleTimeHours.value, 24);
@@ -141,6 +143,59 @@ test("dataset validation requires the canonical metric set and definitions", asy
   }));
   second.metricDefinitions[0] = { ...second.metricDefinitions[0], unit: "score" };
   assert.throws(() => validateAnalyticsDataset(second), /Metric definitions are incomplete/);
+});
+
+test("dataset validation executes the published schema contract", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const dataset = await collectAnalyticsDataset({
+    id: "schema-baseline",
+    repositories: [{ id: "fixture", path: fixture.repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+
+  dataset.repositories[0].unexpected = "forbidden";
+  dataset.repositories[0].sources[0].status = "invented";
+  resignDataset(dataset);
+
+  assert.throws(
+    () => validateAnalyticsDataset(dataset),
+    /unexpected is not allowed|status must be one of/,
+  );
+});
+
+test("repository identity excludes local paths and URL credentials", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-private-remote-"));
+  const repo = join(root, "repo");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await initializeRepository(repo);
+
+  await runGit({ cwd: repo, args: ["remote", "set-url", "origin", join(root, "private-control.git")] });
+  const localDataset = await collectAnalyticsDataset({
+    id: "private-local",
+    repositories: [{ id: "fixture", path: repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  assert.match(localDataset.repositories[0].canonicalRepositoryId, /^remote\/[0-9a-f]{16}$/);
+  assert(!JSON.stringify(localDataset).includes(root));
+
+  await runGit({
+    cwd: repo,
+    args: ["remote", "set-url", "origin", "https://agent:private-token@example.com/org/repository.git"],
+  });
+  const credentialDataset = await collectAnalyticsDataset({
+    id: "private-credential",
+    repositories: [{ id: "fixture", path: repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  assert.equal(credentialDataset.repositories[0].canonicalRepositoryId, "example.com/org/repository");
+  assert(!JSON.stringify(credentialDataset).includes("private-token"));
 });
 
 test("provider read failures are blocked without leaking local paths", async (t) => {
@@ -229,29 +284,64 @@ test("provider-derived metrics require their declared evidence sources", async (
 });
 
 test("malformed validation evidence blocks its metrics without blocking local Git", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-malformed-"));
-  const repo = join(root, "repo");
-  t.after(() => rm(root, { recursive: true, force: true }));
-  await initializeRepository(repo);
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-malformed-");
   await createMetadataRef(repo, {
     branch: "validation",
     ref: "refs/tabellio/validations",
     files: { "commits/bad/validation.json": "{not-json\n" },
   });
 
-  const dataset = await collectAnalyticsDataset({
-    id: "malformed-baseline",
-    repositories: [{ id: "malformed", path: repo }],
-    observedAt: OBSERVED_AT,
-    since: SINCE,
-    until: UNTIL,
-  });
-  const repository = dataset.repositories[0];
+  const repository = await collectSingleRepository(repo, "malformed");
   const validationSource = repository.sources.find((source) => source.system === "tabellio-validation");
 
   assert.equal(validationSource.status, "blocked");
   assert.equal(repository.metrics.validationAttemptCount.value, null);
   assert.equal(repository.metrics.commitCount.status, "measured");
+});
+
+test("schema-invalid control records block their source metrics", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-invalid-record-");
+  await createMetadataRef(repo, {
+    branch: "validation-invalid",
+    ref: "refs/tabellio/validations",
+    files: {
+      "commits/bad/validation.json": JSON.stringify({
+        schemaVersion: "tabellio-validation-result/v0.3",
+        status: "passed",
+        completedAt: "2026-07-20T12:00:00.000Z",
+        validators: [],
+      }),
+    },
+  });
+
+  const repository = await collectSingleRepository(repo, "invalid-record");
+  const validationSource = repository.sources.find((source) => source.system === "tabellio-validation");
+
+  assert.equal(validationSource.status, "blocked");
+  assert.match(validationSource.reason, /Schema-invalid JSON/);
+  assert.equal(repository.metrics.validationAttemptCount.value, null);
+});
+
+test("Entire metadata is collected from the configured control remote", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-control-");
+  await createMetadataRef(repo, {
+    branch: "control-entire",
+    ref: "refs/remotes/control/entire/checkpoints/v1",
+    files: { "aa/session/metadata.json": "{}" },
+  });
+  await writeFile(join(repo, "tabellio.platform.json"), JSON.stringify({
+    workflow: { controlRemoteName: "control" },
+  }));
+
+  const repository = await collectSingleRepository(repo, "control");
+  const checkpointMetric = repository.metrics.entireCheckpointCount;
+
+  assert.equal(checkpointMetric.status, "measured");
+  assert.equal(checkpointMetric.value, 1);
+  assert.equal(
+    repository.sources.find((source) => source.system === "entire").sourceVersion.length,
+    40,
+  );
 });
 
 test("analytics JSON schema remains loadable and identifies the executable contract", async () => {
@@ -268,28 +358,20 @@ async function createAnalyticsFixture() {
     branch: "validation",
     ref: "refs/tabellio/validations",
     files: {
-      "commits/example/validation.json": JSON.stringify({
-        schemaVersion: "tabellio-validation-result/v0.3",
-        status: "passed",
-        completedAt: "2026-07-20T12:00:00.000Z",
-        validators: [
-          { id: "static", type: "static", required: true, status: "passed" },
-          {
-            id: "semantic",
-            type: "semantic",
-            required: true,
-            status: "passed",
-            evidence: { report: { cost: { telemetry: "available", usd: 0, modelCalls: 0, toolCalls: 0 } } },
-          },
-        ],
-      }),
+      "commits/example/validation.json": await readFile(
+        new URL("../examples/tabellio-validation/minimal-result.json", import.meta.url),
+        "utf8",
+      ),
     },
   });
   await createMetadataRef(repo, {
     branch: "review",
     ref: "refs/tabellio/reviews",
     files: {
-      "cycles/example.json": JSON.stringify({ feedback: [{ id: "finding" }], fixes: [{ id: "repair" }] }),
+      "cycles/example.json": await readFile(
+        new URL("../examples/tabellio-review/minimal-cycle.json", import.meta.url),
+        "utf8",
+      ),
     },
   });
   await createMetadataRef(repo, {
@@ -303,6 +385,33 @@ async function createAnalyticsFixture() {
   });
   const head = (await runGit({ cwd: repo, args: ["rev-parse", "HEAD"] })).stdout.trim();
   return { root, repo, head };
+}
+
+async function createEmptyAnalyticsRepository(t, prefix) {
+  const root = await mkdtemp(join(tmpdir(), prefix));
+  const repo = join(root, "repo");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await initializeRepository(repo);
+  return { root, repo };
+}
+
+async function collectSingleRepository(repo, id) {
+  const dataset = await collectAnalyticsDataset({
+    id: `${id}-baseline`,
+    repositories: [{ id, path: repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  return dataset.repositories[0];
+}
+
+function resignDataset(dataset) {
+  delete dataset.integrity;
+  dataset.integrity = {
+    algorithm: "sha256",
+    digest: createHash("sha256").update(canonicalJson(dataset)).digest("hex"),
+  };
 }
 
 function providerSnapshotDocument(headCommit, overrides = {}) {

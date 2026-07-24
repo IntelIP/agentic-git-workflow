@@ -8,7 +8,7 @@ export async function repositoryIdentity(store, explicitId = null) {
   return remote ? normalizeRepositoryRemote(remote) : localRepositoryId(store.repoPath);
 }
 
-function normalizeRepositoryRemote(remote) {
+export function normalizeRepositoryRemote(remote) {
   const github = parseGitHubRepositoryRemote(remote);
   if (github) return github.identity;
   if (/^[A-Za-z]:[\\/]/.test(remote) || remote.startsWith("/") || remote.startsWith("\\\\")) {

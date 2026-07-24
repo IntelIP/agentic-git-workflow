@@ -1,9 +1,20 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
 
 import { runGit } from "./git-process.mjs";
+import { canonicalJson } from "./context-packet.mjs";
+import { parseGitHubRepositoryRemote } from "./github-repository.mjs";
+import { validateJsonSchema } from "./json-schema-validator.mjs";
+import { normalizeRepositoryRemote } from "./repository-identity.mjs";
+import { validateReviewCycle } from "./review-cycle.mjs";
+import { validateValidationResult } from "./validation-runner.mjs";
 
 const ANALYTICS_SCHEMA_VERSION = "tabellio-analytics-dataset/v0.1";
+const ANALYTICS_SCHEMA = JSON.parse(readFileSync(
+  new URL("../../schemas/analytics-dataset.v0.1.schema.json", import.meta.url),
+  "utf8",
+));
 
 const METRIC_DEFINITIONS = Object.freeze([
   defineMetric("commitCount", "count", "Commits reachable from HEAD whose commit time falls inside the observation window.", ["git"], "Unavailable when local Git cannot be read."),
@@ -71,6 +82,8 @@ function hasIncompleteRepositoryInput(repository) {
 }
 
 export function validateAnalyticsDataset(dataset) {
+  const schemaErrors = validateJsonSchema(dataset, ANALYTICS_SCHEMA);
+  if (schemaErrors.length > 0) throwValidationErrors(schemaErrors);
   const definitions = asArray(dataset?.metricDefinitions);
   const definitionIds = new Set(definitions.map((definition) => definition.id));
   const repositoryErrors = asArray(dataset?.repositories).flatMap((repository) =>
@@ -156,7 +169,7 @@ function validWindow(window) {
 }
 
 function hasCompleteDefinitions(definitions) {
-  return Array.isArray(definitions) && stableStringify(definitions) === stableStringify(METRIC_DEFINITIONS);
+  return Array.isArray(definitions) && canonicalJson(definitions) === canonicalJson(METRIC_DEFINITIONS);
 }
 
 function hasRepositoryIdentity(repository) {
@@ -275,7 +288,9 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     git(repositoryPath, ["status", "--porcelain=v1"]),
     git(repositoryPath, ["rev-list", "--count", `--since=${since}`, `--until=${until}`, "HEAD"]),
   ]);
-  const canonicalRepositoryId = normalizeRepositoryId(remote || id);
+  const githubRepository = parseGitHubRepositoryRemote(remote);
+  const canonicalRepositoryId = githubRepository?.fullName
+    ?? (remote ? normalizeRepositoryRemote(remote) : `local/${id}`);
   const gitSource = availableSource({
     id: `${id}:git`,
     system: "git",
@@ -289,6 +304,7 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     ref: "refs/tabellio/validations",
     observedAt,
     include: (name) => name.endsWith(".json"),
+    validate: validateValidationResult,
   });
   const review = await collectJsonRef(repositoryPath, {
     id: `${id}:tabellio-review`,
@@ -296,6 +312,7 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     ref: "refs/tabellio/reviews",
     observedAt,
     include: (name) => name.endsWith(".json"),
+    validate: (value) => validateReviewCycle(value, { allowLegacyUnknownMergeabilityReady: true }),
   });
   const entire = await collectEntireMetadata(repositoryPath, { id: `${id}:entire`, observedAt });
   const provider = await collectProviderSnapshot({ id, canonicalRepositoryId, providerSnapshot, observedAt });
@@ -584,7 +601,7 @@ function providerProjection(change, system) {
   };
 }
 
-async function collectJsonRef(repositoryPath, { id, system, ref, observedAt, include }) {
+async function collectJsonRef(repositoryPath, { id, system, ref, observedAt, include, validate }) {
   const exists = await runGit({
     cwd: repositoryPath,
     args: ["show-ref", "--verify", "--quiet", ref],
@@ -600,16 +617,15 @@ async function collectJsonRef(repositoryPath, { id, system, ref, observedAt, inc
   const canonical = [];
   for (const name of names) {
     const raw = await git(repositoryPath, ["show", `${ref}:${name}`]);
-    try {
-      const value = JSON.parse(raw);
-      values.push(value);
-      canonical.push([name, value]);
-    } catch {
+    const record = parseControlRecord(raw, validate);
+    if (record.error) {
       return {
-        source: blockedSource({ id, system, observedAt, sourceVersion: version, reason: `Malformed JSON at ${name}.` }),
+        source: blockedSource({ id, system, observedAt, sourceVersion: version, reason: `${record.error} at ${name}.` }),
         values: [],
       };
     }
+    values.push(record.value);
+    canonical.push([name, record.value]);
   }
   return {
     source: availableSource({ id, system, observedAt, sourceVersion: version, content: JSON.stringify(canonical) }),
@@ -618,7 +634,11 @@ async function collectJsonRef(repositoryPath, { id, system, ref, observedAt, inc
 }
 
 async function collectEntireMetadata(repositoryPath, { id, observedAt }) {
-  const candidates = ["refs/heads/entire/checkpoints/v1", "refs/remotes/origin/entire/checkpoints/v1"];
+  const controlRemote = await configuredControlRemote(repositoryPath);
+  const candidates = [
+    "refs/heads/entire/checkpoints/v1",
+    ...(controlRemote ? [`refs/remotes/${controlRemote}/entire/checkpoints/v1`] : []),
+  ];
   for (const ref of candidates) {
     const exists = await runGit({
       cwd: repositoryPath,
@@ -640,6 +660,34 @@ async function collectEntireMetadata(repositoryPath, { id, observedAt }) {
     source: unavailableSource({ id, system: "entire", observedAt, reason: "Entire metadata checkpoint ref is absent." }),
     count: 0,
   };
+}
+
+function parseControlRecord(raw, validate) {
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return { value: null, error: "Malformed JSON" };
+  }
+  try {
+    validate(value);
+    return { value, error: null };
+  } catch {
+    return { value: null, error: "Schema-invalid JSON" };
+  }
+}
+
+async function configuredControlRemote(repositoryPath) {
+  try {
+    const platform = JSON.parse(await readFile(`${repositoryPath}/tabellio.platform.json`, "utf8"));
+    return safeControlRemote(platform?.workflow?.controlRemoteName);
+  } catch {
+    return null;
+  }
+}
+
+function safeControlRemote(remote) {
+  return typeof remote === "string" && /^[A-Za-z0-9._-]+$/.test(remote) ? remote : null;
 }
 
 async function git(cwd, args, acceptableExitCodes = [0]) {
@@ -710,25 +758,8 @@ function display(metric) {
   return String(metric.value);
 }
 
-function normalizeRepositoryId(remote) {
-  const normalized = remote
-    .replace(/^git@github\.com:/, "")
-    .replace(/^https?:\/\/github\.com\//, "")
-    .replace(/\.git$/, "")
-    .replace(/\/+$/, "");
-  return normalized || remote;
-}
-
 function digestCanonical(value) {
-  return sha256(stableStringify(value));
-}
-
-function stableStringify(value) {
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
+  return sha256(canonicalJson(value));
 }
 
 function sha256(value) {
