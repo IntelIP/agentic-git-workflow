@@ -124,7 +124,7 @@ test("GitHub status publisher posts only the approved commit status fields", asy
   };
 
   const publisher = new GitHubStatusPublisher({
-    baseUrl: "https://api.github.test",
+    baseUrl: "https://127.0.0.1:9443",
     token: "secret-token",
     fetchImpl,
   });
@@ -141,7 +141,7 @@ test("GitHub status publisher posts only the approved commit status fields", asy
   assert.equal(result.id, "71");
   assert.deepEqual(requests, [{
     method: "POST",
-    url: `https://api.github.test/repos/IntelIP/Tabellio/statuses/${"b".repeat(40)}`,
+    url: `https://127.0.0.1:9443/repos/IntelIP/Tabellio/statuses/${"b".repeat(40)}`,
     authorization: "Bearer secret-token",
     body: {
       state: "success",
@@ -152,13 +152,37 @@ test("GitHub status publisher posts only the approved commit status fields", asy
   }]);
 });
 
+test("GitHub status publisher permits GitHub Cloud and loopback test transports only", () => {
+  const options = { token: "secret-token", fetchImpl: async () => new Response() };
+  assert.doesNotThrow(() => new GitHubStatusPublisher({
+    ...options,
+    baseUrl: "https://api.github.com",
+  }));
+  assert.doesNotThrow(() => new GitHubStatusPublisher({
+    ...options,
+    baseUrl: "http://localhost:8080",
+  }));
+  assert.doesNotThrow(() => new GitHubStatusPublisher({
+    ...options,
+    baseUrl: "https://127.0.0.1:9443",
+  }));
+  assert.throws(
+    () => new GitHubStatusPublisher({ ...options, baseUrl: "https://example.com" }),
+    /must target GitHub Cloud or loopback/,
+  );
+  assert.throws(
+    () => new GitHubStatusPublisher({ ...options, baseUrl: "https://api.github.com.example.test" }),
+    /must target GitHub Cloud or loopback/,
+  );
+});
+
 test("GitHub status publisher rejects unsafe endpoints and redacts token failures", async () => {
   assert.throws(
     () => new GitHubStatusPublisher({ baseUrl: "http://example.com", token: "token" }),
-    /must use HTTPS/,
+    /must target GitHub Cloud or loopback/,
   );
   const publisher = new GitHubStatusPublisher({
-    baseUrl: "https://api.github.test",
+    baseUrl: "https://api.github.com",
     token: "secret-token",
     fetchImpl: async () => new Response(
       JSON.stringify({ message: "bad secret-token" }),
@@ -181,7 +205,7 @@ test("GitHub status publisher rejects unsafe endpoints and redacts token failure
   );
 
   const incompletePublisher = new GitHubStatusPublisher({
-    baseUrl: "https://api.github.test",
+    baseUrl: "https://api.github.com",
     token: "secret-token",
     fetchImpl: async () => new Response(JSON.stringify({
       id: 72,

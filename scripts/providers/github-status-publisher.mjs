@@ -1,5 +1,6 @@
 const DEFAULT_BASE_URL = "https://api.github.com";
 const DEFAULT_TIMEOUT_MS = 30_000;
+const GITHUB_CLOUD_HOST = "api.github.com";
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost"]);
 
 export class GitHubStatusPublisher {
@@ -106,7 +107,7 @@ function normalizePublishedStatus(value) {
 
 function normalizeBaseUrl(value) {
   const parsed = parseAbsoluteUrl(value, "baseUrl");
-  requireApiProtocol(parsed);
+  requireAllowedApiEndpoint(parsed);
   requireCleanApiUrl(parsed);
   parsed.pathname = parsed.pathname.replace(/\/+$/, "");
   return parsed.toString().replace(/\/$/, "");
@@ -185,10 +186,15 @@ function parseAbsoluteUrl(value, path) {
   return new URL(value);
 }
 
-function requireApiProtocol(value) {
-  const allowed = value.protocol === "https:"
-    || (value.protocol === "http:" && LOCAL_HOSTS.has(value.hostname));
-  if (!allowed) throw new TypeError("baseUrl must use HTTPS unless it targets localhost.");
+function requireAllowedApiEndpoint(value) {
+  const githubCloud = value.protocol === "https:"
+    && value.hostname === GITHUB_CLOUD_HOST
+    && value.port === "";
+  const loopback = ["http:", "https:"].includes(value.protocol)
+    && LOCAL_HOSTS.has(value.hostname);
+  if (!githubCloud && !loopback) {
+    throw new TypeError("baseUrl must target GitHub Cloud or loopback.");
+  }
 }
 
 function requireCleanApiUrl(value) {

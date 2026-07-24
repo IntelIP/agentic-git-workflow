@@ -85,6 +85,7 @@ Execution re-reads the validation ledger, resolves the exact commit, verifies re
 
 - This command publishes a GitHub commit status. It does not push code, merge, release, deploy, modify branch protection, or change billing.
 - Use a dedicated GitHub App installation token or other credential limited to commit-status publication for the target repositories.
+- The publisher sends that credential only to `https://api.github.com`. `--api-url` and `GITHUB_API_URL` accept HTTP or HTTPS loopback URLs only for injected local tests; GitHub Enterprise Server and other remote API hosts are unsupported until repository identity and policy represent them.
 - Do not run untrusted repository validation on a persistent machine containing credentials. Use an ephemeral VM, container, or sandbox.
 - Branch protection migration remains a separate human decision after sandbox proof.
 
