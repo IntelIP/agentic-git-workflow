@@ -5,7 +5,7 @@ import { validateValidationResult } from "./validation-runner.mjs";
 
 const INTENT_VERSION = "tabellio-merge-ready-status-intent/v0.1";
 const APPROVAL_VERSION = "tabellio-merge-ready-status-approval/v0.1";
-const CONTEXT = "Tabellio / merge-ready";
+const CONTEXT = "Tabellio / exact-head-validation";
 const MAX_APPROVAL_MS = 60 * 60 * 1000;
 const STATUS_BY_VALIDATION = Object.freeze({
   passed: {
@@ -107,7 +107,7 @@ export function validateMergeReadyStatusApproval(value, intent, { now = new Date
     now,
   });
   if (Date.parse(approval.expiresAt) - Date.parse(approval.approvedAt) > MAX_APPROVAL_MS) {
-    throw new Error("Merge-ready status approval lifetime must not exceed one hour.");
+    throw new Error("Exact-head validation status approval lifetime must not exceed one hour.");
   }
   return approval;
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:tabellio:schema:merge-ready-status-intent:v0.1",
-  "title": "Tabellio Merge-Ready Status Intent",
+  "title": "Tabellio Exact-Head Validation Status Intent",
   "type": "object",
   "required": ["schemaVersion", "repository", "commit", "validation", "status", "createdAt", "integrity"],
   "additionalProperties": false,
@@ -36,7 +36,7 @@
       "required": ["context", "state", "description", "targetUrl"],
       "additionalProperties": false,
       "properties": {
-        "context": { "const": "Tabellio / merge-ready" },
+        "context": { "const": "Tabellio / exact-head-validation" },
         "state": { "enum": ["success", "failure", "error"] },
         "description": { "type": "string", "minLength": 1, "maxLength": 140 },
         "targetUrl": { "type": ["string", "null"], "format": "uri" }

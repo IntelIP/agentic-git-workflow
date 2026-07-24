@@ -1,4 +1,4 @@
-# Merge-Ready Status
+# Exact-Head Validation Status
 
 Tabellio can publish one exact-candidate GitHub commit status without using GitHub Actions as the validation runtime.
 
@@ -6,9 +6,11 @@ The flow has three separate authorities:
 
 1. `tabellio-validate gate` runs the committed manifest on a trusted worker and writes exact-head evidence to `refs/tabellio/validations`.
 2. `tabellio-merge-ready plan` reads the newest matching validation and creates an integrity-bound status intent. Planning performs no network write.
-3. `tabellio-merge-ready execute` requires a separate, active approval plus a scoped GitHub credential before it publishes `Tabellio / merge-ready`.
+3. `tabellio-merge-ready execute` requires a separate, active approval plus a scoped GitHub credential before it publishes `Tabellio / exact-head-validation`.
 
-GitHub Actions, a self-hosted service, Buildkite, a local coordinator, or a Codex PR workflow may invoke these commands. The scheduler supplies capacity. Tabellio owns the exact-candidate decision.
+GitHub Actions, a self-hosted service, Buildkite, a local coordinator, or a Codex PR workflow may invoke these commands. The scheduler supplies capacity. Tabellio owns the exact-candidate validation decision.
+
+This status means only that the repository's committed validation manifest passed for the named commit. It does not claim review clearance, passing unrelated checks, policy approval, mergeability, or authorization to merge. Those remain separate PR-workflow gates.
 
 Codex/Entire validation tasks must start inside the target repository or worktree so Entire can link the candidate commit to truthful session provenance.
 
@@ -43,7 +45,7 @@ The intent fixes:
 - exact commit;
 - validation run and integrity digest;
 - validation completion time and manifest digest;
-- the sole status context `Tabellio / merge-ready`;
+- the sole status context `Tabellio / exact-head-validation`;
 - the status state derived from `passed`, `failed`, or `blocked`.
 
 Callers cannot turn a failed or blocked validation into `success`.
@@ -96,10 +98,10 @@ The PR workflow can replace hosted validation coordination with:
 ```text
 validate exact head
   -> inspect passed/failed/blocked evidence
-  -> plan fixed merge-ready status
+  -> plan fixed exact-head validation status
   -> obtain short-lived human approval
   -> publish status
   -> continue review and merge-readiness checks
 ```
 
-Automatic triggering still requires a scheduler or worker process. This CLI provides the portable validation-to-status contract; it is not an always-running daemon.
+Automatic triggering still requires a scheduler or worker process. This CLI provides the portable validation-to-status contract; it is not an always-running daemon. The command retains its `tabellio-merge-ready` workflow name, but its published status is deliberately narrower than whole-PR merge readiness.

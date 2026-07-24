@@ -73,7 +73,7 @@ export class MergeReadyStatusExecutor {
     if (stateRoot !== null) {
       const canonicalRoot = await canonicalProspectivePath(root);
       for (const protectedRoot of await statusStateProtectedRoots(store.repoPath)) {
-        assertExternalStateRoot(protectedRoot, canonicalRoot, "Merge-ready status");
+        assertExternalStateRoot(protectedRoot, canonicalRoot, "Exact-head validation status");
       }
     }
     return new MergeReadyStatusExecutor({
@@ -91,7 +91,7 @@ export class MergeReadyStatusExecutor {
       repoPath: this.store.repoPath,
       stateRoot: this.stateRoot,
       lockName: "merge-ready-status",
-      label: "merge-ready status publication",
+      label: "exact-head validation status publication",
     }, () => this.#executeLocked({ intent, approval, now }));
   }
 

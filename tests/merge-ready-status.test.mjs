@@ -29,7 +29,7 @@ const repository = {
   name: "Tabellio",
 };
 
-test("merge-ready status intent binds exact validation and derives the fixed success context", async () => {
+test("exact-head validation status intent binds exact validation and derives the fixed context", async () => {
   const validation = await validationFixture();
   const intent = createMergeReadyStatusIntent({
     repository,
@@ -39,7 +39,7 @@ test("merge-ready status intent binds exact validation and derives the fixed suc
     createdAt,
   });
 
-  assert.equal(intent.status.context, "Tabellio / merge-ready");
+  assert.equal(intent.status.context, "Tabellio / exact-head-validation");
   assert.equal(intent.status.state, "success");
   assert.equal(intent.validation.resultDigest, validation.integrity.digest);
   assert.equal(validateMergeReadyStatusIntent(intent), intent);
@@ -49,7 +49,7 @@ test("merge-ready status intent binds exact validation and derives the fixed suc
   assert.throws(() => validateMergeReadyStatusIntent(tampered), /integrity.digest/);
 });
 
-test("merge-ready status derives failure and schema contracts forbid extension fields", async () => {
+test("exact-head validation status derives failure and schema contracts forbid extension fields", async () => {
   const validation = await validationFixture();
   validation.status = "failed";
   validation.commands[0].status = "failed";
@@ -70,7 +70,7 @@ test("merge-ready status derives failure and schema contracts forbid extension f
     schema("merge-ready-status-receipt.schema.json"),
   ]);
   assert.equal(intentSchema.additionalProperties, false);
-  assert.equal(intentSchema.properties.status.properties.context.const, "Tabellio / merge-ready");
+  assert.equal(intentSchema.properties.status.properties.context.const, "Tabellio / exact-head-validation");
   assert.deepEqual(intentSchema.properties.validation.properties.status.enum, ["passed", "failed", "blocked"]);
   assert.equal(approvalSchema.additionalProperties, false);
   assert.equal(approvalSchema.properties.approved.const, true);
@@ -78,7 +78,7 @@ test("merge-ready status derives failure and schema contracts forbid extension f
   assert.deepEqual(receiptSchema.properties.status.enum, ["attempted", "succeeded", "failed"]);
 });
 
-test("merge-ready status approval is exact-intent, active, and capped at one hour", async () => {
+test("exact-head validation status approval is exact-intent, active, and capped at one hour", async () => {
   const validation = await validationFixture();
   const intent = createMergeReadyStatusIntent({
     repository,
@@ -106,7 +106,7 @@ test("merge-ready status approval is exact-intent, active, and capped at one hou
   );
 });
 
-test("merge-ready status intent cannot predate its validation", async () => {
+test("exact-head validation status intent cannot predate its validation", async () => {
   const validation = await validationFixture();
   assert.throws(
     () => createMergeReadyStatusIntent({
@@ -178,7 +178,7 @@ test("GitHub status publisher posts only the approved commit status fields", asy
     return new Response(JSON.stringify({
       id: 71,
       state: "success",
-      context: "Tabellio / merge-ready",
+      context: "Tabellio / exact-head-validation",
       description: "Exact-head Tabellio validation passed.",
       target_url: "https://example.test/evidence",
       created_at: createdAt,
@@ -196,7 +196,7 @@ test("GitHub status publisher posts only the approved commit status fields", asy
     repo: "Tabellio",
     commit: "b".repeat(40),
     state: "success",
-    context: "Tabellio / merge-ready",
+    context: "Tabellio / exact-head-validation",
     description: "Exact-head Tabellio validation passed.",
     targetUrl: "https://example.test/evidence",
   });
@@ -209,7 +209,7 @@ test("GitHub status publisher posts only the approved commit status fields", asy
     authorization: "Bearer secret-token",
     body: {
       state: "success",
-      context: "Tabellio / merge-ready",
+      context: "Tabellio / exact-head-validation",
       description: "Exact-head Tabellio validation passed.",
       target_url: "https://example.test/evidence",
     },
@@ -263,7 +263,7 @@ test("GitHub status publisher rejects unsafe endpoints and redacts token failure
       repo: "Tabellio",
       commit: "b".repeat(40),
       state: "success",
-      context: "Tabellio / merge-ready",
+      context: "Tabellio / exact-head-validation",
       description: "Exact-head Tabellio validation passed.",
     }),
     (error) => error instanceof GitHubStatusPublishError
@@ -286,7 +286,7 @@ test("GitHub status publisher rejects unsafe endpoints and redacts token failure
       repo: "Tabellio",
       commit: "b".repeat(40),
       state: "success",
-      context: "Tabellio / merge-ready",
+      context: "Tabellio / exact-head-validation",
       description: "Exact-head Tabellio validation passed.",
     }),
     /status.context must be a non-empty string/,
@@ -311,7 +311,7 @@ test("GitHub status publisher rejects unsafe endpoints and redacts token failure
         repo,
         commit: "b".repeat(40),
         state: "success",
-        context: "Tabellio / merge-ready",
+        context: "Tabellio / exact-head-validation",
         description: "Exact-head Tabellio validation passed.",
       }),
       new RegExp(`${path} must not be`),

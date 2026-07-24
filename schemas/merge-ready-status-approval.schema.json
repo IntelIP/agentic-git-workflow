@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:tabellio:schema:merge-ready-status-approval:v0.1",
-  "title": "Tabellio Merge-Ready Status Approval",
+  "title": "Tabellio Exact-Head Validation Status Approval",
   "type": "object",
   "required": ["schemaVersion", "id", "intentDigest", "approved", "approvedBy", "approvedAt", "expiresAt", "reason"],
   "additionalProperties": false,

@@ -112,7 +112,7 @@ Use `gate` in CI. It persists the same exact-head result but exits non-zero unle
 tabellio-validate gate --repo . --repo-id github.com/owner/repository --base main --commit HEAD --manifest tabellio.validation.json
 ```
 
-Plan an integrity-bound `Tabellio / merge-ready` status from that exact validation:
+Plan an integrity-bound `Tabellio / exact-head-validation` status from that exact validation:
 
 ```bash
 tabellio-merge-ready plan \
@@ -121,7 +121,7 @@ tabellio-merge-ready plan \
   --out /secure/operator/status-intent.json
 ```
 
-Publishing requires a separate short-lived approval and scoped GitHub credential. See [Merge-ready status](docs/merge-ready-status.md).
+Publishing requires a separate short-lived approval and scoped GitHub credential. The status proves only that the committed validation manifest passed for that head; review clearance, other checks, policy, and merge authority remain separate. See [Exact-head validation status](docs/merge-ready-status.md).
 
 Validation worktrees and isolated home directories use private system-temporary sessions. `--workspace-root /absolute/external/path` may select another external parent; repository-internal and `.git/**` paths are rejected.
 
@@ -245,7 +245,7 @@ The external-action checker fails when an action is marked `attempted: true` wit
 - [Approved stack operations](docs/stack-operations.md)
 - [Durable review and fix loop](docs/review-loop.md)
 - [Exact-commit validation](docs/validation-runner.md)
-- [Merge-ready status](docs/merge-ready-status.md)
+- [Exact-head validation status](docs/merge-ready-status.md)
 - [Operations hardening](docs/operations-hardening.md)
 - [Workflow model](docs/workflow-model.md)
 - [Native Git foundation](docs/native-git-foundation.md)

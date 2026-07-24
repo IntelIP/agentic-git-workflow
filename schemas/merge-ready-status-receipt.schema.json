@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:tabellio:schema:merge-ready-status-receipt:v0.1",
-  "title": "Tabellio Merge-Ready Status Receipt",
+  "title": "Tabellio Exact-Head Validation Status Receipt",
   "type": "object",
   "required": [
     "schemaVersion",
@@ -24,7 +24,7 @@
     "intentDigest": { "$ref": "#/$defs/sha256" },
     "repository": { "type": "string", "minLength": 1 },
     "commit": { "$ref": "#/$defs/oid" },
-    "context": { "const": "Tabellio / merge-ready" },
+    "context": { "const": "Tabellio / exact-head-validation" },
     "state": { "enum": ["success", "failure", "error"] },
     "status": { "enum": ["attempted", "succeeded", "failed"] },
     "attemptedAt": { "type": "string", "format": "date-time" },
