@@ -93,6 +93,9 @@ export function validateMergeReadyStatusIntent(value) {
   validateTargetUrl(value.status.targetUrl, "intent.status.targetUrl");
 
   contract.date(value.createdAt, "intent.createdAt");
+  if (Date.parse(value.createdAt) < Date.parse(value.validation.completedAt)) {
+    throw new Error("intent.createdAt must not predate validation completion.");
+  }
   validateIntentIntegrity(value);
   return value;
 }
@@ -134,12 +137,17 @@ function validateRepository(value) {
   const path = "intent.repository";
   contract.object(value, path);
   contract.exactKeys(value, ["id", "owner", "name"], path);
-  for (const key of ["owner", "name"]) contract.slug(value[key], `${path}.${key}`);
+  for (const key of ["owner", "name"]) validateRepositorySlug(value[key], `${path}.${key}`);
   contract.string(value.id, `${path}.id`);
   const canonical = `github.com/${value.owner}/${value.name}`;
   if (value.id.toLowerCase() !== canonical.toLowerCase()) {
     throw new Error(`${path}.id must match ${path}.owner and ${path}.name.`);
   }
+}
+
+function validateRepositorySlug(value, path) {
+  contract.slug(value, path);
+  if (value === "." || value === "..") throw new Error(`${path} must not be "." or "..".`);
 }
 
 function validateIntentIntegrity(value) {

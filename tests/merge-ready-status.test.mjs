@@ -1,20 +1,24 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 
 import {
+  assertIntentMatchesValidation,
   createMergeReadyStatusIntent,
   validateMergeReadyStatusApproval,
   validateMergeReadyStatusIntent,
 } from "../scripts/lib/merge-ready-status.mjs";
+import { parseGitHubRepositoryRemote } from "../scripts/lib/github-repository.mjs";
+import { runGit } from "../scripts/lib/git-process.mjs";
 import { MergeReadyStatusExecutor } from "../scripts/lib/merge-ready-status-workflow.mjs";
 import { digestObject } from "../scripts/lib/stack-operation.mjs";
 import {
   GitHubStatusPublishError,
   GitHubStatusPublisher,
 } from "../scripts/providers/github-status-publisher.mjs";
+import { identityEnv } from "./helpers/git-fixture.mjs";
 
 const now = new Date("2026-07-24T12:10:00.000Z");
 const createdAt = "2026-07-24T12:00:00.000Z";
@@ -100,6 +104,66 @@ test("merge-ready status approval is exact-intent, active, and capped at one hou
     ),
     /approval.intentDigest/,
   );
+});
+
+test("merge-ready status intent cannot predate its validation", async () => {
+  const validation = await validationFixture();
+  assert.throws(
+    () => createMergeReadyStatusIntent({
+      repository,
+      commit: validation.revision.headCommit,
+      validation,
+      createdAt: "2026-07-10T12:00:00.000Z",
+    }),
+    /intent.createdAt must not predate validation completion/,
+  );
+
+  const intent = createMergeReadyStatusIntent({
+    repository,
+    commit: validation.revision.headCommit,
+    validation,
+    createdAt,
+  });
+  const predated = structuredClone(intent);
+  predated.createdAt = "2026-07-10T12:00:00.000Z";
+  const { integrity: _integrity, ...unsigned } = predated;
+  predated.integrity.digest = digestObject(unsigned);
+  assert.throws(
+    () => validateMergeReadyStatusIntent(predated),
+    /intent.createdAt must not predate validation completion/,
+  );
+  assert.throws(
+    () => assertIntentMatchesValidation(predated, validation),
+    /intent.createdAt must not predate validation completion/,
+  );
+});
+
+test("GitHub repository identities reject dot segments but retain valid dotted slugs", async () => {
+  for (const remote of [
+    "git@github.com:./Tabellio.git",
+    "git@github.com:../Tabellio.git",
+    "git@github.com:IntelIP/.",
+    "git@github.com:IntelIP/..",
+  ]) {
+    assert.equal(parseGitHubRepositoryRemote(remote), null);
+  }
+  assert.equal(
+    parseGitHubRepositoryRemote("git@github.com:.../....git")?.identity,
+    "github.com/.../...",
+  );
+
+  const validation = await validationFixture();
+  for (const [owner, name] of [[".", "Tabellio"], ["IntelIP", ".."]]) {
+    assert.throws(
+      () => createMergeReadyStatusIntent({
+        repository: { id: `github.com/${owner}/${name}`, owner, name },
+        commit: validation.revision.headCommit,
+        validation,
+        createdAt,
+      }),
+      /must not be/,
+    );
+  }
 });
 
 test("GitHub status publisher posts only the approved commit status fields", async () => {
@@ -226,6 +290,71 @@ test("GitHub status publisher rejects unsafe endpoints and redacts token failure
       description: "Exact-head Tabellio validation passed.",
     }),
     /status.context must be a non-empty string/,
+  );
+
+  const dotSlugPublisher = new GitHubStatusPublisher({
+    baseUrl: "https://api.github.com",
+    token: "secret-token",
+    fetchImpl: async () => {
+      throw new Error("transport must not be called");
+    },
+  });
+  for (const [owner, repo, path] of [
+    [".", "Tabellio", "owner"],
+    ["..", "Tabellio", "owner"],
+    ["IntelIP", ".", "repo"],
+    ["IntelIP", "..", "repo"],
+  ]) {
+    await assert.rejects(
+      dotSlugPublisher.publish({
+        owner,
+        repo,
+        commit: "b".repeat(40),
+        state: "success",
+        context: "Tabellio / merge-ready",
+        description: "Exact-head Tabellio validation passed.",
+      }),
+      new RegExp(`${path} must not be`),
+    );
+  }
+});
+
+test("status executor rejects state roots in linked worktrees and Git common state", async (t) => {
+  const fixture = await mkdtemp(join(tmpdir(), "tabellio-status-root-"));
+  const repo = join(fixture, "repo");
+  const linked = join(fixture, "linked");
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+  await mkdir(repo);
+  await runGit({ args: ["init"], cwd: repo });
+  await writeFile(join(repo, "README.md"), "fixture\n");
+  await runGit({ args: ["add", "README.md"], cwd: repo });
+  await runGit({
+    args: ["commit", "-m", "Add fixture"],
+    cwd: repo,
+    env: identityEnv(),
+  });
+  await runGit({ args: ["worktree", "add", "--detach", linked], cwd: repo });
+
+  for (const stateRoot of [
+    join(repo, "status-publications"),
+    join(repo, ".git", "status-publications"),
+    join(linked, "status-publications"),
+  ]) {
+    await assert.rejects(
+      MergeReadyStatusExecutor.open({
+        repoPath: repo,
+        stateRoot,
+        token: "secret-token",
+      }),
+      /state root must be outside the worktree/,
+    );
+  }
+  await assert.doesNotReject(
+    MergeReadyStatusExecutor.open({
+      repoPath: repo,
+      stateRoot: join(fixture, "external-status-publications"),
+      token: "secret-token",
+    }),
   );
 });
 

@@ -141,6 +141,7 @@ function optionalString(value) {
 function requiredSlug(value, path) {
   requiredString(value, path);
   if (!/^[A-Za-z0-9_.-]+$/.test(value)) throw new TypeError(`${path} contains unsupported characters.`);
+  if (value === "." || value === "..") throw new TypeError(`${path} must not be "." or "..".`);
 }
 
 function requiredOid(value, path) {

@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import { GitJsonLedger } from "./git-json-ledger.mjs";
 import { effectiveGitHubRepository } from "./github-repository.mjs";
+import { assertExternalStateRoot, canonicalProspectivePath } from "./external-state-root.mjs";
 import {
   assertIntentMatchesValidation,
   createMergeReadyStatusIntent,
@@ -66,11 +67,20 @@ export class MergeReadyStatusExecutor {
   }) {
     const store = await NativeGitStore.open(resolve(repoPath));
     const ledger = await GitJsonLedger.open({ repoPath: store.repoPath, ref: ledgerRef });
+    const root = stateRoot === null
+      ? await defaultStateRoot(store.repoPath)
+      : resolve(stateRoot);
+    if (stateRoot !== null) {
+      const canonicalRoot = await canonicalProspectivePath(root);
+      for (const protectedRoot of await statusStateProtectedRoots(store.repoPath)) {
+        assertExternalStateRoot(protectedRoot, canonicalRoot, "Merge-ready status");
+      }
+    }
     return new MergeReadyStatusExecutor({
       store,
       ledger,
       publisher: new GitHubStatusPublisher({ token, baseUrl: apiUrl, fetchImpl }),
-      stateRoot: stateRoot ?? await defaultStateRoot(store.repoPath),
+      stateRoot: root,
     });
   }
 
@@ -187,6 +197,21 @@ function assertPublishedStatus(publication, intent) {
 async function defaultStateRoot(repoPath) {
   const common = await runGit({ args: ["rev-parse", "--git-common-dir"], cwd: repoPath });
   return resolve(repoPath, common.stdout.trim(), "tabellio", "status-publications");
+}
+
+async function statusStateProtectedRoots(repoPath) {
+  const [common, worktrees] = await Promise.all([
+    runGit({ args: ["rev-parse", "--git-common-dir"], cwd: repoPath }),
+    runGit({ args: ["worktree", "list", "--porcelain", "-z"], cwd: repoPath }),
+  ]);
+  const roots = [
+    resolve(repoPath, common.stdout.trim()),
+    ...worktrees.stdout
+      .split("\0")
+      .filter((value) => value.startsWith("worktree "))
+      .map((value) => value.slice("worktree ".length)),
+  ];
+  return Promise.all([...new Set(roots)].map(canonicalProspectivePath));
 }
 
 async function atomicWrite(path, value) {
