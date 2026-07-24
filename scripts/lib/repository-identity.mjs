@@ -2,6 +2,19 @@ import { createHash } from "node:crypto";
 
 import { parseGitHubRepositoryRemote } from "./github-repository.mjs";
 
+const PRIVATE_REMOTE_ROOTS = new Set([
+  "etc",
+  "home",
+  "opt",
+  "private",
+  "srv",
+  "tmp",
+  "user",
+  "users",
+  "var",
+  "volumes",
+]);
+
 export async function repositoryIdentity(store, explicitId = null) {
   if (explicitId) return explicitId;
   const remote = await store.gitConfig("remote.origin.url");
@@ -32,16 +45,22 @@ export function normalizeRepositoryRemote(remote) {
 
 function normalizedSshUrl(parsed) {
   if (`${parsed.password}${parsed.port}${parsed.search}${parsed.hash}` !== "") return null;
-  const parts = parsed.pathname.replace(/^\/+|\/+$/g, "").split("/");
-  if (parts.length !== 2 || !parts.every(safeRemoteSegment)) return null;
+  const parts = normalizedRemoteParts(parsed.pathname);
+  if (!parts) return null;
   return `${parsed.hostname}/${parts.join("/")}`.replace(/\.git$/, "");
 }
 
 function normalizedScpRemote(match) {
   if (!match || match[2].startsWith("/")) return null;
-  const parts = match[2].replace(/\/+$/g, "").split("/");
-  if (parts.length !== 2 || !parts.every(safeRemoteSegment)) return null;
+  const parts = normalizedRemoteParts(match[2]);
+  if (!parts) return null;
   return `${match[1]}/${parts.join("/")}`.replace(/\.git$/, "");
+}
+
+function normalizedRemoteParts(path) {
+  const parts = path.replace(/^\/+|\/+$/g, "").split("/");
+  if (parts.length < 2 || !parts.every(safeRemoteSegment)) return null;
+  return PRIVATE_REMOTE_ROOTS.has(parts[0].toLowerCase()) ? null : parts;
 }
 
 function safeRemoteSegment(value) {

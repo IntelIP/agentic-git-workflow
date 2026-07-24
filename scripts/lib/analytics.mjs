@@ -781,6 +781,13 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     provider,
     sources,
   });
+  await assertRepositorySnapshotStable(repositoryPath, {
+    head,
+    branch,
+    remote,
+    status,
+    isBare,
+  });
   return {
     id,
     canonicalRepositoryId,
@@ -791,6 +798,32 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     metrics,
     deliveryChanges: provider.changes,
   };
+}
+
+async function assertRepositorySnapshotStable(repositoryPath, initial) {
+  const [head, branch, remote, status] = await Promise.all([
+    git(repositoryPath, ["rev-parse", "HEAD"]),
+    git(repositoryPath, ["branch", "--show-current"]),
+    git(repositoryPath, ["remote", "get-url", "origin"], [0, 2]),
+    readLiveWorktreeStatus(repositoryPath, initial.isBare),
+  ]);
+  const final = { head, branch, remote, status };
+  if (canonicalJson(final) !== canonicalJson(liveSnapshotFields(initial))) {
+    throw new Error("Repository HEAD or live checkout state changed during analytics collection.");
+  }
+}
+
+function liveSnapshotFields(snapshot) {
+  return {
+    head: snapshot.head,
+    branch: snapshot.branch,
+    remote: snapshot.remote,
+    status: snapshot.status,
+  };
+}
+
+function readLiveWorktreeStatus(repositoryPath, isBare) {
+  return isBare ? Promise.resolve(null) : git(repositoryPath, ["status", "--porcelain=v1"]);
 }
 
 function assertHeadObserved(committedAt, observedAt) {

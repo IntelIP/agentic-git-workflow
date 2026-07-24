@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -630,6 +630,46 @@ test("analytics collection rejects synthetic live observation timestamps", async
   }
 });
 
+test("analytics collection blocks when live checkout state changes mid-capture", async (t) => {
+  const { root, repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-moving-head-");
+  const fifo = join(root, "provider-snapshot.fifo");
+  const configPath = join(root, "repositories.json");
+  const datasetPath = join(root, "dataset.json");
+  const reportPath = join(root, "report.md");
+  const head = (await runGit({ cwd: repo, args: ["rev-parse", "HEAD"] })).stdout.trim();
+  await execFileAsync("mkfifo", [fifo]);
+  await writeFile(configPath, JSON.stringify({
+    repositories: [{
+      id: "fixture",
+      path: repo,
+      providerSnapshot: fifo,
+      required: true,
+    }],
+  }));
+
+  const collection = execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics.mjs", import.meta.url)),
+    "collect",
+    "--config", configPath,
+    "--id", "moving-head",
+    "--since", SINCE,
+    "--until", UNTIL,
+    "--out", datasetPath,
+    "--report", reportPath,
+  ], { encoding: "utf8" });
+  const writer = await open(fifo, "w");
+  await commitFixtureFile(repo, "moved.txt", "moved\n", "2026-07-15T12:00:00.000Z");
+  await writer.writeFile(JSON.stringify(providerSnapshotDocument(head)));
+  await writer.close();
+
+  await assert.rejects(
+    collection,
+    (error) => error.code === 1 && /Required repository fixture could not be collected/.test(error.stderr),
+  );
+  await assert.rejects(readFile(datasetPath), (error) => error.code === "ENOENT");
+  await assert.rejects(readFile(reportPath), (error) => error.code === "ENOENT");
+});
+
 test("dataset and collection reject duplicate canonical repositories", async (t) => {
   const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-duplicate-repository-");
   await assert.rejects(
@@ -731,10 +771,12 @@ test("repository identity excludes local paths and URL credentials", async (t) =
     assert(!JSON.stringify(sshDataset).includes("/home/alice"));
   }
 
-  for (const remote of [
-    "ssh://git@gitlab.com/acme/project.git",
-    "ssh://deploy@gitlab.com/acme/project.git",
-    "git@gitlab.com:acme/project.git",
+  for (const [remote, expected] of [
+    ["ssh://git@gitlab.com/acme/project.git", "gitlab.com/acme/project"],
+    ["ssh://deploy@gitlab.com/acme/project.git", "gitlab.com/acme/project"],
+    ["git@gitlab.com:acme/project.git", "gitlab.com/acme/project"],
+    ["ssh://git@gitlab.com/group/subgroup/project.git", "gitlab.com/group/subgroup/project"],
+    ["git@gitlab.com:group/subgroup/project.git", "gitlab.com/group/subgroup/project"],
   ]) {
     await runGit({ cwd: repo, args: ["remote", "set-url", "origin", remote] });
     const sshDataset = await collectAnalyticsDataset({
@@ -744,7 +786,7 @@ test("repository identity excludes local paths and URL credentials", async (t) =
       since: SINCE,
       until: UNTIL,
     });
-    assert.equal(sshDataset.repositories[0].canonicalRepositoryId, "gitlab.com/acme/project");
+    assert.equal(sshDataset.repositories[0].canonicalRepositoryId, expected);
   }
 });
 
