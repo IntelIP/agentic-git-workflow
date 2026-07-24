@@ -1134,7 +1134,7 @@ test("analytics validator separates direct failure exits from runner evidence ev
 
   await writeFile(malformedDatasetPath, JSON.stringify({
     schemaVersion: "tabellio-analytics-dataset/v0.1",
-    repositories: [{ deliveryChanges: [null], metrics: {} }],
+    repositories: [{ deliveryChanges: [null], metrics: {}, sources: {} }],
   }));
   const malformedResult = await execFileAsync(process.execPath, [
     fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),

@@ -151,7 +151,8 @@ function hasLinkProvenance(change) {
 
 function hasCollectedGitEvidence(repository) {
   return typeof repository?.canonicalRepositoryId === "string"
-    && repository.sources?.some((source) =>
+    && Array.isArray(repository.sources)
+    && repository.sources.some((source) =>
       source?.system === "git" && source.status === "available"
     );
 }
