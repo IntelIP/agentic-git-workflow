@@ -982,15 +982,19 @@ function validateProviderSource(system, source, observedAt) {
   return compactErrors([
     ...unexpectedFieldErrors(source, PROVIDER_SOURCE_FIELDS, `${system} source`),
     errorUnless(isProviderSource(source), `${system} source is invalid.`),
-    errorUnless(providerSourceHasVersion(source), `${system} source version is required.`),
+    errorUnless(providerSourceHasExactStateFields(source), `${system} source fields do not match status.`),
     errorUnless(providerSourceVersionSafeBeforeExport(source), `${system} source version contains unsafe detail.`),
-    errorUnless(providerSourceHasReason(source), `${system} unavailable reason is required.`),
+    errorUnless(providerSourceReasonSafeBeforeExport(source), `${system} source reason contains unsafe detail.`),
     errorUnless(versionNotAfter(source?.version, observedAt), `${system} source version is newer than observedAt.`),
   ]);
 }
 
 function providerSourceVersionSafeBeforeExport(source) {
   return source?.status !== "available" || isSafeProviderVersion(source.version);
+}
+
+function providerSourceReasonSafeBeforeExport(source) {
+  return source?.status !== "unavailable" || isSafeProviderReason(source.reason);
 }
 
 function validateDeliveryChange(change, capturedAt) {
@@ -1049,12 +1053,13 @@ function isProviderSource(source) {
   return Boolean(source) && ["available", "unavailable"].includes(source.status);
 }
 
-function providerSourceHasVersion(source) {
-  return source?.status !== "available" || isNonEmptyString(source.version);
-}
-
-function providerSourceHasReason(source) {
-  return source?.status !== "unavailable" || isSafeProviderReason(source.reason);
+function providerSourceHasExactStateFields(source) {
+  if (!isProviderSource(source)) return false;
+  const hasVersion = Object.hasOwn(source, "version");
+  const hasReason = Object.hasOwn(source, "reason");
+  return source.status === "available"
+    ? hasVersion && !hasReason
+    : !hasVersion && hasReason;
 }
 
 function isSafeProviderReason(reason) {

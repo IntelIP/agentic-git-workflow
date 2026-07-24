@@ -903,6 +903,40 @@ test("provider source metadata is typed, privacy-safe, and case-normalized", asy
   assert.equal(weakEtagRepository.metrics.deliveryChangeCount.status, "measured");
 });
 
+test("provider source metadata rejects state-inapplicable fields", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-source-state-fields.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+
+  const availableWithReason = providerSnapshotDocument(fixture.head);
+  availableWithReason.sources.github.reason = {
+    privateProviderResponse: "customer confidential data",
+  };
+  await writeFile(providerSnapshot, JSON.stringify(availableWithReason));
+  const availableRepository = await collectProviderRepository(
+    fixture,
+    providerSnapshot,
+    "provider-available-reason",
+  );
+  assert.equal(availableRepository.metrics.deliveryChangeCount.status, "unavailable");
+  assert(!JSON.stringify(availableRepository).includes("customer confidential data"));
+
+  const unavailableWithVersion = providerSnapshotDocument(fixture.head);
+  unavailableWithVersion.sources.github = {
+    status: "unavailable",
+    reason: "Provider unavailable.",
+    version: { privateProviderResponse: "customer confidential data" },
+  };
+  await writeFile(providerSnapshot, JSON.stringify(unavailableWithVersion));
+  const unavailableRepository = await collectProviderRepository(
+    fixture,
+    providerSnapshot,
+    "provider-unavailable-version",
+  );
+  assert.equal(unavailableRepository.metrics.deliveryChangeCount.status, "unavailable");
+  assert(!JSON.stringify(unavailableRepository).includes("customer confidential data"));
+});
+
 test("malformed provider changes block provider metrics without aborting collection", async (t) => {
   const fixture = await createAnalyticsFixture();
   const providerSnapshot = join(fixture.root, "provider-invalid.json");
