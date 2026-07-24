@@ -1230,6 +1230,50 @@ test("CI disagreement uses unique exact-head validation evidence", async (t) => 
   assert.equal(missingRepository.metrics.ciDisagreementRate.status, "unavailable");
 });
 
+test("exact-head reconciliation selects the latest validation rerun", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-validation-rerun.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const provider = providerSnapshotDocument(fixture.head);
+  await writeFile(providerSnapshot, JSON.stringify(provider));
+
+  const failed = JSON.parse(await controlFixture(
+    "../examples/tabellio-validation/minimal-result.json",
+    "example/analytics",
+    fixture.head,
+  ));
+  failed.runId = "validation-rerun-failed";
+  failed.status = "failed";
+  failed.commands[0].status = "failed";
+  failed.commands[0].exitCode = 1;
+  setValidationTimes(failed, "2026-07-23T17:00:00.000Z", "2026-07-23T17:01:00.000Z");
+  resignDataset(failed);
+
+  const passed = JSON.parse(await controlFixture(
+    "../examples/tabellio-validation/minimal-result.json",
+    "example/analytics",
+    fixture.head,
+  ));
+  passed.runId = "validation-rerun-passed";
+  setValidationTimes(passed, "2026-07-23T18:00:00.000Z", "2026-07-23T18:01:00.000Z");
+  resignDataset(passed);
+
+  await createMetadataRef(fixture.repo, {
+    branch: "validation-reruns",
+    ref: "refs/tabellio/validations",
+    files: {
+      [`commits/${fixture.head}/${failed.runId}.json`]: JSON.stringify(failed),
+      [`commits/${fixture.head}/${passed.runId}.json`]: JSON.stringify(passed),
+    },
+  });
+
+  const repository = await collectProviderRepository(fixture, providerSnapshot, "validation-rerun");
+
+  assert.equal(repository.deliveryChanges[0].validationStatus, "passed");
+  assert.equal(repository.metrics.ciDisagreementRate.value, 0);
+  assert.equal(repository.metrics.validationAttemptCount.value, 2);
+});
+
 test("exact-head reconciliation ignores validation evidence completed after provider observation", async (t) => {
   const fixture = await createAnalyticsFixture();
   const providerSnapshot = join(fixture.root, "provider-historical.json");
@@ -1251,8 +1295,8 @@ test("exact-head reconciliation ignores validation evidence completed after prov
     branch: "historical-validations",
     ref: "refs/tabellio/validations",
     files: {
-      "commits/past/validation.json": JSON.stringify(past),
-      "commits/future/validation.json": JSON.stringify(future),
+      [`commits/${fixture.head}/${past.runId}.json`]: JSON.stringify(past),
+      [`commits/${fixture.head}/${future.runId}.json`]: JSON.stringify(future),
     },
   });
 
@@ -1334,7 +1378,7 @@ test("malformed validation evidence blocks its metrics without blocking local Gi
   assert.equal(repository.metrics.commitCount.status, "measured");
 });
 
-test("control refs preserve Git paths that require quoting", async (t) => {
+test("control refs parse quoted paths before enforcing canonical identity", async (t) => {
   const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-quoted-control-");
   const head = (await runGit({ cwd: repo, args: ["rev-parse", "HEAD"] })).stdout.trim();
   await createMetadataRef(repo, {
@@ -1356,8 +1400,47 @@ test("control refs preserve Git paths that require quoting", async (t) => {
 
   const repository = await collectSingleRepository(repo, "quoted-control");
 
-  assert.equal(repository.metrics.validationAttemptCount.value, 1);
+  assert.equal(
+    repository.sources.find((source) => source.system === "tabellio-validation").status,
+    "blocked",
+  );
+  assert.equal(repository.metrics.validationAttemptCount.status, "unavailable");
   assert.equal(repository.metrics.entireCheckpointCount.value, 1);
+});
+
+test("misplaced and duplicate control records block inflated metrics", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-duplicate-control-");
+  const head = (await runGit({ cwd: repo, args: ["rev-parse", "HEAD"] })).stdout.trim();
+  const validation = await controlFixture(
+    "../examples/tabellio-validation/minimal-result.json",
+    "example/analytics",
+    head,
+  );
+  const review = await controlFixture(
+    "../examples/tabellio-review/minimal-cycle.json",
+    "example/analytics",
+    head,
+  );
+  await createMetadataRef(repo, {
+    branch: "duplicate-validation",
+    ref: "refs/tabellio/validations",
+    files: {
+      [`commits/${head}/validation-example-001.json`]: validation,
+      [`commits/${head}/validation-copy.json`]: validation,
+    },
+  });
+  await createMetadataRef(repo, {
+    branch: "duplicate-review",
+    ref: "refs/tabellio/reviews",
+    files: {
+      "cycles/github-7-0000000000000000.json": review,
+      "cycles/github-7-1111111111111111.json": review,
+    },
+  });
+
+  const repository = await collectSingleRepository(repo, "duplicate-control");
+
+  assertControlSourcesBlocked(repository, /path or identity is invalid/);
 });
 
 test("schema-invalid control records block their source metrics", async (t) => {
@@ -1426,16 +1509,7 @@ test("control records for another repository block their source metrics", async 
 
   const repository = await collectSingleRepository(repo, "foreign-control");
 
-  assert.equal(repository.metrics.validationAttemptCount.status, "unavailable");
-  assert.equal(repository.metrics.reviewFindingCount.status, "unavailable");
-  assert.match(
-    repository.sources.find((source) => source.system === "tabellio-validation").reason,
-    /Schema-invalid JSON/,
-  );
-  assert.match(
-    repository.sources.find((source) => source.system === "tabellio-review").reason,
-    /Schema-invalid JSON/,
-  );
+  assertControlSourcesBlocked(repository, /Schema-invalid JSON/);
 });
 
 test("control refs newer than the observation are blocked", async (t) => {
@@ -2054,7 +2128,7 @@ async function createAnalyticsFixture() {
     branch: "validation",
     ref: "refs/tabellio/validations",
     files: {
-      "commits/example/validation.json": await controlFixture(
+      [`commits/${head}/validation-example-001.json`]: await controlFixture(
         "../examples/tabellio-validation/minimal-result.json",
         "example/analytics",
         head,
@@ -2065,7 +2139,7 @@ async function createAnalyticsFixture() {
     branch: "review",
     ref: "refs/tabellio/reviews",
     files: {
-      "cycles/example.json": await controlFixture(
+      "cycles/github-7-0000000000000000.json": await controlFixture(
         "../examples/tabellio-review/minimal-cycle.json",
         "example/analytics",
         head,
@@ -2120,6 +2194,14 @@ function resignDataset(dataset) {
     algorithm: "sha256",
     digest: createHash("sha256").update(canonicalJson(dataset)).digest("hex"),
   };
+}
+
+function assertControlSourcesBlocked(repository, reason) {
+  assert.equal(repository.metrics.validationAttemptCount.status, "unavailable");
+  assert.equal(repository.metrics.reviewFindingCount.status, "unavailable");
+  for (const system of ["tabellio-validation", "tabellio-review"]) {
+    assert.match(repository.sources.find((source) => source.system === system).reason, reason);
+  }
 }
 
 async function controlFixture(relativeUrl, repositoryId, headCommit = null) {

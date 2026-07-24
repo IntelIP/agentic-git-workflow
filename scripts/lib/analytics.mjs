@@ -621,6 +621,8 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     observedAt,
     include: (name) => name.endsWith(".json"),
     validate: validationRecordValidator,
+    identity: (record) => record.runId,
+    pathMatches: validationControlPathMatches,
   });
   const review = await collectJsonRef(repositoryPath, {
     id: `${id}:tabellio-review`,
@@ -629,6 +631,8 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     observedAt,
     include: (name) => name.endsWith(".json"),
     validate: reviewRecordValidator,
+    identity: (record) => record.id,
+    pathMatches: reviewControlPathMatches,
   });
   const entire = await collectEntireMetadata(repositoryPath, { id: `${id}:entire`, observedAt });
   const providerSnapshotResult = await collectProviderSnapshot({ id, canonicalRepositoryId, providerSnapshot, observedAt });
@@ -760,10 +764,10 @@ function hasTaskAndPullRequest(change) {
 
 function exactCiComparison(change, validations, cutoff) {
   if (!isComparableStatus(change.hostedStatus)) return [];
-  const matches = exactHeadValidations(change, validations, cutoff);
-  if (matches.length !== 1) return [];
+  const validation = latestExactHeadValidation(change, validations, cutoff);
+  if (!validation) return [];
   return [{
-    validationStatus: matches[0].status,
+    validationStatus: validation.status,
     hostedStatus: change.hostedStatus,
   }];
 }
@@ -782,16 +786,20 @@ function reconcileProviderChanges(provider, validations) {
 }
 
 function exactValidationStatus(change, validations, cutoff) {
-  const matches = exactHeadValidations(change, validations, cutoff);
-  return matches.length === 1 ? matches[0].status : "unavailable";
+  return latestExactHeadValidation(change, validations, cutoff)?.status ?? "unavailable";
 }
 
-function exactHeadValidations(change, validations, cutoff) {
+function latestExactHeadValidation(change, validations, cutoff) {
   return validations.filter((validation) =>
     validation?.revision?.headCommit === change.headCommit
       && isComparableStatus(validation.status)
       && dateNotAfter(validation.completedAt, cutoff)
-  );
+  ).reduce(newerValidation, null);
+}
+
+function newerValidation(current, candidate) {
+  if (!current) return candidate;
+  return Date.parse(candidate.completedAt) > Date.parse(current.completedAt) ? candidate : current;
 }
 
 function isComparableStatus(value) {
@@ -1190,37 +1198,94 @@ function providerProjection(change, system) {
   };
 }
 
-async function collectJsonRef(repositoryPath, { id, system, ref, observedAt, include, validate }) {
+async function collectJsonRef(
+  repositoryPath,
+  { id, system, ref, observedAt, include, validate, identity, pathMatches },
+) {
   const resolved = await resolveControlRef(repositoryPath, { id, system, ref, observedAt });
   if (resolved.source) return { source: resolved.source, values: [] };
   const version = resolved.version;
   const names = (await listTreeNames(repositoryPath, version))
     .filter(include)
     .sort(compareCodePoints);
+  const collected = await readControlRecords(repositoryPath, version, names, {
+    validate,
+    identity,
+    pathMatches,
+  });
+  if (collected.error) {
+    return {
+      source: blockedSource({
+        id,
+        system,
+        observedAt,
+        sourceVersion: version,
+        reason: collected.error,
+      }),
+      values: [],
+    };
+  }
+  return {
+    source: availableSource({
+      id,
+      system,
+      observedAt,
+      sourceVersion: version,
+      content: JSON.stringify(collected.canonical),
+    }),
+    values: collected.values,
+  };
+}
+
+async function readControlRecords(
+  repositoryPath,
+  version,
+  names,
+  { validate, identity, pathMatches },
+) {
   const values = [];
   const canonical = [];
+  const identities = new Set();
   for (const name of names) {
     const raw = await git(repositoryPath, ["show", `${version}:${name}`]);
     const record = parseControlRecord(raw, validate);
     if (record.error) {
+      return { error: `${record.error} in control record.`, values: [], canonical: [] };
+    }
+    const recordIdentity = identity(record.value);
+    const identityError = controlIdentityError(
+      name,
+      record.value,
+      recordIdentity,
+      identities,
+      pathMatches,
+    );
+    if (identityError) {
       return {
-        source: blockedSource({
-          id,
-          system,
-          observedAt,
-          sourceVersion: version,
-          reason: `${record.error} in control record.`,
-        }),
+        error: identityError,
         values: [],
+        canonical: [],
       };
     }
+    identities.add(recordIdentity);
     values.push(record.value);
     canonical.push([name, record.value]);
   }
-  return {
-    source: availableSource({ id, system, observedAt, sourceVersion: version, content: JSON.stringify(canonical) }),
-    values,
-  };
+  return { error: null, values, canonical };
+}
+
+function controlIdentityError(name, record, identity, identities, pathMatches) {
+  if (!pathMatches(name, record)) return "Control record path or identity is invalid.";
+  if (identities.has(identity)) return "Control record path or identity is invalid.";
+  return null;
+}
+
+function validationControlPathMatches(name, record) {
+  return name === `commits/${record.revision.headCommit}/${record.runId}.json`;
+}
+
+function reviewControlPathMatches(name, record) {
+  return new RegExp(`^cycles/github-${record.changeRequest.number}-[0-9a-f]{16}\\.json$`).test(name);
 }
 
 async function resolveControlRef(repositoryPath, { id, system, ref, observedAt }) {
