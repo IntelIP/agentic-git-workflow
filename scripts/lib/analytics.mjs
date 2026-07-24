@@ -56,6 +56,7 @@ const PROVIDER_SNAPSHOT_FIELDS = Object.freeze([
 ]);
 
 const PROVIDER_SOURCE_FIELDS = Object.freeze(["status", "version", "reason"]);
+const PROVIDER_SOURCE_SYSTEMS = Object.freeze(["plane", "github", "github-actions"]);
 
 const DELIVERY_CHANGE_FIELDS = Object.freeze([
   "id",
@@ -952,6 +953,7 @@ function duplicateValues(values) {
 function validateProviderHeader(snapshot, canonicalRepositoryId, observedAt) {
   return compactErrors([
     ...unexpectedFieldErrors(snapshot, PROVIDER_SNAPSHOT_FIELDS, "Provider snapshot"),
+    ...unexpectedFieldErrors(snapshot?.sources, PROVIDER_SOURCE_SYSTEMS, "Provider sources"),
     errorUnless(hasProviderSchema(snapshot), "Unsupported schemaVersion."),
     errorUnless(hasProviderRepository(snapshot, canonicalRepositoryId), "Repository identity mismatch."),
     errorUnless(hasProviderCaptureTime(snapshot), "capturedAt is invalid."),
@@ -1040,7 +1042,7 @@ function dateNotAfter(value, upperBound) {
 }
 
 function hasProviderCollections(snapshot) {
-  return Boolean(snapshot?.sources) && Array.isArray(snapshot?.deliveryChanges);
+  return isPlainObject(snapshot?.sources) && Array.isArray(snapshot?.deliveryChanges);
 }
 
 function isProviderSource(source) {

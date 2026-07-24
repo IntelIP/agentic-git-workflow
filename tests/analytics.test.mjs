@@ -1823,6 +1823,24 @@ test("analytics semantic and security profiles bind delivery meaning and decoded
     assert.equal(extraFieldEvidence.status, "failed");
     assert.match(extraFieldEvidence.summary, /unexpected field privateResponseBody/);
   }
+
+  const extraProviderSourcePath = join(root, "provider-extra-source.json");
+  const extraProviderSource = JSON.parse(await readFile(sourcePath, "utf8"));
+  extraProviderSource.sources.privateProviderResponse = {
+    customerNames: ["Acme Internal"],
+    body: "confidential issue description",
+  };
+  await writeFile(extraProviderSourcePath, JSON.stringify(extraProviderSource));
+  for (const profile of ["semantic", "security"]) {
+    const extraProviderSourceEvidence = await runProfile(
+      baseline,
+      `extra-provider-source-${profile}`,
+      profile,
+      ["--source", extraProviderSourcePath],
+    );
+    assert.equal(extraProviderSourceEvidence.status, "failed");
+    assert.match(extraProviderSourceEvidence.summary, /unexpected field privateProviderResponse/);
+  }
 });
 
 async function createAnalyticsFixture() {
