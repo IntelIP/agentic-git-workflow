@@ -78,7 +78,7 @@ function validateSemanticProfile({ dataset, reportRaw }) {
   const collectedRepositoryCount = new Set(
     repositories
       .filter(hasCollectedGitEvidence)
-      .map((repository) => repository.canonicalRepositoryId)
+      .map((repository) => repository.canonicalRepositoryId.toLowerCase())
   ).size;
   const errors = compact([
     ...datasetErrors,
@@ -124,11 +124,12 @@ function validateSecurityProfile({ datasetRaw, reportRaw }) {
     ["/private/", "Private temporary path leaked."],
     ["full.jsonl", "Entire transcript filename leaked."],
     ["private transcript", "Transcript content leaked."],
-    ["github_pat_", "GitHub token prefix leaked."],
-    ["ghp_", "GitHub token prefix leaked."],
-    ["Bearer ", "Bearer credential leaked."],
+    [/github_pat_|gh[pousr]_/i, "GitHub token prefix leaked."],
+    [/bearer\s/i, "Bearer credential leaked."],
   ];
-  const errors = forbidden.flatMap(([needle, message]) => payload.includes(needle) ? [message] : []);
+  const errors = forbidden.flatMap(([needle, message]) =>
+    typeof needle === "string" ? (payload.includes(needle) ? [message] : []) : (needle.test(payload) ? [message] : [])
+  );
   return result("Portable analytics artifacts contain no local paths, transcript bodies, or credential-shaped values.", errors, [
     metric("analytics_privacy_pass", errors.length === 0 ? 1 : 0, "boolean"),
   ]);

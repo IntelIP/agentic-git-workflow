@@ -1097,6 +1097,9 @@ test("analytics validator separates direct failure exits from runner evidence ev
   const duplicateDatasetPath = join(root, "duplicate-dataset.json");
   const duplicateReportPath = join(root, "duplicate-report.md");
   const duplicateEvidencePath = join(root, "duplicate-evidence.json");
+  const credentialDatasetPath = join(root, "credential-dataset.json");
+  const credentialReportPath = join(root, "credential-report.md");
+  const credentialEvidencePath = join(root, "credential-evidence.json");
   await writeFile(datasetPath, `${JSON.stringify(dataset, null, 2)}\n`);
   await writeFile(reportPath, renderAnalyticsReport(dataset));
 
@@ -1152,9 +1155,19 @@ test("analytics validator separates direct failure exits from runner evidence ev
   );
 
   const duplicateDataset = structuredClone(dataset);
+  const repositoryAliases = [
+    "Example/Analytics",
+    "example/Analytics",
+    "EXAMPLE/ANALYTICS",
+    "example/analytics",
+  ];
   duplicateDataset.repositories = Array.from(
     { length: 4 },
-    (_, index) => ({ ...structuredClone(dataset.repositories[0]), id: `duplicate-${index}` }),
+    (_, index) => ({
+      ...structuredClone(dataset.repositories[0]),
+      id: `duplicate-${index}`,
+      canonicalRepositoryId: repositoryAliases[index],
+    }),
   );
   resignDataset(duplicateDataset);
   await writeFile(duplicateDatasetPath, JSON.stringify(duplicateDataset));
@@ -1174,6 +1187,30 @@ test("analytics validator separates direct failure exits from runner evidence ev
   assert.equal(
     duplicateEvidence.metrics.find((metric) => metric.name === "analytics_repository_count").value,
     1,
+  );
+
+  const credentialDataset = structuredClone(dataset);
+  const unavailableMetric = Object.values(credentialDataset.repositories[0].metrics)
+    .find((metric) => metric.status === "unavailable");
+  unavailableMetric.reason = "ghs_private-token";
+  resignDataset(credentialDataset);
+  await writeFile(credentialDatasetPath, JSON.stringify(credentialDataset));
+  await writeFile(credentialReportPath, renderAnalyticsReport(credentialDataset));
+  await execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+    "--profile", "security",
+    "--validator-id", "analytics-security-credential-test",
+    "--dataset", credentialDatasetPath,
+    "--report", credentialReportPath,
+    "--out", credentialEvidencePath,
+    "--exit-mode", "evidence",
+  ], { encoding: "utf8" });
+  const credentialEvidence = JSON.parse(await readFile(credentialEvidencePath, "utf8"));
+
+  assert.equal(credentialEvidence.status, "failed");
+  assert.equal(
+    credentialEvidence.metrics.find((metric) => metric.name === "analytics_privacy_pass").value,
+    0,
   );
 });
 

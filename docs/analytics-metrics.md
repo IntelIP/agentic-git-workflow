@@ -6,13 +6,13 @@ The primary unit is a delivery change, not a developer, agent, commit, or token.
 
 ## Completeness
 
-Each metric has one of three states:
+Each repository analytics metric has one of two states:
 
 - `measured`: the declared numerator, denominator, and sources support the value.
 - `unavailable`: required evidence is absent, blocked, malformed, or has no eligible denominator.
-- `not_applicable`: the metric does not apply to the scoped change.
 
 `unavailable` always carries `null`. Missing evidence never becomes numeric zero.
+The earlier design draft listed `not_applicable`, but the v0.1 portable dataset never emitted that state. Producers must migrate draft records to `unavailable` with a bounded reason before v0.1 validation. Other Tabellio contracts, including cost telemetry, retain their separately defined `not_applicable` state.
 
 ## Baseline Metrics
 
