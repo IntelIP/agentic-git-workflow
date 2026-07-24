@@ -114,7 +114,7 @@ export function validateAnalyticsDataset(dataset) {
   const definitions = asArray(dataset?.metricDefinitions);
   const definitionIds = new Set(definitions.map((definition) => definition.id));
   const repositoryErrors = asArray(dataset?.repositories).flatMap((repository) =>
-    validateRepositoryMetrics(repository, definitionIds)
+    validateRepositoryMetrics(repository, definitionIds, dataset?.observedAt)
   );
   const errors = [...validateDatasetHeader(dataset), ...repositoryErrors, ...validateDatasetIntegrity(dataset)];
   throwValidationErrors(errors);
@@ -163,13 +163,14 @@ function hasMetricDefinitions(dataset) {
   return hasCompleteDefinitions(dataset?.metricDefinitions);
 }
 
-function validateRepositoryMetrics(repository, definitionIds) {
+function validateRepositoryMetrics(repository, definitionIds, observedAt) {
   const sources = repository.sources ?? [];
   const sourceMap = new Map(sources.map((source) => [source.id, source]));
   const errors = compactErrors([
     errorUnless(hasRepositoryIdentity(repository), "Repository identity is incomplete."),
-    errorUnless(hasValidRepositoryRevision(repository, sourceMap), `${repository.id}: invalid repository revision state.`),
+    errorUnless(hasValidRepositoryRevision(repository, sourceMap, observedAt), `${repository.id}: invalid repository revision state.`),
   ]);
+  const sourceErrors = sources.flatMap((source) => validateSourceProvenance(repository.id, source));
   const metrics = repository.metrics ?? {};
   const missingMetricErrors = [...definitionIds]
     .filter((metricId) => !Object.hasOwn(metrics, metricId))
@@ -177,7 +178,7 @@ function validateRepositoryMetrics(repository, definitionIds) {
   const metricErrors = Object.entries(metrics).flatMap(([metricId, metric]) =>
     validateMetric(repository.id, metricId, metric, definitionIds, sourceMap)
   );
-  return [...errors, ...missingMetricErrors, ...metricErrors];
+  return [...errors, ...sourceErrors, ...missingMetricErrors, ...metricErrors];
 }
 
 function validateMetric(repositoryId, metricId, metric, definitionIds, sourceMap) {
@@ -213,13 +214,14 @@ function hasRepositoryIdentity(repository) {
   return Boolean(repository?.id) && Boolean(repository?.canonicalRepositoryId);
 }
 
-function hasValidRepositoryRevision(repository, sourceMap) {
+function hasValidRepositoryRevision(repository, sourceMap, observedAt) {
   const gitSource = [...sourceMap.values()].find((source) => source.system === "git");
   if (gitSource?.status === "available") {
     return [
       isCommitOid(repository.headCommit),
       isDateTime(repository.headCommittedAt),
       isNonEmptyString(repository.branch),
+      isDateTime(observedAt) && Date.parse(repository.headCommittedAt) <= Date.parse(observedAt),
     ].every(Boolean);
   }
   return [
@@ -227,6 +229,31 @@ function hasValidRepositoryRevision(repository, sourceMap) {
     repository.headCommittedAt === null,
     repository.branch === null,
   ].every(Boolean);
+}
+
+function validateSourceProvenance(repositoryId, source) {
+  const prefix = `${repositoryId}/${source.id}`;
+  const validators = {
+    available: validateAvailableSource,
+    unavailable: validateUnavailableSource,
+    blocked: validateUnavailableSource,
+  };
+  return validators[source.status](prefix, source);
+}
+
+function validateAvailableSource(prefix, source) {
+  return compactErrors([
+    errorUnless(isNonEmptyString(source.sourceVersion), `${prefix}: available source requires a version.`),
+    errorUnless(isSha256(source.contentDigest), `${prefix}: available source requires a content digest.`),
+    errorUnless(source.reason === null, `${prefix}: available source cannot have a reason.`),
+  ]);
+}
+
+function validateUnavailableSource(prefix, source) {
+  return compactErrors([
+    errorUnless(source.contentDigest === null, `${prefix}: unavailable source cannot have a content digest.`),
+    errorUnless(isNonEmptyString(source.reason), `${prefix}: unavailable source requires a reason.`),
+  ]);
 }
 
 function isMetricStatus(status) {
@@ -433,9 +460,13 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     git(repositoryPath, ["status", "--porcelain=v1"]),
     git(repositoryPath, ["rev-list", "--count", `--since-as-filter=${since}`, `--until=${until}`, "HEAD"]),
   ]);
-  const githubRepository = parseGitHubRepositoryRemote(remote);
-  const canonicalRepositoryId = githubRepository?.fullName
-    ?? (remote ? normalizeRepositoryRemote(remote) : `local/${id}`);
+  assertHeadObserved(committedAt, observedAt);
+  const canonicalRepositoryId = canonicalRepositoryIdentity(remote, id);
+  const validationRecordValidator = repositoryControlValidator(canonicalRepositoryId, validateValidationResult);
+  const reviewRecordValidator = repositoryControlValidator(
+    canonicalRepositoryId,
+    (cycle) => validateReviewCycle(cycle, { allowLegacyUnknownMergeabilityReady: true }),
+  );
   const gitSource = availableSource({
     id: `${id}:git`,
     system: "git",
@@ -449,7 +480,7 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     ref: "refs/tabellio/validations",
     observedAt,
     include: (name) => name.endsWith(".json"),
-    validate: validateValidationResult,
+    validate: validationRecordValidator,
   });
   const review = await collectJsonRef(repositoryPath, {
     id: `${id}:tabellio-review`,
@@ -457,7 +488,7 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     ref: "refs/tabellio/reviews",
     observedAt,
     include: (name) => name.endsWith(".json"),
-    validate: (value) => validateReviewCycle(value, { allowLegacyUnknownMergeabilityReady: true }),
+    validate: reviewRecordValidator,
   });
   const entire = await collectEntireMetadata(repositoryPath, { id: `${id}:entire`, observedAt });
   const provider = await collectProviderSnapshot({ id, canonicalRepositoryId, providerSnapshot, observedAt });
@@ -484,6 +515,40 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     metrics,
     deliveryChanges: provider.changes,
   };
+}
+
+function assertHeadObserved(committedAt, observedAt) {
+  const valid = isDateTime(committedAt) && Date.parse(committedAt) <= Date.parse(observedAt);
+  if (!valid) throw new Error("Repository HEAD commit is newer than the observation time.");
+}
+
+function canonicalRepositoryIdentity(remote, id) {
+  const githubRepository = parseGitHubRepositoryRemote(remote);
+  if (githubRepository) return githubRepository.fullName;
+  return remote ? normalizeRepositoryRemote(remote) : `local/${id}`;
+}
+
+function repositoryControlValidator(canonicalRepositoryId, validate) {
+  return (value) => validateRepositoryControlRecord(value, canonicalRepositoryId, validate);
+}
+
+function validateRepositoryControlRecord(value, canonicalRepositoryId, validate) {
+  validate(value);
+  if (!repositoryIdsMatch(value?.repository?.id, canonicalRepositoryId)) {
+    throw new Error("Control record repository identity mismatch.");
+  }
+}
+
+function repositoryIdsMatch(left, right) {
+  return comparableRepositoryId(left) === comparableRepositoryId(right);
+}
+
+function comparableRepositoryId(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/^github\.com\//i, "")
+    .replace(/\.git$/i, "")
+    .toLowerCase();
 }
 
 function buildRepositoryMetrics({ commits, status, since, until, gitSource, validation, review, entire, provider, sources }) {

@@ -301,6 +301,33 @@ test("dataset validation enforces window ordering and metric semantics", async (
     () => validateAnalyticsDataset(unsupportedMetric),
     /sources do not support the metric state or definition/,
   );
+
+  const validForTampering = await collectAnalyticsDataset({
+    id: "provenance-baseline",
+    repositories: [{ id: "fixture", path: fixture.repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  const futureHead = structuredClone(validForTampering);
+  futureHead.repositories[0].headCommittedAt = "2026-07-24T00:00:00.000Z";
+  resignDataset(futureHead);
+  assert.throws(
+    () => validateAnalyticsDataset(futureHead),
+    /invalid repository revision state/,
+  );
+
+  const missingProvenance = structuredClone(validForTampering);
+  const gitSource = missingProvenance.repositories[0].sources
+    .find((source) => source.system === "git");
+  gitSource.sourceVersion = null;
+  gitSource.contentDigest = null;
+  gitSource.reason = "Available without immutable provenance.";
+  resignDataset(missingProvenance);
+  assert.throws(
+    () => validateAnalyticsDataset(missingProvenance),
+    /available source requires a version/,
+  );
 });
 
 test("repository identity excludes local paths and URL credentials", async (t) => {
@@ -514,6 +541,43 @@ test("schema-invalid control records block their source metrics", async (t) => {
   assert.equal(repository.metrics.validationAttemptCount.value, null);
 });
 
+test("control records for another repository block their source metrics", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-foreign-control-");
+  await createMetadataRef(repo, {
+    branch: "foreign-validation",
+    ref: "refs/tabellio/validations",
+    files: {
+      "commits/foreign/validation.json": await controlFixture(
+        "../examples/tabellio-validation/minimal-result.json",
+        "foreign/repository",
+      ),
+    },
+  });
+  await createMetadataRef(repo, {
+    branch: "foreign-review",
+    ref: "refs/tabellio/reviews",
+    files: {
+      "cycles/foreign.json": await controlFixture(
+        "../examples/tabellio-review/minimal-cycle.json",
+        "foreign/repository",
+      ),
+    },
+  });
+
+  const repository = await collectSingleRepository(repo, "foreign-control");
+
+  assert.equal(repository.metrics.validationAttemptCount.status, "unavailable");
+  assert.equal(repository.metrics.reviewFindingCount.status, "unavailable");
+  assert.match(
+    repository.sources.find((source) => source.system === "tabellio-validation").reason,
+    /Schema-invalid JSON/,
+  );
+  assert.match(
+    repository.sources.find((source) => source.system === "tabellio-review").reason,
+    /Schema-invalid JSON/,
+  );
+});
+
 test("Entire metadata is collected from the configured control remote", async (t) => {
   const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-control-");
   await createMetadataRef(repo, {
@@ -550,9 +614,9 @@ async function createAnalyticsFixture() {
     branch: "validation",
     ref: "refs/tabellio/validations",
     files: {
-      "commits/example/validation.json": await readFile(
-        new URL("../examples/tabellio-validation/minimal-result.json", import.meta.url),
-        "utf8",
+      "commits/example/validation.json": await controlFixture(
+        "../examples/tabellio-validation/minimal-result.json",
+        "example/analytics",
       ),
     },
   });
@@ -560,9 +624,9 @@ async function createAnalyticsFixture() {
     branch: "review",
     ref: "refs/tabellio/reviews",
     files: {
-      "cycles/example.json": await readFile(
-        new URL("../examples/tabellio-review/minimal-cycle.json", import.meta.url),
-        "utf8",
+      "cycles/example.json": await controlFixture(
+        "../examples/tabellio-review/minimal-cycle.json",
+        "example/analytics",
       ),
     },
   });
@@ -615,6 +679,13 @@ function resignDataset(dataset) {
     algorithm: "sha256",
     digest: createHash("sha256").update(canonicalJson(dataset)).digest("hex"),
   };
+}
+
+async function controlFixture(relativeUrl, repositoryId) {
+  const value = JSON.parse(await readFile(new URL(relativeUrl, import.meta.url), "utf8"));
+  value.repository.id = repositoryId;
+  resignDataset(value);
+  return JSON.stringify(value);
 }
 
 function providerSnapshotDocument(headCommit, overrides = {}) {
