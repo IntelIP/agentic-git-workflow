@@ -667,6 +667,44 @@ test("repository identity excludes local paths and URL credentials", async (t) =
   });
   assert.equal(credentialDataset.repositories[0].canonicalRepositoryId, "example.com/org/repository");
   assert(!JSON.stringify(credentialDataset).includes("private-token"));
+
+  for (const [index, remote] of [
+    "ssh://git@example.com/home/alice/private/repository.git",
+    "git@example.com:/home/alice/private/repository.git",
+  ].entries()) {
+    await runGit({ cwd: repo, args: ["remote", "set-url", "origin", remote] });
+    const sshDataset = await collectAnalyticsDataset({
+      id: `private-ssh-${index}`,
+      repositories: [{ id: "fixture", path: repo }],
+      observedAt: OBSERVED_AT,
+      since: SINCE,
+      until: UNTIL,
+    });
+    assert.match(sshDataset.repositories[0].canonicalRepositoryId, /^remote\/[0-9a-f]{16}$/);
+    assert(!JSON.stringify(sshDataset).includes("/home/alice"));
+  }
+});
+
+test("analytics collector rejects colliding dataset and report paths", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-output-collision-"));
+  const outputPath = join(root, "analytics-output");
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      fileURLToPath(new URL("../scripts/tabellio-analytics.mjs", import.meta.url)),
+      "collect",
+      "--config", fileURLToPath(new URL("../examples/tabellio-analytics/minimal-repositories.json", import.meta.url)),
+      "--id", "output-collision",
+      "--since", SINCE,
+      "--until", UNTIL,
+      "--out", outputPath,
+      "--report", outputPath,
+    ], { encoding: "utf8" }),
+    (error) => error.code === 1
+      && /must resolve to distinct paths/.test(error.stderr),
+  );
+  await assert.rejects(readFile(outputPath), (error) => error.code === "ENOENT");
 });
 
 test("dataset validation rejects non-portable source identifiers", async (t) => {

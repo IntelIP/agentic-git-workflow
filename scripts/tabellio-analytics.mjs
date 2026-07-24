@@ -19,6 +19,7 @@ try {
   const options = parseCommandOptions(process.argv.slice(2), allowed);
   if (options.command === "collect") {
     requireOptions(options, ["config", "id", "since", "until", "out", "report"], "collect");
+    assertDistinctOutputs(options.out, options.report);
     const config = JSON.parse(await readFile(resolve(options.config), "utf8"));
     const dataset = await collectAnalyticsDataset({
       id: options.id,
@@ -58,4 +59,10 @@ async function writeOutput(path, content) {
   const target = resolve(path);
   await mkdir(dirname(target), { recursive: true });
   await writeFile(target, content);
+}
+
+function assertDistinctOutputs(datasetPath, reportPath) {
+  if (resolve(datasetPath) === resolve(reportPath)) {
+    throw new Error("--out and --report must resolve to distinct paths.");
+  }
 }

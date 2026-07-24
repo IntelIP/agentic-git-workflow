@@ -17,14 +17,15 @@ export function normalizeRepositoryRemote(remote) {
   if (remote.includes("://")) {
     try {
       const parsed = new URL(remote);
-      if (parsed.protocol === "file:") return hashedRemote(remote);
+      if (!["http:", "https:"].includes(parsed.protocol)) return hashedRemote(remote);
       return `${parsed.host}${parsed.pathname}`.replace(/^\/+/, "").replace(/\.git$/, "");
     } catch {
       return hashedRemote(remote);
     }
   }
   const scpLike = remote.match(/^(?:[^@]+@)?([^:]+):(.+)$/);
-  return scpLike ? `${scpLike[1]}/${scpLike[2]}`.replace(/\.git$/, "") : hashedRemote(remote);
+  if (!scpLike || scpLike[2].startsWith("/")) return hashedRemote(remote);
+  return `${scpLike[1]}/${scpLike[2]}`.replace(/\.git$/, "");
 }
 
 export function localRepositoryId(repoPath) {
