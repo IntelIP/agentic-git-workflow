@@ -91,7 +91,7 @@ export async function collectAnalyticsDataset({ id, repositories, observedAt, si
   ));
   assertRequiredRepositories(repositories, collected);
   assertUniqueCanonicalRepositories(collected);
-  collected.sort((left, right) => left.id.localeCompare(right.id));
+  collected.sort((left, right) => compareCodePoints(left.id, right.id));
   const dataset = {
     schemaVersion: ANALYTICS_SCHEMA_VERSION,
     id,
@@ -455,7 +455,7 @@ function availabilityMetricMatchesSources(metric, sources) {
 export function renderAnalyticsReport(dataset) {
   validateAnalyticsDataset(dataset);
   const lines = [
-    `# ${dataset.id}`,
+    `# ${markdownText(dataset.id)}`,
     "",
     `Observed: ${dataset.observedAt}`,
     `Window: ${dataset.window.since} to ${dataset.window.until}`,
@@ -491,7 +491,7 @@ export function renderAnalyticsReport(dataset) {
 
 function renderRepositoryRow(repository) {
   return [
-    `| ${repository.canonicalRepositoryId}`,
+    `| ${markdownText(repository.canonicalRepositoryId)}`,
     repository.headCommit ? `\`${repository.headCommit.slice(0, 12)}\`` : "unknown",
     display(repository.metrics.commitCount),
     display(repository.metrics.validationAttemptCount),
@@ -519,26 +519,26 @@ function renderDeliveryTrace(repositories) {
 }
 
 function renderDeliveryChangeRow(change) {
-  return `| ${change.repository} | ${change.id} | ${change.linkBasis} | ${fallback(change.planeStoryId, "unknown")} | ${fallback(change.pullRequestNumber, "unknown")} | \`${change.headCommit.slice(0, 12)}\` | ${change.validationStatus} | ${change.hostedStatus} | ${fallback(change.mergedAt, "unknown")} | ${fallback(change.releasedAt, "unknown")} |`;
+  return `| ${markdownText(change.repository)} | ${markdownText(change.id)} | ${markdownText(change.linkBasis)} | ${markdownText(fallback(change.planeStoryId, "unknown"))} | ${markdownText(fallback(change.pullRequestNumber, "unknown"))} | \`${change.headCommit.slice(0, 12)}\` | ${markdownText(change.validationStatus)} | ${markdownText(change.hostedStatus)} | ${markdownText(fallback(change.mergedAt, "unknown"))} | ${markdownText(fallback(change.releasedAt, "unknown"))} |`;
 }
 
 function renderMissingEvidence(repository) {
   const missing = repository.sources.filter((source) => source.status !== "available");
   const details = missing.length === 0
     ? ["None."]
-    : missing.map((source) => `- ${source.system}: ${source.status} — ${source.reason}`);
-  return [`### ${repository.canonicalRepositoryId}`, "", ...details, ""];
+    : missing.map((source) => `- ${markdownText(source.system)}: ${markdownText(source.status)} — ${markdownText(source.reason)}`);
+  return [`### ${markdownText(repository.canonicalRepositoryId)}`, "", ...details, ""];
 }
 
 function renderRepositoryProvenance(repository) {
   return [
-    `### ${repository.canonicalRepositoryId}`,
+    `### ${markdownText(repository.canonicalRepositoryId)}`,
     "",
     repository.headCommit
       ? `- HEAD: \`${repository.headCommit}\` at ${repository.headCommittedAt}`
       : "- HEAD: unavailable",
     ...repository.sources.map((source) =>
-      `- ${source.system}: ${source.status}; version ${source.sourceVersion ?? "unknown"}; digest ${source.contentDigest ?? "unavailable"}`
+      `- ${markdownText(source.system)}: ${markdownText(source.status)}; version ${markdownText(source.sourceVersion ?? "unknown")}; digest ${markdownText(source.contentDigest ?? "unavailable")}`
     ),
     "",
   ];
@@ -1425,6 +1425,19 @@ function display(metric) {
   if (metric.status !== "measured") return "unknown";
   if (metric.unit === "ratio") return `${(metric.value * 100).toFixed(1)}%`;
   return String(metric.value);
+}
+
+function compareCodePoints(left, right) {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+function markdownText(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replace(/([\\|`*_[\]{}!])/g, "\\$1");
 }
 
 function digestCanonical(value) {

@@ -83,6 +83,26 @@ test("analytics collection is deterministic, provenance-bound, and preserves unk
   assert.match(renderAnalyticsReport(first), /taskToPrTraceability/);
 });
 
+test("repository ordering is locale-independent", async (t) => {
+  const first = await createEmptyAnalyticsRepository(t, "tabellio-analytics-order-first-");
+  const second = await createEmptyAnalyticsRepository(t, "tabellio-analytics-order-second-");
+  await runGit({ cwd: first.repo, args: ["remote", "set-url", "origin", "https://example.com/first.git"] });
+  await runGit({ cwd: second.repo, args: ["remote", "set-url", "origin", "https://example.com/second.git"] });
+
+  const dataset = await collectAnalyticsDataset({
+    id: "locale-independent-order",
+    repositories: [
+      { id: "ä", path: first.repo },
+      { id: "z", path: second.repo },
+    ],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+
+  assert.deepEqual(dataset.repositories.map((repository) => repository.id), ["z", "ä"]);
+});
+
 test("provider source provenance retains capture time and digest identity", async (t) => {
   const fixture = await createAnalyticsFixture();
   const providerSnapshot = join(fixture.root, "provider-capture.json");
@@ -1104,6 +1124,28 @@ test("provider identifiers cannot inject report rows", async (t) => {
 
   assert.equal(repository.deliveryChanges.length, 0);
   assert(!JSON.stringify(repository).includes("forged"));
+});
+
+test("analytics reports escape active provider content", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-active-markdown.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const document = providerSnapshotDocument(fixture.head);
+  document.deliveryChanges[0].id = "<img src=x onerror=alert(1)>";
+  await writeFile(providerSnapshot, JSON.stringify(document));
+
+  const dataset = await collectAnalyticsDataset({
+    id: "<script>alert(1)</script>",
+    repositories: [{ id: "fixture", path: fixture.repo, providerSnapshot }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  const report = renderAnalyticsReport(dataset);
+
+  assert(!report.includes("<script>"));
+  assert(!report.includes("<img"));
+  assert.match(report, /&lt;img src=x onerror=alert\(1\)&gt;/);
 });
 
 test("CI disagreement uses unique exact-head validation evidence", async (t) => {
