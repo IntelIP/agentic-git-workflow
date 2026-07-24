@@ -10,6 +10,8 @@ The flow has three separate authorities:
 
 GitHub Actions, a self-hosted service, Buildkite, a local coordinator, or a Codex PR workflow may invoke these commands. The scheduler supplies capacity. Tabellio owns the exact-candidate decision.
 
+Codex/Entire validation tasks must start inside the target repository or worktree so Entire can link the candidate commit to truthful session provenance.
+
 ## Validate
 
 ```bash
