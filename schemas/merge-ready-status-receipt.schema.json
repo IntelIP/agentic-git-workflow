@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:merge-ready-status-receipt:v0.1",
+  "title": "Tabellio Exact-Head Validation Status Receipt",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "approvalId",
+    "intentDigest",
+    "repository",
+    "commit",
+    "context",
+    "state",
+    "status",
+    "attemptedAt",
+    "completedAt",
+    "publication",
+    "error"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "tabellio-merge-ready-status-receipt/v0.1" },
+    "approvalId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "intentDigest": { "$ref": "#/$defs/sha256" },
+    "repository": { "type": "string", "minLength": 1 },
+    "commit": { "$ref": "#/$defs/oid" },
+    "context": { "const": "Tabellio / exact-head-validation" },
+    "state": { "enum": ["success", "failure", "error"] },
+    "status": { "enum": ["attempted", "succeeded", "failed"] },
+    "attemptedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": ["string", "null"], "format": "date-time" },
+    "publication": { "type": ["object", "null"] },
+    "error": { "type": ["object", "null"] }
+  },
+  "$defs": {
+    "oid": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import {
   ApprovedControlRefTransport,
@@ -10,6 +10,7 @@ import {
 import { runExternalCommand } from "./external-command.mjs";
 import { effectiveGitHubRepository, readRemoteRefOid } from "./github-repository.mjs";
 import { runGit } from "./git-process.mjs";
+import { assertExternalStateRoot, canonicalProspectivePath } from "./external-state-root.mjs";
 import { withOperationLock } from "./operation-lock.mjs";
 import { validateReleaseApproval, validateReleaseIntent } from "./release-operation.mjs";
 import { NativeGitStore } from "../providers/native-git-store.mjs";
@@ -40,7 +41,9 @@ export class ReleaseExecutor {
     const root = stateRoot === null
       ? resolve(store.repoPath, common, "tabellio", "release-operations")
       : resolve(stateRoot);
-    if (stateRoot !== null) assertExternalStateRoot(store.repoPath, await canonicalProspectivePath(root));
+    if (stateRoot !== null) {
+      assertExternalStateRoot(store.repoPath, await canonicalProspectivePath(root), "Release");
+    }
     const actions = new ReleaseActions({ store, ghBinary, commandRunner, remoteRefReader, codeRepositoryReader, controlRepositoryReader });
     return new ReleaseExecutor({ repoPath: store.repoPath, stateRoot: root, actions, clock });
   }
@@ -258,26 +261,6 @@ async function completeRelease(path, state) {
 
 function releaseResult(receipt, receiptPath) {
   return { receipt, receiptPath };
-}
-
-function assertExternalStateRoot(repoPath, stateRoot) {
-  const path = relative(repoPath, stateRoot);
-  const outside = path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path);
-  if (!outside) throw new Error("Release state root must be outside the worktree; omit --state-root to use Git metadata.");
-}
-
-async function canonicalProspectivePath(path) {
-  const { ancestor, missing } = await realExistingAncestor(path);
-  return resolve(ancestor, ...missing);
-}
-
-async function realExistingAncestor(path, missing = []) {
-  try {
-    return { ancestor: await realpath(path), missing };
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-    return realExistingAncestor(dirname(path), [basename(path), ...missing]);
-  }
 }
 
 function assertReleaseRepository(actual, intent) {

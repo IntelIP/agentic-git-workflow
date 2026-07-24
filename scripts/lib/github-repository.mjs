@@ -11,7 +11,7 @@ export function parseGitHubRepositoryRemote(value) {
   if (!parts) return null;
   const [owner, rawName] = parts;
   const name = rawName.replace(/\.git$/i, "");
-  if (![owner, name].every((part) => SLUG.test(part))) return null;
+  if (![owner, name].every(validRepositorySlug)) return null;
   return {
     owner,
     name,
@@ -19,6 +19,10 @@ export function parseGitHubRepositoryRemote(value) {
     identity: `${GITHUB_HOST}/${owner}/${name}`,
     key: `${owner}/${name}`.toLowerCase(),
   };
+}
+
+function validRepositorySlug(value) {
+  return SLUG.test(value) && value !== "." && value !== "..";
 }
 
 export function sameGitHubRepository(left, right) {

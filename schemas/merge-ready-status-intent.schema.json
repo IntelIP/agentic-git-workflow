@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tabellio:schema:merge-ready-status-intent:v0.1",
+  "title": "Tabellio Exact-Head Validation Status Intent",
+  "type": "object",
+  "required": ["schemaVersion", "repository", "commit", "validation", "status", "createdAt", "integrity"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": "tabellio-merge-ready-status-intent/v0.1" },
+    "repository": {
+      "type": "object",
+      "required": ["id", "owner", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" },
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9_.-]+$" }
+      }
+    },
+    "commit": { "$ref": "#/$defs/oid" },
+    "validation": {
+      "type": "object",
+      "required": ["runId", "resultDigest", "status", "completedAt", "manifestPath", "manifestDigest"],
+      "additionalProperties": false,
+      "properties": {
+        "runId": { "type": "string", "minLength": 1 },
+        "resultDigest": { "$ref": "#/$defs/sha256" },
+        "status": { "enum": ["passed", "failed", "blocked"] },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "manifestPath": { "type": "string", "minLength": 1 },
+        "manifestDigest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "status": {
+      "type": "object",
+      "required": ["context", "state", "description", "targetUrl"],
+      "additionalProperties": false,
+      "properties": {
+        "context": { "const": "Tabellio / exact-head-validation" },
+        "state": { "enum": ["success", "failure", "error"] },
+        "description": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "targetUrl": { "type": ["string", "null"], "format": "uri" }
+      }
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "integrity": {
+      "type": "object",
+      "required": ["algorithm", "digest"],
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "digest": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  },
+  "$defs": {
+    "oid": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}
