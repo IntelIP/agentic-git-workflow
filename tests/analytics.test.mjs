@@ -1433,7 +1433,7 @@ test("misplaced and duplicate control records block inflated metrics", async (t)
     branch: "duplicate-review",
     ref: "refs/tabellio/reviews",
     files: {
-      "cycles/github-7-0000000000000000.json": review,
+      "cycles/github-7-cc701ed81e7a1464.json": review,
       "cycles/github-7-1111111111111111.json": review,
     },
   });
@@ -2139,7 +2139,7 @@ async function createAnalyticsFixture() {
     branch: "review",
     ref: "refs/tabellio/reviews",
     files: {
-      "cycles/github-7-0000000000000000.json": await controlFixture(
+      "cycles/github-7-cc701ed81e7a1464.json": await controlFixture(
         "../examples/tabellio-review/minimal-cycle.json",
         "example/analytics",
         head,

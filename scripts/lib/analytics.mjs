@@ -631,7 +631,7 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     observedAt,
     include: (name) => name.endsWith(".json"),
     validate: reviewRecordValidator,
-    identity: (record) => record.id,
+    identity: reviewCycleIdentity,
     pathMatches: reviewControlPathMatches,
   });
   const entire = await collectEntireMetadata(repositoryPath, { id: `${id}:entire`, observedAt });
@@ -1285,7 +1285,20 @@ function validationControlPathMatches(name, record) {
 }
 
 function reviewControlPathMatches(name, record) {
-  return new RegExp(`^cycles/github-${record.changeRequest.number}-[0-9a-f]{16}\\.json$`).test(name);
+  const suffix = createHash("sha256")
+    .update(reviewCycleIdentity(record))
+    .digest("hex")
+    .slice(0, 16);
+  return name === `cycles/github-${record.changeRequest.number}-${suffix}.json`;
+}
+
+function reviewCycleIdentity(record) {
+  return [
+    record.repository.id,
+    record.provider.owner,
+    record.provider.repo,
+    record.changeRequest.number,
+  ].join("\0");
 }
 
 async function resolveControlRef(repositoryPath, { id, system, ref, observedAt }) {
