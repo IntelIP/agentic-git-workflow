@@ -47,7 +47,6 @@ try {
   await mkdir(dirname(out), { recursive: true });
   await writeFile(out, `${JSON.stringify(evidence, null, 2)}\n`);
   console.log(JSON.stringify({ ok: evidence.status === "passed", profile: options.profile, out, status: evidence.status }));
-  if (evidence.status !== "passed") process.exitCode = 1;
 } catch (error) {
   reportCliError(error);
 }

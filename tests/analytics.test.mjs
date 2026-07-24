@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import test from "node:test";
 
 import {
@@ -17,6 +20,7 @@ import { identityEnv } from "./helpers/git-fixture.mjs";
 const OBSERVED_AT = "2026-07-23T20:00:00.000Z";
 const SINCE = "2026-07-01T00:00:00.000Z";
 const UNTIL = "2026-07-23T19:59:59.000Z";
+const execFileAsync = promisify(execFile);
 
 test("analytics collection is deterministic, provenance-bound, and preserves unknown metrics", async (t) => {
   const fixture = await createAnalyticsFixture();
@@ -384,6 +388,15 @@ test("dataset validation enforces window ordering and metric semantics", async (
     /source observation is newer than the dataset/,
   );
 
+  const forgedRepository = structuredClone(validForTampering);
+  forgedRepository.repositories[0].id = "bad | forged\nrow";
+  forgedRepository.repositories[0].canonicalRepositoryId = "bad | forged\nrow";
+  resignDataset(forgedRepository);
+  assert.throws(
+    () => validateAnalyticsDataset(forgedRepository),
+    /Repository identity is incomplete/,
+  );
+
   const inconsistentRatio = structuredClone(validForTampering);
   inconsistentRatio.repositories[0].metrics.evidenceCompleteness.value = 0.5;
   resignDataset(inconsistentRatio);
@@ -445,6 +458,61 @@ test("repository identity excludes local paths and URL credentials", async (t) =
   });
   assert.equal(credentialDataset.repositories[0].canonicalRepositoryId, "example.com/org/repository");
   assert(!JSON.stringify(credentialDataset).includes("private-token"));
+});
+
+test("analytics collection rejects unsafe configured identifiers", async () => {
+  await assert.rejects(
+    collectAnalyticsDataset({
+      id: "bad | forged\nrow",
+      repositories: [{ id: "fixture", path: "." }],
+      observedAt: OBSERVED_AT,
+      since: SINCE,
+      until: UNTIL,
+    }),
+    /safe portable id/,
+  );
+  await assert.rejects(
+    collectAnalyticsDataset({
+      id: "safe-baseline",
+      repositories: [{ id: "bad | forged\nrow", path: "." }],
+      observedAt: OBSERVED_AT,
+      since: SINCE,
+      until: UNTIL,
+    }),
+    /safe portable id/,
+  );
+  await assert.rejects(
+    collectAnalyticsDataset({
+      id: "/Users/alice/private-baseline",
+      repositories: [{ id: "fixture", path: "." }],
+      observedAt: OBSERVED_AT,
+      since: SINCE,
+      until: UNTIL,
+    }),
+    /safe portable id/,
+  );
+});
+
+test("bare repositories preserve Git analytics while worktree state stays unavailable", async (t) => {
+  const { root, repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-bare-");
+  const bare = join(root, "repository.git");
+  await runGit({ cwd: root, args: ["clone", "--bare", repo, bare] });
+
+  const dataset = await collectAnalyticsDataset({
+    id: "bare-baseline",
+    repositories: [{ id: "bare", path: bare }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  validateAnalyticsDataset(dataset);
+  const repository = dataset.repositories[0];
+
+  assert.match(repository.headCommit, /^[0-9a-f]{40}$/);
+  assert.equal(repository.metrics.commitCount.status, "measured");
+  assert.equal(repository.metrics.worktreeDirty.status, "unavailable");
+  assert.equal(repository.metrics.worktreeDirty.value, null);
+  assert.match(repository.metrics.worktreeDirty.reason, /no worktree/i);
 });
 
 test("provider read failures are blocked without leaking local paths", async (t) => {
@@ -657,6 +725,22 @@ test("provider evidence cannot postdate observation or violate lifecycle orderin
   );
 });
 
+test("invalid provider capture versions never leak into blocked source provenance", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-invalid-capture.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const document = providerSnapshotDocument(fixture.head);
+  document.capturedAt = "/Users/alice/private-capture";
+  await writeFile(providerSnapshot, JSON.stringify(document));
+
+  const repository = await collectProviderRepository(fixture, providerSnapshot, "provider-invalid-capture");
+  const providerSources = repository.sources
+    .filter((source) => ["plane", "github", "github-actions"].includes(source.system));
+
+  assert(providerSources.every((source) => source.status === "blocked" && source.sourceVersion === null));
+  assert(!JSON.stringify(repository).includes(document.capturedAt));
+});
+
 test("explicitly unlinked changes do not inflate task-to-PR traceability", async (t) => {
   const fixture = await createAnalyticsFixture();
   const providerSnapshot = join(fixture.root, "provider-unlinked.json");
@@ -707,6 +791,39 @@ test("CI disagreement uses unique exact-head validation evidence", async (t) => 
   const missingRepository = await collectProviderRepository(fixture, providerSnapshot, "provider-ci-missing");
 
   assert.equal(missingRepository.metrics.ciDisagreementRate.status, "unavailable");
+});
+
+test("exact-head reconciliation ignores validation evidence completed after provider observation", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-historical.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const provider = providerSnapshotDocument(fixture.head);
+  provider.capturedAt = "2026-07-23T19:00:00.000Z";
+  await writeFile(providerSnapshot, JSON.stringify(provider));
+
+  const past = JSON.parse(await controlFixture(
+    "../examples/tabellio-validation/minimal-result.json",
+    "example/analytics",
+    fixture.head,
+  ));
+  const future = structuredClone(past);
+  future.runId = "validation-future-001";
+  setValidationTimes(future, "2026-07-23T19:29:59.000Z", "2026-07-23T19:30:00.000Z");
+  resignDataset(future);
+  await createMetadataRef(fixture.repo, {
+    branch: "historical-validations",
+    ref: "refs/tabellio/validations",
+    files: {
+      "commits/past/validation.json": JSON.stringify(past),
+      "commits/future/validation.json": JSON.stringify(future),
+    },
+  });
+
+  const repository = await collectProviderRepository(fixture, providerSnapshot, "provider-historical");
+
+  assert.equal(repository.deliveryChanges[0].validationStatus, "passed");
+  assert.equal(repository.metrics.ciDisagreementRate.status, "measured");
+  assert.equal(repository.metrics.ciDisagreementRate.value, 0);
 });
 
 test("provider-derived metrics require their declared evidence sources", async (t) => {
@@ -868,6 +985,40 @@ test("analytics JSON schema remains loadable and identifies the executable contr
   assert.equal(schema.additionalProperties, false);
 });
 
+test("analytics validator reports semantic failures through evidence with a successful command exit", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-validator-"));
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const dataset = await collectAnalyticsDataset({
+    id: "semantic-failure",
+    repositories: [{ id: "fixture", path: fixture.repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  const datasetPath = join(root, "dataset.json");
+  const reportPath = join(root, "report.md");
+  const evidencePath = join(root, "evidence.json");
+  await writeFile(datasetPath, `${JSON.stringify(dataset, null, 2)}\n`);
+  await writeFile(reportPath, renderAnalyticsReport(dataset));
+
+  const result = await execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+    "--profile", "semantic",
+    "--validator-id", "analytics-semantic-test",
+    "--dataset", datasetPath,
+    "--report", reportPath,
+    "--out", evidencePath,
+  ], { encoding: "utf8" });
+  const evidence = JSON.parse(await readFile(evidencePath, "utf8"));
+
+  assert.equal(result.stderr, "");
+  assert.equal(JSON.parse(result.stdout).ok, false);
+  assert.equal(evidence.status, "failed");
+  assert.equal(evidence.metrics.find((metric) => metric.name === "analytics_semantic_pass").value, 0);
+});
+
 async function createAnalyticsFixture() {
   const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-"));
   const repo = join(root, "repo");
@@ -964,6 +1115,15 @@ function bindReviewHead(value, headCommit) {
   if (!headCommit || !value.changeRequest) return;
   value.changeRequest.headCommit = headCommit;
   value.checks.commit = headCommit;
+}
+
+function setValidationTimes(value, startedAt, completedAt) {
+  value.startedAt = startedAt;
+  value.completedAt = completedAt;
+  for (const command of value.commands) {
+    command.startedAt = startedAt;
+    command.completedAt = completedAt;
+  }
 }
 
 function providerSnapshotDocument(headCommit, overrides = {}) {

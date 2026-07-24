@@ -99,14 +99,14 @@ export async function collectAnalyticsDataset({ id, repositories, observedAt, si
 }
 
 function assertRepositoryInputs(id, repositories) {
-  if (!id) throw new Error("Analytics collection requires an id and at least one repository.");
+  if (!isSafeAnalyticsIdentifier(id)) throw new Error("Analytics collection requires a safe portable id.");
   if (!isNonEmptyArray(repositories)) throw new Error("Analytics collection requires an id and at least one repository.");
   const invalid = repositories.find(hasIncompleteRepositoryInput);
-  if (invalid) throw new Error("Each repository requires id and path.");
+  if (invalid) throw new Error("Each repository requires a safe portable id and path.");
 }
 
 function hasIncompleteRepositoryInput(repository) {
-  return !repository?.id || !repository?.path;
+  return !isSafeAnalyticsIdentifier(repository?.id) || !repository?.path;
 }
 
 function assertRequiredRepositories(inputs, collected) {
@@ -146,7 +146,7 @@ function hasAnalyticsSchema(dataset) {
 }
 
 function hasDatasetId(dataset) {
-  return Boolean(dataset?.id);
+  return isSafeAnalyticsIdentifier(dataset?.id);
 }
 
 function hasObservedAt(dataset) {
@@ -222,7 +222,8 @@ function hasCompleteDefinitions(definitions) {
 }
 
 function hasRepositoryIdentity(repository) {
-  return Boolean(repository?.id) && Boolean(repository?.canonicalRepositoryId);
+  return isSafeAnalyticsIdentifier(repository?.id)
+    && isSafeAnalyticsIdentifier(repository?.canonicalRepositoryId);
 }
 
 function hasCanonicalSources(sources) {
@@ -510,12 +511,13 @@ function unavailableRepositoryMetrics(sources, reason) {
 
 async function collectRepository({ id, path, providerSnapshot, observedAt, since, until }) {
   const repositoryPath = await realpath(path);
+  const isBare = await git(repositoryPath, ["rev-parse", "--is-bare-repository"]) === "true";
   const [head, committedAt, branch, remote, status, commits] = await Promise.all([
     git(repositoryPath, ["rev-parse", "HEAD"]),
     git(repositoryPath, ["show", "-s", "--format=%cI", "HEAD"]),
     git(repositoryPath, ["branch", "--show-current"]),
     git(repositoryPath, ["remote", "get-url", "origin"], [0, 2]),
-    git(repositoryPath, ["status", "--porcelain=v1"]),
+    isBare ? Promise.resolve(null) : git(repositoryPath, ["status", "--porcelain=v1"]),
     git(repositoryPath, ["rev-list", "--count", `--since-as-filter=${since}`, `--until=${until}`, "HEAD"]),
   ]);
   assertHeadObserved(committedAt, observedAt);
@@ -530,7 +532,7 @@ async function collectRepository({ id, path, providerSnapshot, observedAt, since
     system: "git",
     observedAt,
     sourceVersion: head,
-    content: JSON.stringify({ head, committedAt, branch, status, commits }),
+    content: JSON.stringify({ head, committedAt, branch, isBare, status, commits }),
   });
   const validation = await collectJsonRef(repositoryPath, {
     id: `${id}:tabellio-validation`,
@@ -627,7 +629,7 @@ function buildRepositoryMetrics({ commits, status, since, until, gitSource, vali
   const cycleTimes = linkedChanges.flatMap((change) => durationHours(change.firstActivityAt, change.mergedAt));
   const releaseLags = changes.flatMap((change) => durationHours(change.mergedAt, change.releasedAt));
   const ciComparisons = changes.flatMap((change) =>
-    exactCiComparison(change, validation.values)
+    exactCiComparison(change, validation.values, provider.observedAt)
   );
   const ciDisagreements = ciComparisons.filter((comparison) =>
     comparison.validationStatus !== comparison.hostedStatus
@@ -641,7 +643,9 @@ function buildRepositoryMetrics({ commits, status, since, until, gitSource, vali
     entireCheckpointCount: availabilityCount(entire.source, entire.count, "count"),
     reviewFindingCount: availabilityCount(review.source, reviewFindings, "count"),
     repairCount: availabilityCount(review.source, repairs, "count"),
-    worktreeDirty: measured(status.length > 0, "boolean", [gitSource.id]),
+    worktreeDirty: status === null
+      ? missing("boolean", [gitSource.id], "Bare repository has no worktree.")
+      : measured(status.length > 0, "boolean", [gitSource.id]),
     evidenceCompleteness: measured(availableCount / DECLARED_SOURCE_SYSTEMS.length, "ratio", sources.map((source) => source.id), availableCount, DECLARED_SOURCE_SYSTEMS.length),
     deliveryChangeCount: providerMetric(provider, measured(changes.length, "count", providerSourceIds), "count", providerSourceIds),
     taskToPrTraceability: providerMetric(provider, ratioOrMissing(linkedChanges.length, changes.length, "ratio", providerSourceIds, "No eligible delivery changes in the provider snapshot."), "ratio", providerSourceIds),
@@ -674,12 +678,9 @@ function hasTaskAndPullRequest(change) {
     && Boolean(change.pullRequestNumber);
 }
 
-function exactCiComparison(change, validations) {
+function exactCiComparison(change, validations, cutoff) {
   if (!isComparableStatus(change.hostedStatus)) return [];
-  const matches = validations.filter((validation) =>
-    validation?.revision?.headCommit === change.headCommit
-      && isComparableStatus(validation.status)
-  );
+  const matches = exactHeadValidations(change, validations, cutoff);
   if (matches.length !== 1) return [];
   return [{
     validationStatus: matches[0].status,
@@ -689,22 +690,28 @@ function exactCiComparison(change, validations) {
 
 function reconcileProviderChanges(provider, validations) {
   const actionsAvailable = provider.sources[2].status === "available";
+  const cutoff = provider.observedAt;
   return {
     ...provider,
     changes: provider.changes.map((change) => ({
       ...change,
-      validationStatus: exactValidationStatus(change, validations),
+      validationStatus: exactValidationStatus(change, validations, cutoff),
       hostedStatus: actionsAvailable ? change.hostedStatus : "unavailable",
     })),
   };
 }
 
-function exactValidationStatus(change, validations) {
-  const matches = validations.filter((validation) =>
+function exactValidationStatus(change, validations, cutoff) {
+  const matches = exactHeadValidations(change, validations, cutoff);
+  return matches.length === 1 ? matches[0].status : "unavailable";
+}
+
+function exactHeadValidations(change, validations, cutoff) {
+  return validations.filter((validation) =>
     validation?.revision?.headCommit === change.headCommit
       && isComparableStatus(validation.status)
+      && dateNotAfter(validation.completedAt, cutoff)
   );
-  return matches.length === 1 ? matches[0].status : "unavailable";
 }
 
 function isComparableStatus(value) {
@@ -741,7 +748,7 @@ function collectLoadedProviderSnapshot({ id, canonicalRepositoryId, observedAt, 
       id,
       observedAt,
       status: "blocked",
-      sourceVersion: fallback(snapshot?.capturedAt, null),
+      sourceVersion: safeProviderFailureVersion(snapshot, observedAt),
       reason: `Provider snapshot is invalid (${errors.length} validation errors).`,
     });
   }
@@ -757,6 +764,7 @@ function buildProviderResult({ id, snapshot }) {
   const planeAvailable = sources[0].status === "available";
   return {
     available,
+    observedAt: snapshot.capturedAt,
     reason: providerMissingReason(sources),
     changes: githubAvailable
       ? snapshot.deliveryChanges.map((change) => planeAvailable ? change : redactPlaneEvidence(change))
@@ -819,6 +827,7 @@ function providerFailure({ id, observedAt, reason, status, sourceVersion = null 
   const factory = status === "blocked" ? blockedSource : unavailableSource;
   return {
     available: false,
+    observedAt,
     reason,
     changes: [],
     sources: ["plane", "github", "github-actions"].map((system) => factory({
@@ -829,6 +838,12 @@ function providerFailure({ id, observedAt, reason, status, sourceVersion = null 
       reason,
     })),
   };
+}
+
+function safeProviderFailureVersion(snapshot, observedAt) {
+  return hasProviderCaptureTime(snapshot) && providerCaptureNotAfter(snapshot, observedAt)
+    ? snapshot.capturedAt
+    : null;
 }
 
 function validateProviderSnapshot(snapshot, canonicalRepositoryId, observedAt) {
@@ -975,6 +990,18 @@ function isSafeLinkEvidence(change) {
 function isSafeProviderText(value) {
   if (!isNonEmptyString(value) || value.length > 300) return false;
   return !hasPortableTextControls(value) && !hasCredentialShape(value);
+}
+
+function isSafeAnalyticsIdentifier(value) {
+  if (!isNonEmptyString(value)) return false;
+  return [
+    value.length <= 300,
+    !value.startsWith("/"),
+    !/^[A-Za-z]:[\\/]/.test(value),
+    !value.split("/").includes(".."),
+    !/[\u0000-\u001F\u007F|\\]/.test(value),
+    !hasCredentialShape(value),
+  ].every(Boolean);
 }
 
 function isSafeProviderVersion(value) {
