@@ -1605,6 +1605,7 @@ test("analytics validator separates direct failure exits from runner evidence ev
   const reportPath = join(root, "report.md");
   const evidencePath = join(root, "evidence.json");
   const directEvidencePath = join(root, "direct-evidence.json");
+  const expectedDigestEvidencePath = join(root, "expected-digest-evidence.json");
   const malformedDatasetPath = join(root, "malformed-dataset.json");
   const malformedEvidencePath = join(root, "malformed-evidence.json");
   const malformedOperationalEvidencePath = join(root, "malformed-operational-evidence.json");
@@ -1638,6 +1639,22 @@ test("analytics validator separates direct failure exits from runner evidence ev
   assert.equal(evidence.status, "failed");
   assert.equal(evidence.artifacts.length, 2);
   assert.equal(evidence.metrics.find((metric) => metric.name === "analytics_semantic_pass").value, 0);
+
+  await execFileAsync(process.execPath, [
+    fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+    "--profile", "schema",
+    "--validator-id", "analytics-schema-expected-digest-test",
+    "--dataset", datasetPath,
+    "--report", reportPath,
+    "--expected-digest", "f".repeat(64),
+    "--out", expectedDigestEvidencePath,
+    "--exit-mode", "evidence",
+  ], { encoding: "utf8" });
+  const expectedDigestEvidence = JSON.parse(
+    await readFile(expectedDigestEvidencePath, "utf8"),
+  );
+  assert.equal(expectedDigestEvidence.status, "failed");
+  assert.match(expectedDigestEvidence.summary, /approved baseline digest/);
 
   await assert.rejects(
     execFileAsync(process.execPath, [

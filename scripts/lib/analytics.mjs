@@ -588,13 +588,13 @@ function unavailableRepositoryMetrics(sources, reason) {
 async function collectRepository({ id, path, providerSnapshot, observedAt, since, until }) {
   const repositoryPath = await realpath(path);
   const isBare = await git(repositoryPath, ["rev-parse", "--is-bare-repository"]) === "true";
-  const [head, committedAt, branch, remote, status, commits] = await Promise.all([
-    git(repositoryPath, ["rev-parse", "HEAD"]),
-    git(repositoryPath, ["show", "-s", "--format=%cI", "HEAD"]),
+  const head = await git(repositoryPath, ["rev-parse", "HEAD"]);
+  const [committedAt, branch, remote, status, commits] = await Promise.all([
+    git(repositoryPath, ["show", "-s", "--format=%cI", head]),
     git(repositoryPath, ["branch", "--show-current"]),
     git(repositoryPath, ["remote", "get-url", "origin"], [0, 2]),
     isBare ? Promise.resolve(null) : git(repositoryPath, ["status", "--porcelain=v1"]),
-    git(repositoryPath, ["rev-list", "--count", `--since-as-filter=${since}`, `--until=${until}`, "HEAD"]),
+    git(repositoryPath, ["rev-list", "--count", `--since-as-filter=${since}`, `--until=${until}`, head]),
   ]);
   assertHeadObserved(committedAt, observedAt);
   const exportedBranch = fallback(branch, "(detached)");

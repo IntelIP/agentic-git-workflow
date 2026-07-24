@@ -29,7 +29,7 @@ const PROFILE_VALIDATORS = Object.freeze({
 
 try {
   const options = parseOptionPairs(process.argv.slice(2), "analytics validator");
-  assertAllowedOptions(options, ["profile", "validatorId", "dataset", "report", "source", "out", "exitMode"]);
+  assertAllowedOptions(options, ["profile", "validatorId", "dataset", "report", "source", "expectedDigest", "out", "exitMode"]);
   requireOptions(options, ["profile", "validatorId", "dataset", "report", "out"], "analytics validator");
   if (!PROFILES.includes(options.profile)) throw new Error(`Unsupported analytics validator profile: ${options.profile}.`);
   if (options.exitMode !== undefined && options.exitMode !== "evidence") {
@@ -52,6 +52,13 @@ try {
       dataset = JSON.parse(datasetInput.raw);
     } catch {
       inputErrors.push("Dataset JSON is invalid.");
+    }
+  }
+  if (options.expectedDigest !== undefined) {
+    if (!/^[0-9a-f]{64}$/.test(options.expectedDigest)) {
+      inputErrors.push("--expected-digest must be a SHA-256 digest.");
+    } else if (dataset !== null && dataset.integrity?.digest !== options.expectedDigest) {
+      inputErrors.push("Dataset integrity digest does not match the approved baseline digest.");
     }
   }
   if (sourceInput.raw !== null) {
