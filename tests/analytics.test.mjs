@@ -564,6 +564,59 @@ test("dataset validation enforces window ordering and metric semantics", async (
   );
 });
 
+test("dataset and collection reject duplicate canonical repositories", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-duplicate-repository-");
+  await assert.rejects(
+    collectAnalyticsDataset({
+      id: "duplicate-repository-baseline",
+      repositories: [
+        { id: "first", path: repo },
+        { id: "second", path: repo },
+      ],
+      observedAt: OBSERVED_AT,
+      since: SINCE,
+      until: UNTIL,
+    }),
+    /Duplicate canonical repository/,
+  );
+
+  const dataset = await collectAnalyticsDataset({
+    id: "unique-repository-baseline",
+    repositories: [{ id: "first", path: repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  dataset.repositories.push(structuredClone(dataset.repositories[0]));
+  dataset.repositories[1].id = "second";
+  resignDataset(dataset);
+  assert.throws(
+    () => validateAnalyticsDataset(dataset),
+    /Canonical repositories must be unique/,
+  );
+});
+
+test("dataset validation enforces metric reason semantics", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-metric-reason-");
+  const dataset = await collectAnalyticsDataset({
+    id: "metric-reason-baseline",
+    repositories: [{ id: "fixture", path: repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+
+  const measuredReason = structuredClone(dataset);
+  measuredReason.repositories[0].metrics.commitCount.reason = "Contradictory reason.";
+  resignDataset(measuredReason);
+  assert.throws(() => validateAnalyticsDataset(measuredReason), /metric value, unit, or ratio fields/);
+
+  const unavailableReason = structuredClone(dataset);
+  unavailableReason.repositories[0].metrics.validationPassRate.reason = null;
+  resignDataset(unavailableReason);
+  assert.throws(() => validateAnalyticsDataset(unavailableReason), /metric value, unit, or ratio fields/);
+});
+
 test("repository identity excludes local paths and URL credentials", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-private-remote-"));
   const repo = join(root, "repo");
@@ -1136,6 +1189,27 @@ test("control records for another repository block their source metrics", async 
   );
 });
 
+test("control refs newer than the observation are blocked", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-future-control-");
+  await createMetadataRef(repo, {
+    branch: "future-validation",
+    ref: "refs/tabellio/validations",
+    committedAt: "2026-07-24T06:00:00Z",
+    files: {
+      "commits/future/validation.json": await controlFixture(
+        "../examples/tabellio-validation/minimal-result.json",
+        "example/analytics",
+      ),
+    },
+  });
+
+  const repository = await collectSingleRepository(repo, "future-control");
+  const source = repository.sources.find((entry) => entry.system === "tabellio-validation");
+  assert.equal(source.status, "blocked");
+  assert.match(source.reason, /newer than the requested observation/);
+  assert.equal(repository.metrics.validationAttemptCount.status, "unavailable");
+});
+
 test("Entire metadata is collected from the configured control remote", async (t) => {
   const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-control-");
   await createMetadataRef(repo, {
@@ -1349,7 +1423,7 @@ test("analytics validator separates direct failure exits from runner evidence ev
   );
   resignDataset(duplicateDataset);
   await writeFile(duplicateDatasetPath, JSON.stringify(duplicateDataset));
-  await writeFile(duplicateReportPath, renderAnalyticsReport(duplicateDataset));
+  await writeFile(duplicateReportPath, renderAnalyticsReport(dataset));
   await execFileAsync(process.execPath, [
     fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
     "--profile", "semantic",
@@ -1397,7 +1471,7 @@ test("analytics validator separates direct failure exits from runner evidence ev
   unavailableMetric.reason = "ghs_private-token";
   resignDataset(credentialDataset);
   await writeFile(credentialDatasetPath, JSON.stringify(credentialDataset));
-  await writeFile(credentialReportPath, renderAnalyticsReport(credentialDataset));
+  await writeFile(credentialReportPath, renderAnalyticsReport(dataset));
   await execFileAsync(process.execPath, [
     fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
     "--profile", "security",
@@ -1828,7 +1902,10 @@ async function commitFixtureFile(repo, name, content, committedAt) {
   });
 }
 
-async function createMetadataRef(repo, { branch, ref, files }) {
+async function createMetadataRef(
+  repo,
+  { branch, ref, files, committedAt = "2026-07-23T19:00:00Z" },
+) {
   await runGit({ cwd: repo, args: ["switch", "-c", `metadata-${branch}`] });
   for (const [name, content] of Object.entries(files)) {
     const path = join(repo, name);
@@ -1836,7 +1913,15 @@ async function createMetadataRef(repo, { branch, ref, files }) {
     await writeFile(path, content);
   }
   await runGit({ cwd: repo, args: ["add", "-A"] });
-  await runGit({ cwd: repo, args: ["commit", "-m", `${branch} metadata`], env: identityEnv() });
+  await runGit({
+    cwd: repo,
+    args: ["commit", "-m", `${branch} metadata`],
+    env: {
+      ...identityEnv(),
+      GIT_AUTHOR_DATE: committedAt,
+      GIT_COMMITTER_DATE: committedAt,
+    },
+  });
   const commit = (await runGit({ cwd: repo, args: ["rev-parse", "HEAD"] })).stdout.trim();
   await runGit({ cwd: repo, args: ["update-ref", ref, commit] });
   await runGit({ cwd: repo, args: ["switch", "main"] });

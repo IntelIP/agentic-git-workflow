@@ -85,6 +85,7 @@ export async function collectAnalyticsDataset({ id, repositories, observedAt, si
     collectRepositorySafely({ ...repository, observedAt, since, until })
   ));
   assertRequiredRepositories(repositories, collected);
+  assertUniqueCanonicalRepositories(collected);
   collected.sort((left, right) => left.id.localeCompare(right.id));
   const dataset = {
     schemaVersion: ANALYTICS_SCHEMA_VERSION,
@@ -116,6 +117,13 @@ function assertRequiredRepositories(inputs, collected) {
   if (failed) throw new Error(`Required repository ${failed.id} could not be collected.`);
 }
 
+function assertUniqueCanonicalRepositories(repositories) {
+  const duplicate = duplicateValues(
+    repositories.map((repository) => comparableRepositoryId(repository.canonicalRepositoryId)),
+  )[0];
+  if (duplicate) throw new Error(`Duplicate canonical repository: ${duplicate}.`);
+}
+
 export function validateAnalyticsDataset(dataset) {
   const schemaErrors = validateJsonSchema(dataset, ANALYTICS_SCHEMA);
   if (schemaErrors.length > 0) throwValidationErrors(schemaErrors);
@@ -137,6 +145,7 @@ function validateDatasetHeader(dataset) {
     errorUnless(hasValidWindow(dataset), "Window requires ISO since and until."),
     errorUnless(hasCoherentWindow(dataset), "Analytics window ordering is invalid."),
     errorUnless(hasRepositories(dataset), "At least one repository is required."),
+    errorUnless(hasUniqueCanonicalRepositories(dataset), "Canonical repositories must be unique."),
     errorUnless(hasMetricDefinitions(dataset), "Metric definitions are incomplete."),
   ]);
 }
@@ -165,6 +174,12 @@ function hasCoherentWindow(dataset) {
 
 function hasRepositories(dataset) {
   return isNonEmptyArray(dataset?.repositories);
+}
+
+function hasUniqueCanonicalRepositories(dataset) {
+  const identities = asArray(dataset?.repositories)
+    .map((repository) => comparableRepositoryId(repository?.canonicalRepositoryId));
+  return identities.every(isNonEmptyString) && new Set(identities).size === identities.length;
 }
 
 function hasMetricDefinitions(dataset) {
@@ -347,8 +362,17 @@ function hasValidMetricValue(metric) {
 function metricMatchesDefinition(metric, definition) {
   if (!definition) return false;
   if (metric.unit !== definition.unit) return false;
-  if (metric.status !== "measured") return isEmptyMetricValue(metric);
-  return MEASURED_METRIC_VALIDATORS[definition.unit](metric);
+  return metric.status === "measured"
+    ? measuredMetricMatchesDefinition(metric, definition)
+    : unavailableMetricMatchesDefinition(metric);
+}
+
+function measuredMetricMatchesDefinition(metric, definition) {
+  return metric.reason === null && MEASURED_METRIC_VALIDATORS[definition.unit](metric);
+}
+
+function unavailableMetricMatchesDefinition(metric) {
+  return isEmptyMetricValue(metric) && isSafeProviderReason(metric.reason);
 }
 
 const MEASURED_METRIC_VALIDATORS = Object.freeze({
@@ -1139,23 +1163,9 @@ function providerProjection(change, system) {
 }
 
 async function collectJsonRef(repositoryPath, { id, system, ref, observedAt, include, validate }) {
-  const exists = await runGit({
-    cwd: repositoryPath,
-    args: ["show-ref", "--verify", "--quiet", ref],
-    acceptableExitCodes: [0, 1],
-  });
-  if (exists.exitCode !== 0) {
-    return {
-      source: unavailableSource({
-        id,
-        system,
-        observedAt,
-        reason: `${controlSourceLabel(system)} evidence ref is absent.`,
-      }),
-      values: [],
-    };
-  }
-  const version = await git(repositoryPath, ["rev-parse", ref]);
+  const resolved = await resolveControlRef(repositoryPath, { id, system, ref, observedAt });
+  if (resolved.source) return { source: resolved.source, values: [] };
+  const version = resolved.version;
   const names = (await git(repositoryPath, ["ls-tree", "-r", "--name-only", version]))
     .split("\n").filter((name) => name && include(name)).sort();
   const values = [];
@@ -1182,6 +1192,40 @@ async function collectJsonRef(repositoryPath, { id, system, ref, observedAt, inc
     source: availableSource({ id, system, observedAt, sourceVersion: version, content: JSON.stringify(canonical) }),
     values,
   };
+}
+
+async function resolveControlRef(repositoryPath, { id, system, ref, observedAt }) {
+  const exists = await runGit({
+    cwd: repositoryPath,
+    args: ["show-ref", "--verify", "--quiet", ref],
+    acceptableExitCodes: [0, 1],
+  });
+  if (exists.exitCode !== 0) {
+    return {
+      source: unavailableSource({
+        id,
+        system,
+        observedAt,
+        reason: `${controlSourceLabel(system)} evidence ref is absent.`,
+      }),
+      version: null,
+    };
+  }
+  const version = await git(repositoryPath, ["rev-parse", ref]);
+  const committedAt = await git(repositoryPath, ["show", "-s", "--format=%cI", version]);
+  if (!dateNotAfter(committedAt, observedAt)) {
+    return {
+      source: blockedSource({
+        id,
+        system,
+        observedAt,
+        sourceVersion: version,
+        reason: `${controlSourceLabel(system)} evidence ref is newer than the requested observation.`,
+      }),
+      version,
+    };
+  }
+  return { source: null, version };
 }
 
 function controlSourceLabel(system) {
