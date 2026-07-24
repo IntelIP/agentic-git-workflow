@@ -891,7 +891,7 @@ function safeProviderFailureVersion(snapshot, observedAt) {
     : null;
 }
 
-function validateProviderSnapshot(snapshot, canonicalRepositoryId, observedAt) {
+export function validateProviderSnapshot(snapshot, canonicalRepositoryId, observedAt) {
   const sourceErrors = ["plane", "github", "github-actions"].flatMap((system) =>
     validateProviderSource(system, snapshot?.sources?.[system], snapshot?.capturedAt)
   );

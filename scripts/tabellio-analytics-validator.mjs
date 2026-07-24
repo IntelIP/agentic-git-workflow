@@ -6,7 +6,11 @@ import { dirname, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 
 import { assertAllowedOptions, parseOptionPairs, reportCliError, requireOptions } from "./lib/cli-options.mjs";
-import { renderAnalyticsReport, validateAnalyticsDataset } from "./lib/analytics.mjs";
+import {
+  renderAnalyticsReport,
+  validateAnalyticsDataset,
+  validateProviderSnapshot,
+} from "./lib/analytics.mjs";
 
 const PROFILES = ["schema", "semantic", "workflow", "operational", "security"];
 const REQUIRED_BASELINE_REPOSITORIES = Object.freeze([
@@ -234,6 +238,7 @@ function validateSecurityProfile({ dataset, datasetRaw, reportRaw, source, sourc
   const errors = forbidden.flatMap(([needle, message]) =>
     typeof needle === "string" ? (payload.includes(needle) ? [message] : []) : (needle.test(payload) ? [message] : [])
   );
+  errors.push(...validateOptionalProviderSnapshot(dataset, source));
   if (containsLocalFilesystemPath(payload)) errors.push("Local filesystem path leaked.");
   return result("Portable analytics artifacts contain no local paths, transcript bodies, or credential-shaped values.", errors, [
     metric("analytics_privacy_pass", errors.length === 0 ? 1 : 0, "boolean"),
@@ -301,6 +306,8 @@ function validateProviderEvidence(dataset, snapshot) {
   const expectedChanges = providerBoundChanges(snapshot.deliveryChanges);
   const actualChanges = providerBoundChanges(repository.deliveryChanges);
   return compact([
+    ...validateProviderSnapshot(snapshot, "IntelIP/Tabellio", dataset.observedAt),
+    ...validateUnboundProviderEvidence(dataset),
     errorUnless(
       isTabellioProviderSnapshot(snapshot),
       "Provider snapshot repository does not match IntelIP/Tabellio.",
@@ -313,6 +320,45 @@ function validateProviderEvidence(dataset, snapshot) {
       validateProviderSourceBinding(repository, snapshot, system)
     ),
   ]);
+}
+
+function validateOptionalProviderSnapshot(dataset, snapshot) {
+  if (snapshot === null) return [];
+  return validateProviderSnapshot(snapshot, "IntelIP/Tabellio", dataset?.observedAt);
+}
+
+function validateUnboundProviderEvidence(dataset) {
+  if (!Array.isArray(dataset?.repositories)) return [];
+  return dataset.repositories
+    .filter((repository) => !isTabellioRepository(repository))
+    .flatMap(unboundProviderEvidenceErrors);
+}
+
+function unboundProviderEvidenceErrors(repository) {
+  if (!isRecord(repository)) return [];
+  return hasUnboundProviderEvidence(repository)
+    ? [`${repository.canonicalRepositoryId}: provider evidence lacks a decoded source snapshot.`]
+    : [];
+}
+
+function hasUnboundProviderEvidence(repository) {
+  return hasAvailableProviderSource(repository.sources)
+    || hasDeliveryRows(repository.deliveryChanges);
+}
+
+function hasAvailableProviderSource(sources) {
+  if (!Array.isArray(sources)) return false;
+  return sources.some(isAvailableProviderSource);
+}
+
+function isAvailableProviderSource(source) {
+  if (!isRecord(source)) return false;
+  return ["plane", "github", "github-actions"].includes(source.system)
+    && source.status === "available";
+}
+
+function hasDeliveryRows(deliveryChanges) {
+  return Array.isArray(deliveryChanges) && deliveryChanges.length > 0;
 }
 
 function findTabellioRepository(dataset) {

@@ -1491,7 +1491,9 @@ test("analytics semantic and security profiles bind delivery meaning and decoded
       "--validator-id", `analytics-${profile}-${name}`,
       "--dataset", datasetPath,
       "--report", reportPath,
-      ...(profile === "semantic" ? ["--source", sourcePath] : []),
+      ...(profile === "semantic" && !extraArgs.includes("--source")
+        ? ["--source", sourcePath]
+        : []),
       ...extraArgs,
       "--out", evidencePath,
       "--exit-mode", "evidence",
@@ -1545,6 +1547,17 @@ test("analytics semantic and security profiles bind delivery meaning and decoded
   assert.match(
     (await runProfile(fabricatedValidationStatus, "fabricated-validation-status")).summary,
     /Delivery traces do not match the committed provider snapshot/,
+  );
+
+  const unboundRepository = structuredClone(baseline);
+  unboundRepository.repositories.find((repository) => repository.id === "condere")
+    .deliveryChanges = structuredClone(
+      baseline.repositories.find((repository) => repository.id === "tabellio").deliveryChanges,
+    );
+  resignDataset(unboundRepository);
+  assert.match(
+    (await runProfile(unboundRepository, "unbound-repository")).summary,
+    /provider evidence lacks a decoded source snapshot/,
   );
 
   const contradictoryCi = structuredClone(baseline);
@@ -1638,6 +1651,21 @@ test("analytics semantic and security profiles bind delivery meaning and decoded
     ["--source", urlCredentialSourcePath],
   );
   assert.equal(urlCredentialEvidence.status, "failed");
+
+  const extraFieldSourcePath = join(root, "provider-extra-field.json");
+  const extraFieldSource = JSON.parse(await readFile(sourcePath, "utf8"));
+  extraFieldSource.privateResponseBody = { customer: "internal provider prose" };
+  await writeFile(extraFieldSourcePath, JSON.stringify(extraFieldSource));
+  for (const profile of ["semantic", "security"]) {
+    const extraFieldEvidence = await runProfile(
+      baseline,
+      `extra-field-${profile}`,
+      profile,
+      ["--source", extraFieldSourcePath],
+    );
+    assert.equal(extraFieldEvidence.status, "failed");
+    assert.match(extraFieldEvidence.summary, /unexpected field privateResponseBody/);
+  }
 });
 
 async function createAnalyticsFixture() {
