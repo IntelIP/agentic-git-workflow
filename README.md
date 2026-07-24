@@ -83,6 +83,7 @@ AI-assisted pull requests should not depend on reviewer trust alone. Tabellio gi
 | `scripts/lib/git-json-ledger.mjs` | Versioned, compare-and-swap JSON state on standard Git refs |
 | `scripts/lib/review-cycle.mjs` | Durable GitHub and agent review/fix state machine |
 | `scripts/lib/validation-runner.mjs` | Exact-commit, shell-free validation with bounded evidence logs |
+| `scripts/tabellio-merge-ready.mjs` | Approval-gated publication of one exact-validation commit status |
 | `scripts/lib/control-ref-transport.mjs` | Approval-gated, fast-forward-only sharing of review, validation, and Entire refs |
 | `scripts/tabellio-preflight.mjs` | Fail-closed GitHub, Entire, hook-trust, and release-main readiness checks |
 | `scripts/tabellio-release.mjs` | Integrity-bound post-merge control-ref, tag, and GitHub release orchestration |
@@ -110,6 +111,17 @@ Use `gate` in CI. It persists the same exact-head result but exits non-zero unle
 ```bash
 tabellio-validate gate --repo . --repo-id github.com/owner/repository --base main --commit HEAD --manifest tabellio.validation.json
 ```
+
+Plan an integrity-bound `Tabellio / exact-head-validation` status from that exact validation:
+
+```bash
+tabellio-merge-ready plan \
+  --repo . \
+  --commit HEAD \
+  --out /secure/operator/status-intent.json
+```
+
+Publishing requires a separate short-lived approval and scoped GitHub credential. The status proves only that the committed validation manifest passed for that head; review clearance, other checks, policy, and merge authority remain separate. See [Exact-head validation status](docs/merge-ready-status.md).
 
 Validation worktrees and isolated home directories use private system-temporary sessions. `--workspace-root /absolute/external/path` may select another external parent; repository-internal and `.git/**` paths are rejected.
 
@@ -233,6 +245,7 @@ The external-action checker fails when an action is marked `attempted: true` wit
 - [Approved stack operations](docs/stack-operations.md)
 - [Durable review and fix loop](docs/review-loop.md)
 - [Exact-commit validation](docs/validation-runner.md)
+- [Exact-head validation status](docs/merge-ready-status.md)
 - [Operations hardening](docs/operations-hardening.md)
 - [Workflow model](docs/workflow-model.md)
 - [Native Git foundation](docs/native-git-foundation.md)

@@ -291,12 +291,20 @@ export async function latestValidationResult(ledger, commit, repositoryId = null
 function validationResultMatches(value, { commit, repositoryId, manifestPath, path }) {
   validateValidationResult(value);
   if (value.revision.headCommit !== commit) throw new Error(`Validation result ${path} is stored under the wrong commit.`);
-  return optionalMatch(value.repository.id, repositoryId)
+  return optionalRepositoryMatch(value.repository.id, repositoryId)
     && optionalMatch(value.suite.manifestPath, manifestPath);
 }
 
 function optionalMatch(actual, expected) {
   return expected === null || actual === expected;
+}
+
+function optionalRepositoryMatch(actual, expected) {
+  return expected === null || canonicalRepositoryId(actual) === canonicalRepositoryId(expected);
+}
+
+function canonicalRepositoryId(value) {
+  return value.toLowerCase().startsWith("github.com/") ? value.toLowerCase() : value;
 }
 
 function newerValidationResult(current, candidate) {
