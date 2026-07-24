@@ -143,6 +143,26 @@ test("unsafe provider versions are blocked before portable export", async (t) =>
     assert.equal(repository.sources.find((source) => source.system === "github").status, "blocked");
     assert(!serialized.includes(`${prefix}private-value`));
   }
+
+  for (const [index, credential] of [
+    "https://alice:hunter2@example.com/private",
+    "sk_live_1234567890abcdef",
+    "AKIAIOSFODNN7EXAMPLE",
+    "xoxb-1234567890-abcdefghij",
+    "npm_12345678901234567890",
+  ].entries()) {
+    const snapshot = providerSnapshotDocument(fixture.head);
+    snapshot.sources.github.version = credential;
+    await writeFile(providerSnapshot, JSON.stringify(snapshot));
+
+    const repository = await collectProviderRepository(
+      fixture,
+      providerSnapshot,
+      `provider-additional-credential-${index}`,
+    );
+    assert.equal(repository.sources.find((source) => source.system === "github").status, "blocked");
+    assert.equal(JSON.stringify(repository).includes(credential), false);
+  }
 });
 
 test("commit count traverses non-monotonic commit dates", async (t) => {
@@ -647,6 +667,33 @@ test("repository identity excludes local paths and URL credentials", async (t) =
   });
   assert.equal(credentialDataset.repositories[0].canonicalRepositoryId, "example.com/org/repository");
   assert(!JSON.stringify(credentialDataset).includes("private-token"));
+});
+
+test("dataset validation rejects non-portable source identifiers", async (t) => {
+  const { repo } = await createEmptyAnalyticsRepository(t, "tabellio-analytics-source-id-");
+  const dataset = await collectAnalyticsDataset({
+    id: "source-id-baseline",
+    repositories: [{ id: "fixture", path: repo }],
+    observedAt: OBSERVED_AT,
+    since: SINCE,
+    until: UNTIL,
+  });
+  const repository = dataset.repositories[0];
+  const source = repository.sources[0];
+  const originalId = source.id;
+  source.id = "/Users/alice/private";
+  for (const metric of Object.values(repository.metrics)) {
+    metric.sourceIds = metric.sourceIds.map((id) =>
+      id === originalId ? source.id : id
+    );
+  }
+  resignDataset(dataset);
+
+  assert.throws(
+    () => validateAnalyticsDataset(dataset),
+    (error) => /source id is not portable/.test(error.message)
+      && !error.message.includes("/Users/alice/private"),
+  );
 });
 
 test("analytics collection rejects unsafe configured identifiers", async () => {

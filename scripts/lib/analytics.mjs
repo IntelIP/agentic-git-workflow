@@ -291,13 +291,15 @@ function hasValidRepositoryRevision(repository, sourceMap, observedAt) {
 }
 
 function validateSourceProvenance(repositoryId, source, observedAt) {
-  const prefix = `${repositoryId}/${source.id}`;
+  const portableId = isSafeAnalyticsIdentifier(source.id);
+  const prefix = portableId ? `${repositoryId}/${source.id}` : `${repositoryId}/source`;
   const validators = {
     available: validateAvailableSource,
     unavailable: validateUnavailableSource,
     blocked: validateUnavailableSource,
   };
   return [
+    errorUnless(portableId, `${repositoryId}: source id is not portable.`),
     errorUnless(Date.parse(source.observedAt) <= Date.parse(observedAt), `${prefix}: source observation is newer than the dataset.`),
     ...validators[source.status](prefix, source),
   ].filter(Boolean);
@@ -1097,7 +1099,14 @@ function isHttpEntityTag(value) {
 }
 
 function hasCredentialShape(value) {
-  return /(?:bearer\s|github_pat_|gh[pousr]_|(?:password|token|secret)\s*[=:])/i.test(value);
+  return [
+    /(?:bearer\s|github_pat_|gh[pousr]_|(?:password|token|secret)\s*[=:])/i,
+    /\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^@\s/]+@/i,
+    /\bsk_(?:live|test)_[A-Za-z0-9]{8,}\b/,
+    /\bAKIA[0-9A-Z]{16}\b/,
+    /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/,
+    /\bnpm_[A-Za-z0-9]{20,}\b/,
+  ].some((pattern) => pattern.test(String(value)));
 }
 
 function hasPortableTextControls(value, { allowSlash = false } = {}) {
