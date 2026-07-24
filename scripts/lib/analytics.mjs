@@ -1286,18 +1286,21 @@ function validationControlPathMatches(name, record) {
 
 function reviewControlPathMatches(name, record) {
   const suffix = createHash("sha256")
-    .update(reviewCycleIdentity(record))
+    .update(reviewRepositoryIdentity(record))
     .digest("hex")
     .slice(0, 16);
   return name === `cycles/github-${record.changeRequest.number}-${suffix}.json`;
 }
 
 function reviewCycleIdentity(record) {
+  return `${reviewRepositoryIdentity(record)}\0${record.changeRequest.number}`;
+}
+
+function reviewRepositoryIdentity(record) {
   return [
     record.repository.id,
     record.provider.owner,
     record.provider.repo,
-    record.changeRequest.number,
   ].join("\0");
 }
 
