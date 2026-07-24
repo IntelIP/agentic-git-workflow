@@ -15,6 +15,7 @@ import {
 } from "../scripts/lib/analytics.mjs";
 import { canonicalJson } from "../scripts/lib/context-packet.mjs";
 import { runGit } from "../scripts/lib/git-process.mjs";
+import { assertOutputBoundary } from "../scripts/lib/output-boundary.mjs";
 import { identityEnv } from "./helpers/git-fixture.mjs";
 
 const OBSERVED_AT = "2026-07-23T20:00:00.000Z";
@@ -786,7 +787,48 @@ test("analytics collector rejects colliding dataset and report paths", async (t)
   await link(shared, reportHardLink);
   await assertAnalyticsOutputCollision(datasetHardLink, reportHardLink, /must resolve to distinct files/);
   assert.equal(await readFile(shared, "utf8"), "unchanged");
+
+  const configPath = join(root, "config.json");
+  const reportPath = join(root, "config-report.md");
+  await writeFile(configPath, JSON.stringify({
+    repositories: [{ id: "example", path: fileURLToPath(new URL("..", import.meta.url)) }],
+  }));
+  await assertConfigAliasRejected(configPath, configPath, reportPath);
+
+  const configHardLink = join(root, "config-hard-link.json");
+  await link(configPath, configHardLink);
+  await assertConfigAliasRejected(configPath, configHardLink, reportPath);
+  assert.match(await readFile(configPath, "utf8"), /repositories/);
+
+  await assert.rejects(
+    assertOutputBoundary({
+      outputs: [configPath],
+      protectedInputs: [configPath],
+      duplicatePathMessage: "duplicate",
+      symbolicLinkMessage: "symbolic",
+      outputAliasMessage: "output alias",
+      inputAliasMessage: "input alias",
+    }),
+    /input alias/,
+  );
 });
+
+async function assertConfigAliasRejected(configPath, datasetPath, reportPath) {
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      fileURLToPath(new URL("../scripts/tabellio-analytics.mjs", import.meta.url)),
+      "collect",
+      "--config", configPath,
+      "--id", "config-alias",
+      "--since", SINCE,
+      "--until", UNTIL,
+      "--out", datasetPath,
+      "--report", reportPath,
+    ], { encoding: "utf8" }),
+    (error) => error.code === 1 && /must not alias --config/.test(error.stderr),
+  );
+  assert.match(await readFile(configPath, "utf8"), /repositories/);
+}
 
 async function assertAnalyticsOutputCollision(datasetPath, reportPath, message) {
   await assert.rejects(
@@ -1700,6 +1742,17 @@ test("analytics validator separates direct failure exits from runner evidence ev
   await writeFile(datasetPath, `${JSON.stringify(dataset, null, 2)}\n`);
   await writeFile(reportPath, renderAnalyticsReport(dataset));
 
+  await assertValidatorAliasRejected(datasetPath, reportPath, datasetPath, dataset.schemaVersion);
+
+  const validatorInputHardLink = join(root, "validator-input-hard-link.json");
+  await link(datasetPath, validatorInputHardLink);
+  await assertValidatorAliasRejected(
+    datasetPath,
+    reportPath,
+    validatorInputHardLink,
+    dataset.schemaVersion,
+  );
+
   const result = await execFileAsync(process.execPath, [
     fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
     "--profile", "semantic",
@@ -1990,6 +2043,22 @@ test("analytics validator separates direct failure exits from runner evidence ev
     0,
   );
 });
+
+async function assertValidatorAliasRejected(datasetPath, reportPath, outPath, schemaVersion) {
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      fileURLToPath(new URL("../scripts/tabellio-analytics-validator.mjs", import.meta.url)),
+      "--profile", "schema",
+      "--validator-id", "analytics-output-alias-test",
+      "--dataset", datasetPath,
+      "--report", reportPath,
+      "--out", outPath,
+      "--exit-mode", "evidence",
+    ], { encoding: "utf8" }),
+    (error) => error.code === 1 && /must not alias an input artifact/.test(error.stderr),
+  );
+  assert.equal(JSON.parse(await readFile(datasetPath, "utf8")).schemaVersion, schemaVersion);
+}
 
 test("analytics semantic and security profiles bind delivery meaning and decoded sources", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-review-findings-"));

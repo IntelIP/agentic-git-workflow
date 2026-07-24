@@ -11,6 +11,7 @@ import {
   validateAnalyticsDataset,
   validateProviderSnapshot,
 } from "./lib/analytics.mjs";
+import { assertOutputBoundary } from "./lib/output-boundary.mjs";
 
 const PROFILES = ["schema", "semantic", "workflow", "operational", "security"];
 const REQUIRED_BASELINE_REPOSITORIES = Object.freeze([
@@ -38,10 +39,19 @@ try {
 
   const datasetPath = resolve(options.dataset);
   const reportPath = resolve(options.report);
+  const sourcePath = options.source ? resolve(options.source) : null;
+  await assertOutputBoundary({
+    outputs: [options.out],
+    protectedInputs: [datasetPath, reportPath, sourcePath].filter(Boolean),
+    duplicatePathMessage: "Validator output path is invalid.",
+    symbolicLinkMessage: "Validator output must not be a symbolic link.",
+    outputAliasMessage: "Validator output path is invalid.",
+    inputAliasMessage: "Validator output must not alias an input artifact.",
+  });
   const datasetInput = await readInput(datasetPath, "Dataset");
   const reportInput = await readInput(reportPath, "Report");
-  const sourceInput = options.source
-    ? await readInput(resolve(options.source), "Source")
+  const sourceInput = sourcePath
+    ? await readInput(sourcePath, "Source")
     : { bytes: null, raw: null, error: null };
   const readErrors = compact([datasetInput.error, reportInput.error, sourceInput.error]);
   const inputErrors = [...readErrors];
@@ -133,7 +143,7 @@ function evidenceSummary(result) {
 
 function containsSensitiveEvidenceText(value) {
   return [
-    /github_pat_|gh[pousr]_|bearer\s|(?:password|token|secret)\s*[=:]/i.test(value),
+    /github_pat_|gh[pousr]_|bearer\s|(?:api[_-]?key|apikey|authorization|access[_-]?token|client[_-]?secret|private[_-]?key|password|token|secret)\s*[=:]/i.test(value),
     /\b[a-z][a-z0-9+.-]*:\/\/[^/\s:@]+:[^@\s/]+@/i.test(value),
     /full\.jsonl|private transcript/i.test(value),
     containsLocalFilesystemPath(value),
