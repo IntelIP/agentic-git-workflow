@@ -29,13 +29,17 @@ test("validation runner executes exact committed manifests and stores bounded re
   });
   const fixture = await createFeatureFixture(t);
   const manifestPath = `${fixture.seed}/tabellio.validation.json`;
-  await writeFile(manifestPath, JSON.stringify(manifest([
+  const passingManifest = JSON.stringify(manifest([
     command("tests", [process.execPath, "-e", 'process.stdout.write("x".repeat(20000))']),
     command("isolated-home", [process.execPath, "-e", 'if (!process.env.HOME.includes("TabellioValidation-") || process.env.HOME.includes(".git")) process.exit(2);process.stdout.write(process.env.HOME)']),
     command("artifact-uri", [process.execPath, "-e", 'if (process.env.TABELLIO_ARTIFACT_BASE_URI !== "artifact+test://validation/run/") process.exit(2)']),
     command("secret-isolated", [process.execPath, "-e", 'if (process.env.TABELLIO_TEST_SECRET !== undefined) process.exit(2)']),
     command("readonly-cache", [process.execPath, "-e", 'const fs=require("node:fs");const p=process.env.HOME+"/go/pkg/mod/example/.github";fs.mkdirSync(p,{recursive:true});fs.chmodSync(p,0o500);fs.chmodSync(process.env.HOME+"/go/pkg/mod/example",0o500)']),
-  ]), null, 2));
+  ]), null, 2);
+  await writeFile(manifestPath, passingManifest);
+  await mkdir(`${fixture.seed}/github.com`);
+  await writeFile(`${fixture.seed}/github.com/Manifest.json`, passingManifest);
+  await runGit({ args: ["add", "github.com/Manifest.json"], cwd: fixture.seed });
   await commit(fixture.seed, "Add passing validation", "validation-pass");
   const passingHead = await head(fixture.seed);
 
@@ -84,6 +88,32 @@ test("validation runner executes exact committed manifests and stores bounded re
   assert.deepEqual(
     await latestValidationResult(ledger, passingHead, "github.com/owner/repository"),
     githubRepository.result,
+  );
+  const githubManifest = await runner.run({
+    repositoryId: "github.com/Owner/Repository",
+    commit: passingHead,
+    base: "main",
+    manifestPath: "github.com/Manifest.json",
+    runnerId: "github-manifest-runner",
+    now: new Date("2026-07-10T23:00:00.000Z"),
+  });
+  assert.deepEqual(
+    await latestValidationResult(
+      ledger,
+      passingHead,
+      "github.com/owner/repository",
+      { manifestPath: "github.com/Manifest.json" },
+    ),
+    githubManifest.result,
+  );
+  assert.equal(
+    await latestValidationResult(
+      ledger,
+      passingHead,
+      "github.com/owner/repository",
+      { manifestPath: "github.com/manifest.json" },
+    ),
+    null,
   );
   assert.equal(await latestValidationResult(ledger, passingHead, "example/REPOSITORY"), null);
 
