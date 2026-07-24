@@ -328,6 +328,32 @@ test("dataset validation enforces window ordering and metric semantics", async (
     () => validateAnalyticsDataset(missingProvenance),
     /available source requires a version/,
   );
+
+  const emptyMetricSources = structuredClone(validForTampering);
+  emptyMetricSources.repositories[0].metrics.commitCount.sourceIds = [];
+  resignDataset(emptyMetricSources);
+  assert.throws(
+    () => validateAnalyticsDataset(emptyMetricSources),
+    /sources do not support the metric state or definition/,
+  );
+
+  const duplicateSources = structuredClone(validForTampering);
+  duplicateSources.repositories[0].sources.push(
+    structuredClone(duplicateSources.repositories[0].sources[0]),
+  );
+  resignDataset(duplicateSources);
+  assert.throws(
+    () => validateAnalyticsDataset(duplicateSources),
+    /repository sources must be unique and complete/,
+  );
+
+  const futureSource = structuredClone(validForTampering);
+  futureSource.repositories[0].sources[0].observedAt = "2026-07-24T00:00:00.000Z";
+  resignDataset(futureSource);
+  assert.throws(
+    () => validateAnalyticsDataset(futureSource),
+    /source observation is newer than the dataset/,
+  );
 });
 
 test("repository identity excludes local paths and URL credentials", async (t) => {
@@ -475,6 +501,54 @@ test("duplicate provider delivery identifiers block provider metrics", async (t)
   );
 });
 
+test("provider evidence cannot postdate observation or violate lifecycle ordering", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-time-invalid.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const future = providerSnapshotDocument(fixture.head);
+  future.capturedAt = "2026-07-24T00:00:00.000Z";
+  await writeFile(providerSnapshot, JSON.stringify(future));
+
+  const futureRepository = await collectProviderRepository(fixture, providerSnapshot, "provider-future");
+
+  assert.equal(futureRepository.metrics.deliveryChangeCount.status, "unavailable");
+  assert.match(
+    futureRepository.sources.find((source) => source.system === "plane").reason,
+    /newer than observedAt/,
+  );
+
+  const reversed = providerSnapshotDocument(fixture.head);
+  reversed.deliveryChanges[0].releasedAt = "2026-07-11T00:00:00.000Z";
+  await writeFile(providerSnapshot, JSON.stringify(reversed));
+  const reversedRepository = await collectProviderRepository(fixture, providerSnapshot, "provider-reversed");
+
+  assert.equal(reversedRepository.metrics.releaseLagHours.status, "unavailable");
+  assert.match(
+    reversedRepository.sources.find((source) => source.system === "github").reason,
+    /delivery lifecycle ordering is invalid/,
+  );
+});
+
+test("CI disagreement uses unique exact-head validation evidence", async (t) => {
+  const fixture = await createAnalyticsFixture();
+  const providerSnapshot = join(fixture.root, "provider-ci-binding.json");
+  t.after(() => rm(fixture.root, { recursive: true, force: true }));
+  const document = providerSnapshotDocument(fixture.head);
+  document.deliveryChanges[0].validationStatus = "failed";
+  await writeFile(providerSnapshot, JSON.stringify(document));
+
+  const exactRepository = await collectProviderRepository(fixture, providerSnapshot, "provider-ci-exact");
+
+  assert.equal(exactRepository.metrics.ciDisagreementRate.status, "measured");
+  assert.equal(exactRepository.metrics.ciDisagreementRate.value, 0);
+
+  document.deliveryChanges[0].headCommit = "f".repeat(40);
+  await writeFile(providerSnapshot, JSON.stringify(document));
+  const missingRepository = await collectProviderRepository(fixture, providerSnapshot, "provider-ci-missing");
+
+  assert.equal(missingRepository.metrics.ciDisagreementRate.status, "unavailable");
+});
+
 test("provider-derived metrics require their declared evidence sources", async (t) => {
   const fixture = await createAnalyticsFixture();
   const providerSnapshot = join(fixture.root, "provider-partial.json");
@@ -610,6 +684,7 @@ async function createAnalyticsFixture() {
   const root = await mkdtemp(join(tmpdir(), "tabellio-analytics-"));
   const repo = join(root, "repo");
   await initializeRepository(repo);
+  const head = (await runGit({ cwd: repo, args: ["rev-parse", "HEAD"] })).stdout.trim();
   await createMetadataRef(repo, {
     branch: "validation",
     ref: "refs/tabellio/validations",
@@ -617,6 +692,7 @@ async function createAnalyticsFixture() {
       "commits/example/validation.json": await controlFixture(
         "../examples/tabellio-validation/minimal-result.json",
         "example/analytics",
+        head,
       ),
     },
   });
@@ -627,6 +703,7 @@ async function createAnalyticsFixture() {
       "cycles/example.json": await controlFixture(
         "../examples/tabellio-review/minimal-cycle.json",
         "example/analytics",
+        head,
       ),
     },
   });
@@ -639,7 +716,6 @@ async function createAnalyticsFixture() {
       "aa/session/0/full.jsonl": "private transcript\n",
     },
   });
-  const head = (await runGit({ cwd: repo, args: ["rev-parse", "HEAD"] })).stdout.trim();
   return { root, repo, head };
 }
 
@@ -681,11 +757,25 @@ function resignDataset(dataset) {
   };
 }
 
-async function controlFixture(relativeUrl, repositoryId) {
+async function controlFixture(relativeUrl, repositoryId, headCommit = null) {
   const value = JSON.parse(await readFile(new URL(relativeUrl, import.meta.url), "utf8"));
   value.repository.id = repositoryId;
+  bindValidationHead(value, headCommit);
+  bindReviewHead(value, headCommit);
   resignDataset(value);
   return JSON.stringify(value);
+}
+
+function bindValidationHead(value, headCommit) {
+  if (!headCommit || !value.revision) return;
+  value.revision.headCommit = headCommit;
+  value.checkpointRevision.headCommit = headCommit;
+}
+
+function bindReviewHead(value, headCommit) {
+  if (!headCommit || !value.changeRequest) return;
+  value.changeRequest.headCommit = headCommit;
+  value.checks.commit = headCommit;
 }
 
 function providerSnapshotDocument(headCommit, overrides = {}) {

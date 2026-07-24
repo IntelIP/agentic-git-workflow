@@ -168,9 +168,12 @@ function validateRepositoryMetrics(repository, definitionIds, observedAt) {
   const sourceMap = new Map(sources.map((source) => [source.id, source]));
   const errors = compactErrors([
     errorUnless(hasRepositoryIdentity(repository), "Repository identity is incomplete."),
+    errorUnless(hasCanonicalSources(sources), `${repository.id}: repository sources must be unique and complete.`),
     errorUnless(hasValidRepositoryRevision(repository, sourceMap, observedAt), `${repository.id}: invalid repository revision state.`),
   ]);
-  const sourceErrors = sources.flatMap((source) => validateSourceProvenance(repository.id, source));
+  const sourceErrors = sources.flatMap((source) =>
+    validateSourceProvenance(repository.id, source, observedAt)
+  );
   const metrics = repository.metrics ?? {};
   const missingMetricErrors = [...definitionIds]
     .filter((metricId) => !Object.hasOwn(metrics, metricId))
@@ -214,6 +217,14 @@ function hasRepositoryIdentity(repository) {
   return Boolean(repository?.id) && Boolean(repository?.canonicalRepositoryId);
 }
 
+function hasCanonicalSources(sources) {
+  const ids = sources.map((source) => source.id);
+  const systems = sources.map((source) => source.system);
+  return sources.length === DECLARED_SOURCE_SYSTEMS.length
+    && new Set(ids).size === ids.length
+    && canonicalJson([...systems].sort()) === canonicalJson([...DECLARED_SOURCE_SYSTEMS].sort());
+}
+
 function hasValidRepositoryRevision(repository, sourceMap, observedAt) {
   const gitSource = [...sourceMap.values()].find((source) => source.system === "git");
   if (gitSource?.status === "available") {
@@ -231,14 +242,17 @@ function hasValidRepositoryRevision(repository, sourceMap, observedAt) {
   ].every(Boolean);
 }
 
-function validateSourceProvenance(repositoryId, source) {
+function validateSourceProvenance(repositoryId, source, observedAt) {
   const prefix = `${repositoryId}/${source.id}`;
   const validators = {
     available: validateAvailableSource,
     unavailable: validateUnavailableSource,
     blocked: validateUnavailableSource,
   };
-  return validators[source.status](prefix, source);
+  return [
+    errorUnless(Date.parse(source.observedAt) <= Date.parse(observedAt), `${prefix}: source observation is newer than the dataset.`),
+    ...validators[source.status](prefix, source),
+  ].filter(Boolean);
 }
 
 function validateAvailableSource(prefix, source) {
@@ -306,6 +320,8 @@ function metricSourcesSupportDefinition(metricId, metric, definition, sourceMap)
   if (!definition) return false;
   const sources = asArray(metric.sourceIds).map((sourceId) => sourceMap.get(sourceId));
   return [
+    sources.length > 0,
+    new Set(metric.sourceIds).size === metric.sourceIds.length,
     sources.every(Boolean),
     sources.every((source) => definition.sourceSystems.includes(source?.system)),
     metricSourceAvailabilityMatches(metricId, metric, sources),
@@ -567,8 +583,12 @@ function buildRepositoryMetrics({ commits, status, since, until, gitSource, vali
   const leadTimes = changes.flatMap((change) => durationHours(change.storyCreatedAt, change.mergedAt));
   const cycleTimes = changes.flatMap((change) => durationHours(change.firstActivityAt, change.mergedAt));
   const releaseLags = changes.flatMap((change) => durationHours(change.mergedAt, change.releasedAt));
-  const ciComparisons = changes.filter(hasComparableCiStatus);
-  const ciDisagreements = ciComparisons.filter((change) => change.validationStatus !== change.hostedStatus);
+  const ciComparisons = changes.flatMap((change) =>
+    exactCiComparison(change, validation.values)
+  );
+  const ciDisagreements = ciComparisons.filter((comparison) =>
+    comparison.validationStatus !== comparison.hostedStatus
+  );
   const providerSourceIds = provider.sources.slice(0, 2).map((source) => source.id);
   return {
     commitCount: measured(Number(commits), "count", [gitSource.id]),
@@ -609,8 +629,17 @@ function hasTaskAndPullRequest(change) {
   return Boolean(change.planeStoryId) && Boolean(change.pullRequestNumber);
 }
 
-function hasComparableCiStatus(change) {
-  return isComparableStatus(change.validationStatus) && isComparableStatus(change.hostedStatus);
+function exactCiComparison(change, validations) {
+  if (!isComparableStatus(change.hostedStatus)) return [];
+  const matches = validations.filter((validation) =>
+    validation?.revision?.headCommit === change.headCommit
+      && isComparableStatus(validation.status)
+  );
+  if (matches.length !== 1) return [];
+  return [{
+    validationStatus: matches[0].status,
+    hostedStatus: change.hostedStatus,
+  }];
 }
 
 function isComparableStatus(value) {
@@ -641,7 +670,7 @@ function unreadableProviderFailure({ id, observedAt }) {
 }
 
 function collectLoadedProviderSnapshot({ id, canonicalRepositoryId, observedAt, snapshot }) {
-  const errors = validateProviderSnapshot(snapshot, canonicalRepositoryId);
+  const errors = validateProviderSnapshot(snapshot, canonicalRepositoryId, observedAt);
   if (errors.length > 0) {
     return providerFailure({
       id,
@@ -722,13 +751,15 @@ function providerFailure({ id, observedAt, reason, status, sourceVersion = null 
   };
 }
 
-function validateProviderSnapshot(snapshot, canonicalRepositoryId) {
+function validateProviderSnapshot(snapshot, canonicalRepositoryId, observedAt) {
   const sourceErrors = ["plane", "github", "github-actions"].flatMap((system) =>
-    validateProviderSource(system, snapshot?.sources?.[system])
+    validateProviderSource(system, snapshot?.sources?.[system], observedAt)
   );
-  const changeErrors = asArray(snapshot?.deliveryChanges).flatMap(validateDeliveryChange);
+  const changeErrors = asArray(snapshot?.deliveryChanges).flatMap((change) =>
+    validateDeliveryChange(change, snapshot?.capturedAt)
+  );
   return [
-    ...validateProviderHeader(snapshot, canonicalRepositoryId),
+    ...validateProviderHeader(snapshot, canonicalRepositoryId, observedAt),
     ...sourceErrors,
     ...changeErrors,
     ...duplicateDeliveryChangeErrors(snapshot?.deliveryChanges),
@@ -752,26 +783,44 @@ function duplicateValues(values) {
   return [...duplicates];
 }
 
-function validateProviderHeader(snapshot, canonicalRepositoryId) {
+function validateProviderHeader(snapshot, canonicalRepositoryId, observedAt) {
   return compactErrors([
     ...unexpectedFieldErrors(snapshot, PROVIDER_SNAPSHOT_FIELDS, "Provider snapshot"),
-    errorUnless(snapshot?.schemaVersion === "tabellio-analytics-provider-snapshot/v0.1", "Unsupported schemaVersion."),
-    errorUnless(snapshot?.repository === canonicalRepositoryId, "Repository identity mismatch."),
-    errorUnless(isDateTime(snapshot?.capturedAt), "capturedAt is invalid."),
+    errorUnless(hasProviderSchema(snapshot), "Unsupported schemaVersion."),
+    errorUnless(hasProviderRepository(snapshot, canonicalRepositoryId), "Repository identity mismatch."),
+    errorUnless(hasProviderCaptureTime(snapshot), "capturedAt is invalid."),
+    errorUnless(providerCaptureNotAfter(snapshot, observedAt), "capturedAt is newer than observedAt."),
     errorUnless(hasProviderCollections(snapshot), "sources and deliveryChanges are required."),
   ]);
 }
 
-function validateProviderSource(system, source) {
+function hasProviderSchema(snapshot) {
+  return snapshot?.schemaVersion === "tabellio-analytics-provider-snapshot/v0.1";
+}
+
+function hasProviderRepository(snapshot, canonicalRepositoryId) {
+  return snapshot?.repository === canonicalRepositoryId;
+}
+
+function hasProviderCaptureTime(snapshot) {
+  return isDateTime(snapshot?.capturedAt);
+}
+
+function providerCaptureNotAfter(snapshot, observedAt) {
+  return dateNotAfter(snapshot?.capturedAt, observedAt);
+}
+
+function validateProviderSource(system, source, observedAt) {
   return compactErrors([
     ...unexpectedFieldErrors(source, PROVIDER_SOURCE_FIELDS, `${system} source`),
     errorUnless(isProviderSource(source), `${system} source is invalid.`),
     errorUnless(providerSourceHasVersion(source), `${system} source version is required.`),
     errorUnless(providerSourceHasReason(source), `${system} unavailable reason is required.`),
+    errorUnless(versionNotAfter(source?.version, observedAt), `${system} source version is newer than observedAt.`),
   ]);
 }
 
-function validateDeliveryChange(change) {
+function validateDeliveryChange(change, capturedAt) {
   if (!isPlainObject(change)) return ["Delivery change must be an object."];
   const changeId = isNonEmptyString(change.id) ? change.id : "delivery change";
   const dateErrors = ["storyCreatedAt", "firstActivityAt", "mergedAt", "releasedAt"]
@@ -785,9 +834,37 @@ function validateDeliveryChange(change) {
     errorUnless(isNullableString(change.planeStoryId), `${changeId}: planeStoryId is invalid.`),
     errorUnless(isNullablePositiveInteger(change.pullRequestNumber), `${changeId}: pullRequestNumber is invalid.`),
     ...dateErrors,
+    errorUnless(hasCoherentDeliveryLifecycle(change), `${changeId}: delivery lifecycle ordering is invalid.`),
+    errorUnless(deliveryDatesNotAfter(change, capturedAt), `${changeId}: delivery timestamp is newer than capturedAt.`),
     errorUnless(isOutcomeStatus(change.validationStatus), `${changeId}: validationStatus is invalid.`),
     errorUnless(isOutcomeStatus(change.hostedStatus), `${changeId}: hostedStatus is invalid.`),
   ]);
+}
+
+function hasCoherentDeliveryLifecycle(change) {
+  return [
+    orderedDates(change.storyCreatedAt, change.firstActivityAt),
+    orderedDates(change.storyCreatedAt, change.mergedAt),
+    orderedDates(change.firstActivityAt, change.mergedAt),
+    orderedDates(change.mergedAt, change.releasedAt),
+  ].every(Boolean);
+}
+
+function deliveryDatesNotAfter(change, capturedAt) {
+  return ["storyCreatedAt", "firstActivityAt", "mergedAt", "releasedAt"]
+    .every((field) => dateNotAfter(change[field], capturedAt));
+}
+
+function orderedDates(earlier, later) {
+  return earlier === null || later === null || Date.parse(earlier) <= Date.parse(later);
+}
+
+function versionNotAfter(version, observedAt) {
+  return !isDateTime(version) || dateNotAfter(version, observedAt);
+}
+
+function dateNotAfter(value, upperBound) {
+  return !isDateTime(value) || !isDateTime(upperBound) || Date.parse(value) <= Date.parse(upperBound);
 }
 
 function hasProviderCollections(snapshot) {
